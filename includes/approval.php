@@ -373,9 +373,6 @@ if (!function_exists('ias_review_email')) {
     $html .= $h('Dropped this week (' . count($dropped) . ')');
     $html .= $dropped ? '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="color:#646970;font-size:13px">' . esc_html((string) $p['note']) . '</span></li>'; }, $dropped)) . '</ul>' : '<p>Nothing was dropped.</p>';
 
-    /** The Facebook Event cards to make this week (events.php). */
-    $html .= (string) apply_filters('ias_review_email_sections', '', $start, $end);
-
     $cal = (string) ias_setting('oneup_calendar_url', '');
     $html .= '<p style="margin-top:24px">'
       . ($cal !== '' ? '<a href="' . esc_url($cal) . '" style="display:inline-block;background:' . $navy . ';color:#fff;text-decoration:none;font-weight:bold;padding:10px 18px;border-radius:6px;margin-right:8px">Open the OneUp calendar</a>' : '')

@@ -1,10 +1,11 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.4.2.** The canonical user documentation, rendered inside
+> **Documented version: 0.4.3.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
-> `docs/build-spec.md`.
+> `docs/build-spec.md` — apart from Facebook Events, which DJ dropped on
+> Oct 12, 2026: the plugin makes no events and prepares none.
 
 ## 1. What this does
 
@@ -21,11 +22,11 @@ The plugin is built in phases. Each ships with publishing off and is checked bef
 | 1. Foundation | The plugin, the dependency check, its tables, settings, the log and the Social Calendar (read-only) | 0.1.0 |
 | 2. Content | Drafts for every post type, photo grading, crops, the results graphic, the fair-housing screen | 0.2.0 |
 | 3. Scheduler | The 5:00 plan, the rules, cancellations, dry-run payloads | 0.3.0 |
-| 4. Approval | The approval emails and their links, morning reminders, the Monday email, Facebook Event cards | 0.4.0 |
+| 4. Approval | The approval emails and their links, morning reminders, the Monday email | 0.4.0 |
 | 5. OneUp live | Pushing to OneUp, reading back, cancelling, the first-comment link | — |
 | 6. The rest | Each post type switched on in turn | — |
 
-This version is **phase 4** — everything up to going live: every current listing's posts are drafted, checked and planned to the minute every morning; the roundup and Results posts are emailed to DJ and Jacob for a yes; the Monday email and the Facebook Event cards are prepared; and what would go to OneUp is written to the log as a dry run. Nothing is sent to OneUp or Facebook yet — that is Phase 5.
+This version is **phase 4** — everything up to going live: every current listing's posts are drafted, checked and planned to the minute every morning; the roundup and Results posts are emailed to DJ and Jacob for a yes; the Monday email goes out; and what would go to OneUp is written to the log as a dry run. Nothing is sent to OneUp or Facebook yet — that is Phase 5.
 
 ## 3. Installing it
 
@@ -65,13 +66,13 @@ Click a post to open it: the preview as it would appear (text, pictures with the
 - **Keep as written** — for a post that stopped for a decision: you have read why (including "the listing changed"), and it is right as it is. A post that stopped stays stopped until someone decides — being dropped and brought back, restored, or called for again never turns it into Planned; and a later edit that stops it again needs a new decision.
 - For a roundup or Results post: **Approve**, **Send for approval now** (before the hourly run would), **Send a reminder now**, and **Save and approve** beside Save text. Its **Approval** box shows who was emailed when and who said yes.
 
-Above the grid, when the plan last ran and what it did; beside **Pause**, **Plan now**. Under the grid: **Waiting for approval** (roundup and Results posts emailed for a yes, how long ago and how many emails), **Facebook Events to create** (§8), **Needs a decision** (drafts that stopped, with why), **Drafts** (how many planned posts have no draft yet, and **Write drafts now**, which writes up to four on the spot), **Waiting for photos** (Upcoming listings whose Listing post waits for a gallery), **Dropped in the last 30 days** (with each reason) and **Running late or squeezed**. Each post's view also shows **What would go to OneUp**.
+Above the grid, when the plan last ran and what it did; beside **Pause**, **Plan now**. Under the grid: **Waiting for approval** (roundup and Results posts emailed for a yes, how long ago and how many emails), **Needs a decision** (drafts that stopped, with why), **Drafts** (how many planned posts have no draft yet, and **Write drafts now**, which writes up to four on the spot), **Waiting for photos** (Upcoming listings whose Listing post waits for a gallery), **Dropped in the last 30 days** (with each reason) and **Running late or squeezed**. Each post's view also shows **What would go to OneUp**.
 
 Across the top of every screen, the **switches strip** shows the master switch, dry run, pause and each post type, so it is always plain whether anything can reach Facebook. **Pause all pushes** on the calendar stops every push at once without deactivating the plugin; **Resume pushes** undoes it. Planning and drafting carry on while paused.
 
 ### Settings
 
-- **Safety switches**, all off at install: the **master switch** (off = the plugin plans and logs but never calls OneUp), **dry run** (on = it writes the exact payloads it would send to the log), **paused**, and one switch per post type plus the Facebook Event cards. Turn on Listing posts first, then the rest one at a time as each earns trust. A type that is off is still planned and drafted, so you can read it on the calendar.
+- **Safety switches**, all off at install: the **master switch** (off = the plugin plans and logs but never calls OneUp), **dry run** (on = it writes the exact payloads it would send to the log), **paused**, and one switch per post type. Turn on Listing posts first, then the rest one at a time as each earns trust. A type that is off is still planned and drafted, so you can read it on the calendar.
 - **OneUp**: whether the API key is set in wp-config, the category id and the Facebook page's account id in OneUp, the link to the OneUp calendar for the Monday email, and whether the listing link goes in the first comment (untick only if OneUp cannot post first comments — the link then ends the post).
 - **Priority**: each post type's weight and the starting-bid multipliers. Priority = weight × multiplier.
 - **Limits and posting windows**: at most 3 posts a day, at least 2 when posts can be pulled in, 3 hours apart, in the windows 6:00–7:30 AM, 11:30 AM–1:00 PM and 7:00–9:00 PM, each time shifted by up to 25 minutes; the 48-hour veto window; how far ahead it plans (30 days) and pushes (21 days), and the hour the morning plan runs (5:00).
@@ -208,7 +209,7 @@ After planning, every post scheduled in the next **21 days** that is ready — a
 
 In this version **nothing is sent**: each request goes to the log as a `dryrun` entry, once when it is new and again only when it changes, with what is stopping it (master switch off, dry run on, paused, the post type off, no key or ids — and, until Phase 5, that live pushing is not built yet). Each post's view shows **What would go to OneUp** too. A Results post or roundup waiting for approval never appears there.
 
-The dry run behaves the way live pushing will, so the calendar settles as it will when it is live: a post it logged counts as sent — inside the 48 hours it stays put, and once its time passes it shows as **Published** (marked dry run; its Facebook Event cards then appear) — and a sent post that stops being ready gets a logged delete.
+The dry run behaves the way live pushing will, so the calendar settles as it will when it is live: a post it logged counts as sent — inside the 48 hours it stays put, and once its time passes it shows as **Published** (marked dry run) — and a sent post that stops being ready gets a logged delete.
 
 **Handing Facebook over from the toolkit.** The toolkit's social webhook (Settings & Data → Automation) still posts each listing to Facebook through Zapier/Make. This plugin tells the toolkit when it has taken Facebook over (the toolkit's `ia_social_facebook_managed`): only when posts can really reach OneUp — live pushing built (Phase 5), the master switch on, dry run off, not paused, and Listing posts on. Until then the webhook carries Facebook as before; from then on its payload says `channels: ["gbp"]` and the toolkit's promo steps ask for the Google Business Profile post only. **Before Listing posts go live, make the Zapier/Make scenario post to Facebook only when `channels` contains `facebook`**, or Facebook gets the listing twice.
 
@@ -231,11 +232,7 @@ Approving puts the post on the plan **at once**, at the next free time at least 
 
 ### The Monday email
 
-Every **Monday at 7:00** (Settings: day and hour; never Sunday) DJ and Jacob get one email: **this week's posts** day by day with their status, **waiting for approval**, anything that **needs a decision**, **new since last week**, **dropped this week** with the reasons, the **Facebook Events to create** (while that switch is on), and buttons to **open the OneUp calendar** and the Social Calendar. **Send the weekly email now** under Settings sends it on demand.
-
-### Facebook Events
-
-Each open house and each auction day should be a Facebook Event, so anyone who taps Interested gets Facebook's own reminder. Facebook does not let outside apps create a Page's events through its API, and OneUp's events are for Google Business Profile only — so the plugin **prepares each event** instead: once the listing's Listing post has gone out (or its time has come — while nothing is live), or, for a listing whose Listing post was skipped, once its auction week starts, a **Create event** card appears under the calendar with the event name, start and end (an open house's real length; an auction as 2 hours), the address, a description (what is selling, how bidding works, who to call, the tagged link) and a cover photo (the listing's best wide photo, else its brochure cover, else a branded card). Copy them into Meta Business Suite → Events → Create event — about a minute — then press **Mark created** (or **Skip**). The cards are also in the Monday email while the **Facebook Events** switch is on.
+Every **Monday at 7:00** (Settings: day and hour; never Sunday) DJ and Jacob get one email: **this week's posts** day by day with their status, **waiting for approval**, anything that **needs a decision**, **new since last week**, **dropped this week** with the reasons, and buttons to **open the OneUp calendar** and the Social Calendar. **Send the weekly email now** under Settings sends it on demand.
 
 ## 9. What it stores
 
@@ -243,7 +240,7 @@ Each open house and each auction day should be a Facebook Event, so anyone who t
 - `{prefix}ias_history` — the openers, calls to action, hashtag sets, templates and images already used, for the no-repeat rules.
 - The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it); `ias_last_plan` and `ias_last_plan_summary` (the morning plan's day and counts); `ias_last_review` (the day the weekly email last went).
 - On each post: its approvals — the hashed links (approver, round, expiry, used), the emails sent, and who approved it.
-- On each listing: `_ias_announced_at` and `_ias_promoted_at` (the days it entered Recently Announced and Upcoming), `_ias_photos_at` (the day its photos were first seen), the panel's `_ias_sale_kind`, `_ias_parcels` and `_ias_brochure_cover`, `_ias_posts_cancelled` while Cancel posts is on, and `_ias_fb_events` (which event cards were marked created or skipped).
+- On each listing: `_ias_announced_at` and `_ias_promoted_at` (the days it entered Recently Announced and Upcoming), `_ias_photos_at` (the day its photos were first seen), the panel's `_ias_sale_kind`, `_ias_parcels` and `_ias_brochure_cover`, and `_ias_posts_cancelled` while Cancel posts is on.
 - On each photo: `_ias_photo` (its grade, kind and alt text) and `_ias_crops` (the three crops).
 - Pictures in `uploads/intel-social/` (`graphics/` and `crops/`).
 - Its log entries in the toolkit's `{prefix}ia_events` table, as `ias.*` events.

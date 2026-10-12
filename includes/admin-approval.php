@@ -1,9 +1,8 @@
 <?php
 /**
- * Intel Auctions Social — approvals and Facebook Event cards on the screens:
- * Approve and Send for approval on a post, its approval history, Waiting for
- * approval and the Event cards under the calendar, and "Send the weekly email
- * now" under Settings.
+ * Intel Auctions Social — approvals on the screens: Approve and Send for
+ * approval on a post, its approval history, Waiting for approval under the
+ * calendar, and "Send the weekly email now" under Settings.
  */
 
 if (!defined('ABSPATH')) exit;
@@ -28,14 +27,6 @@ add_action('ias_calendar_action', function (string $action): void {
     if (!$can) { $flash('This post cannot be sent for approval now — it needs a decision, or its draft is being rewritten.', 'warning'); return; }
     $n = ias_approval_send($id, $action === 'remind');
     $flash($n ? 'Sent to ' . esc_html(implode(', ', ias_approvers())) . '.' : 'Nothing was sent (no approvers set, or the email failed).', $n ? 'success' : 'error');
-    return;
-  }
-  if ($action === 'event_mark') {
-    $listing = isset($_POST['ias_listing']) ? (int) $_POST['ias_listing'] : 0;
-    $key = isset($_POST['ias_key']) ? sanitize_key(wp_unslash($_POST['ias_key'])) : '';
-    $status = isset($_POST['ias_status']) && $_POST['ias_status'] === 'skipped' ? 'skipped' : 'created';
-    if ($listing > 0 && $key !== '') ias_event_mark($listing, $key, $status, $actor);
-    $flash($status === 'created' ? 'Marked created.' : 'Skipped.');
     return;
   }
 });
@@ -73,7 +64,7 @@ add_action('ias_post_view_side', function (array $p): void {
   echo '</div>';
 });
 
-/** Waiting for approval, and the Facebook Event cards, under the grid. */
+/** Waiting for approval, under the grid. */
 add_action('ias_calendar_after_grid', function (): void {
   $waiting = ias_posts_query(['status' => 'waiting', 'limit' => 100]);
   echo '<div class="ias-card"><h3>Waiting for approval <span class="description">(' . count($waiting) . ')</span></h3>';
@@ -88,34 +79,6 @@ add_action('ias_calendar_after_grid', function (): void {
     }
     echo '</ul>';
   }
-  echo '</div>';
-
-  $cards = ias_event_cards();
-  $on = ias_type_on('events');
-  echo '<div class="ias-card"><h3>Facebook Events to create <span class="description">(' . count($cards) . ')</span></h3>';
-  echo '<p class="description">Facebook does not let outside apps create a Page\'s events, so each open house and auction day is prepared here once its Listing post has gone out. In Meta Business Suite → Events → Create event, copy the fields in, then press Mark created.'
-    . ($on ? '' : ' (The Facebook Events switch is off, so these are not in the Monday email.)') . '</p>';
-  foreach ($cards as $c) {
-    $field = function (string $label, string $value, bool $area = false) {
-      return '<p style="margin:4px 0"><span class="description">' . esc_html($label) . '</span><br>' . ($area
-        ? '<textarea readonly rows="5" class="large-text" onclick="this.select()">' . esc_textarea($value) . '</textarea>'
-        : '<input type="text" readonly class="large-text" value="' . esc_attr($value) . '" onclick="this.select()">') . '</p>';
-    };
-    echo '<div style="border:1px solid #dcdcde;border-radius:6px;padding:10px 12px;margin:0 0 12px;display:flex;gap:14px;flex-wrap:wrap">';
-    if ($c['cover'] !== '') echo '<div><a href="' . esc_url($c['cover']) . '" target="_blank" rel="noopener"><img src="' . esc_url($c['cover']) . '" alt="" style="width:220px;border-radius:4px"></a><br><span class="description">Cover photo — open, then save</span></div>';
-    echo '<div style="flex:1;min-width:260px"><strong>' . esc_html($c['kind']) . '</strong>';
-    echo $field('Event name', $c['title']);
-    echo $field('Starts', $c['start']->format('l, F j, Y g:i a')) . $field('Ends', $c['end']->format('l, F j, Y g:i a'));
-    echo $field('Location', $c['where']) . $field('Details', $c['description'], true);
-    foreach (['created' => 'Mark created', 'skipped' => 'Skip'] as $st => $label) {
-      echo '<form method="post" style="display:inline-block;margin-right:6px">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
-        . '<input type="hidden" name="ias_cal_action" value="event_mark"><input type="hidden" name="ias_listing" value="' . (int) $c['listing'] . '">'
-        . '<input type="hidden" name="ias_key" value="' . esc_attr($c['key']) . '"><input type="hidden" name="ias_status" value="' . esc_attr($st) . '">'
-        . '<button class="button' . ($st === 'created' ? ' button-primary' : '') . '">' . esc_html($label) . '</button></form>';
-    }
-    echo '</div></div>';
-  }
-  if (!$cards) echo '<p class="description">None waiting.</p>';
   echo '</div>';
 }, 5);
 

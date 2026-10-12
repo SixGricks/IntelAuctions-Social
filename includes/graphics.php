@@ -284,7 +284,7 @@ if (!function_exists('ias_gd_card')) {
   }
 }
 
-/** The branded card alone, $w×$h (a late listing's cover, an event cover stand-in). */
+/** The branded card alone, $w×$h (a late listing's cover). */
 if (!function_exists('ias_graphic_card')) {
   function ias_graphic_card(array $f, string $name, int $w = 1080, int $h = 1080): ?array {
     if (!ias_gd_ready()) return null;

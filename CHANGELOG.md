@@ -1,5 +1,14 @@
 # Intel Auctions Social changelog
 
+## 0.4.3 (2026-10-12) — Facebook Events are out
+- DJ's decision: "don't worry about facebook events at all". The Facebook
+  Event cards are gone — the list under the calendar with Mark created and
+  Skip, the Facebook Events switch (Settings and the switches strip), and the
+  section in the Monday email. The spec stays as written; the decision is
+  recorded in `CLAUDE.md` and the guide.
+- Tests: the event-card checks are replaced by checks that the calendar,
+  Settings and the Monday email offer no Facebook Events.
+
 ## 0.4.2 (2026-10-12) — a person's decision holds, and the plan settles
 From an independent review of 0.4.1; each fix has a test that fails on 0.4.1
 (`tests/wp/05-decisions.php`, `tests/unit/engine.php`).

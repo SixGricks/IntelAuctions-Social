@@ -3,8 +3,8 @@
  * Phase 4 acceptance: "A test Results post round-trips: email, approve, then
  * queued. An expired link fails safely." Plus: the first yes wins, an altered
  * link is refused, reminders every morning with fresh links, none on Sunday,
- * an edit voids the old links, Save and approve, the Monday email, and the
- * Facebook Event cards.
+ * an edit voids the old links, Save and approve, and the Monday email.
+ * (Facebook Events are out — DJ, Oct 12 2026 — so nothing offers them.)
  */
 require_once dirname(__DIR__) . '/fixtures/wp-fixtures.php';
 global $wpdb;
@@ -131,37 +131,24 @@ $body = (string) ($review[0]['message'] ?? '');
 foreach (['This week', 'Waiting for approval', 'New since last week', 'Dropped this week', 'Open the OneUp calendar'] as $part) {
   t_ok(strpos($body, $part) !== false, "the Monday email has: {$part}");
 }
+t_ok(stripos($body, 'Facebook Event') === false, 'the Monday email has no Facebook Events section');
 ias_job_run();
 t_eq(0, count(array_filter($mail(), function ($x) { return strpos((string) $x['subject'], 'Facebook this week') === 0; })), 'it goes once a week');
-
-// ---- Facebook Event cards ----
-ias_t_clock('2026-11-02 05:30');
-$lead = ias_t_team('Jacob Stoltzfus', '717-555-0101');
-$farm = ias_t_listing(['title' => '5940 Plank Road', 'address' => '5940 Plank Road, Narvon, PA 17555, USA', 'town' => 'Narvon', 'county' => 'Lancaster',
-  'stage' => 'upcoming', 'sale' => '2026-11-21 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$650,000',
-  'lead' => $lead, 'gallery' => [ias_t_photo('Plank A'), ias_t_photo('Plank B'), ias_t_photo('Plank C'), ias_t_photo('Plank D')], 'oh' => [['2026-11-14 13:00', 2]]]);
-ias_sync();
-t_eq([], array_values(array_filter(ias_event_cards(), function ($c) use ($farm) { return $c['listing'] === $farm; })), 'no event cards before the Listing post goes out');
-$lp = ias_post_by_slot('listing:' . $farm);
-ias_post_update((int) $lp['id'], ['scheduled_at' => '2026-11-02 05:00:00']);
-$cards = array_values(array_filter(ias_event_cards(), function ($c) use ($farm) { return $c['listing'] === $farm; }));
-t_eq(2, count($cards), 'once it has gone out: a card for the open house and one for the sale');
-t_eq('Open House: 5940 Plank Road, Narvon', $cards[0]['title'] ?? '', 'the open house card is titled with the place');
-t_eq(['2026-11-14 13:00', '2026-11-14 15:00'], [$cards[0]['start']->format('Y-m-d H:i'), $cards[0]['end']->format('Y-m-d H:i')], '…with its real start and end');
-t_ok(strpos($cards[1]['description'], 'in-person auction') !== false && strpos($cards[1]['description'], 'utm_campaign=social_event') !== false, 'the sale card says how bidding works and links back, tagged');
-t_ok($cards[1]['where'] === '5940 Plank Road, Narvon, PA 17555, USA' && $cards[1]['cover'] !== '', 'with the address and a cover photo');
-ias_event_mark($farm, $cards[0]['key'], 'created', 'admin');
-t_eq(1, count(array_filter(ias_event_cards(), function ($c) use ($farm) { return $c['listing'] === $farm; })), 'Mark created takes the card away');
 
 // ---- The screens ----
 $errors = [];
 set_error_handler(function ($no, $str, $file, $line) use (&$errors) { $errors[] = "{$str} at " . basename($file) . ":{$line}"; return true; });
 $_GET = ['page' => IAS_PAGE_CALENDAR];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
-t_ok(strpos($html, 'Waiting for approval') !== false && strpos($html, 'Facebook Events to create') !== false && strpos($html, 'Public Auction: 5940 Plank Road') !== false, 'the calendar lists approvals and event cards');
+t_ok(strpos($html, 'Waiting for approval') !== false, 'the calendar lists the posts waiting for approval');
+t_ok(stripos($html, 'Facebook Event') === false && strpos($html, 'FB Events') === false, '…and offers no Facebook Events (DJ dropped them)');
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $pid];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
 t_ok(strpos($html, 'jacob@intelauctions.com') !== false && strpos($html, 'Approval') !== false, 'a Results post shows who approved it');
+$_GET = ['page' => IAS_PAGE_SETTINGS];
+ob_start(); ias_settings_render(); $html = ob_get_clean();
+t_ok(stripos($html, 'Event card') === false && strpos($html, 'ias[types][events]') === false, 'Settings has no Facebook Events switch');
+t_ok(!array_key_exists('events', ias_settings_defaults()['types']), '…and the settings carry none');
 $_GET = [];
 restore_error_handler();
 t_eq([], $errors, 'no PHP notices on the screens');

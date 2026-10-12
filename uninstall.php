@@ -46,7 +46,7 @@ if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($events
   $wpdb->query("DELETE FROM {$events} WHERE event LIKE 'ias.%'");
 }
 
-// Generated pictures (results graphics, roundup collages, crops, event covers).
+// Generated pictures (results graphics, roundup collages, crops).
 $uploads = wp_upload_dir(null, false);
 $dir = trailingslashit((string) ($uploads['basedir'] ?? '')) . 'intel-social';
 if (!empty($uploads['basedir']) && is_dir($dir)) {

@@ -4,7 +4,12 @@ WordPress plugin for intelauctions.com (Intel Auctions LLC): it turns each aucti
 into a set of Facebook posts, plans them three a day through OneUp, and keeps a
 person in the loop on the posts that carry hard facts. Entry point
 `intel-auctions-social.php`. **What it is for is `docs/build-spec.md` (DJ's spec,
-verbatim) — read it before changing behaviour.**
+verbatim) — read it before changing behaviour.** DJ's later decisions override
+it, and the spec stays verbatim, so they are recorded here:
+
+- **Facebook Events are out** (Oct 12, 2026: "don't worry about facebook events
+  at all"). Removed in 0.4.3 — no event cards, no switch, no Monday-email
+  section. Don't build them back from the spec's "Facebook Events" section.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude
@@ -56,10 +61,9 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   facts changed or a person asks; a photo is graded once). AI output is always a
   draft: prompts forbid invented facts (`[VERIFY]` markers hold the post), and the
   fair-housing screen holds any flagged draft for a person.
-- **Nothing reaches Facebook until DJ turns a switch on.** The master switch,
-  every post type and the Facebook Event cards ship **off**, dry run ships **on**,
-  and Pause stops every push. A change that could make a post public needs all of
-  them checked on its path.
+- **Nothing reaches Facebook until DJ turns a switch on.** The master switch and
+  every post type ship **off**, dry run ships **on**, and Pause stops every push.
+  A change that could make a post public needs all of them checked on its path.
 - **The dry run keeps its own record of what it "sent"** (`dry_hash` in a post's
   flags) and treats it like OneUp: fixed inside the veto window, a logged delete
   when it stops being ready, and `published` with `flags.dry_run` once its time

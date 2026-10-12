@@ -183,7 +183,6 @@ if (!function_exists('ias_settings_render')) {
       if ($type === 'human') continue;
       echo $check('ias[types][' . $type . ']', ias_type_on($type), '<strong>' . esc_html($def['label']) . '</strong> <span class="description">— lane ' . esc_html($def['lane']) . ', ' . esc_html($def['window']) . '</span>') . '<br>';
     }
-    echo $check('ias[types][events]', ias_type_on('events'), '<strong>Facebook Event cards</strong> <span class="description">— a ready-to-copy event for each open house and auction day</span>');
     echo '<p class="description">A type that is off is still planned and drafted, so you can read it on the calendar; it just never goes to OneUp.</p></td></tr>';
     echo '</table>';
 

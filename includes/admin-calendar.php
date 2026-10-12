@@ -96,7 +96,7 @@ if (!function_exists('ias_calendar_render')) {
         'Posts appear here once the plugin is planning them: a Listing post when a listing moves to Upcoming, Open House and Auction Week posts as their dates come into range, Results after a sale, and the Friday roundup of new announcements.');
     }
 
-    /** Later phases add the lists below the grid (needs a decision, waiting, dropped, event cards). */
+    /** Later phases add the lists below the grid (needs a decision, waiting, dropped). */
     do_action('ias_calendar_after_grid', $posts, $today, $last);
 
     echo '</div>';

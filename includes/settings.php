@@ -19,7 +19,7 @@ if (!function_exists('ias_settings_defaults')) {
       'paused'    => false,  // the Pause button on the calendar: stops every push at once
       'types'     => [       // per post type, turned on one at a time as each earns trust
         'listing' => false, 'open_house' => false, 'auction_week' => false,
-        'results' => false, 'roundup' => false, 'events' => false,
+        'results' => false, 'roundup' => false,
       ],
 
       // Priority = weight × starting-bid multiplier.
@@ -97,7 +97,7 @@ if (!function_exists('ias_settings_update')) {
   }
 }
 
-/** Is post type $type switched on? ('events' = the Facebook Event cards.) */
+/** Is post type $type switched on? */
 if (!function_exists('ias_type_on')) {
   function ias_type_on(string $type): bool {
     $types = (array) ias_setting('types', []);

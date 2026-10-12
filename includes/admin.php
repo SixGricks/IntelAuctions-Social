@@ -148,8 +148,6 @@ if (!function_exists('ias_switches_strip')) {
       $on = ias_type_on($type);
       $out .= $chip($def['short'], $on ? 'On' : 'Off', $on ? 'on' : 'off');
     }
-    $events = ias_type_on('events');
-    $out .= $chip('FB Events', $events ? 'On' : 'Off', $events ? 'on' : 'off');
     $out .= '</div>';
     return $out;
   }

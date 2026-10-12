@@ -227,7 +227,6 @@ ias_t_clock(date('Y-m-d H:i', strtotime($at) + HOUR_IN_SECONDS));
 ias_job_run();
 $sp = ias_post_get($sid);
 t_ok($sp['status'] === 'published' && !empty($sp['flags']['dry_run']), 'once its time passes it counts as published — flagged as the dry run');
-t_ok(in_array('sale-20261127', array_column(array_filter(ias_event_cards(), function ($c) use ($settle) { return $c['listing'] === $settle; }), 'key'), true), '…so its Facebook Event cards appear');
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $sid];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
 $_GET = [];
