@@ -138,3 +138,13 @@ restore_error_handler();
 t_eq([], $errors, 'no PHP notices on the screens');
 
 ias_t_claude_off();
+
+// The toolkit contract: Facebook stays the webhook's until live pushing exists and is switched on.
+ias_settings_update(['master' => true, 'dry_run' => false, 'types' => ['listing' => true]]);
+t_ok(!ia_social_facebook_managed(), 'with every switch on, Facebook stays the toolkit webhook\'s while live pushing is not built');
+t_eq(['gbp', 'facebook'], ia_social_channels(), '…so the webhook still carries Facebook');
+add_filter('ias_live_pushing_built', '__return_true');
+t_ok(ia_social_facebook_managed(), 'once live pushing exists and the switches are on, the toolkit hands Facebook over');
+t_eq(['gbp'], ia_social_channels(), '…and the webhook carries Google Business Profile only');
+remove_all_filters('ias_live_pushing_built');
+ias_settings_update(['master' => false, 'dry_run' => true, 'types' => ['listing' => false]]);

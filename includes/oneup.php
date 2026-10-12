@@ -137,3 +137,21 @@ if (!function_exists('ias_oneup_pairs')) {
     return $out;
   }
 }
+
+/**
+ * Is this plugin really posting Facebook? Only when posts can actually reach
+ * OneUp: the master switch on, dry run off, not paused, Listing posts on —
+ * and live pushing built (Phase 5; until then, never). The toolkit asks
+ * through `ia_social_facebook_managed`: while this says no, the toolkit's
+ * webhook keeps posting Facebook as before; once it says yes, the webhook
+ * carries Google Business Profile only, so nothing is posted twice.
+ */
+if (!function_exists('ias_facebook_live')) {
+  function ias_facebook_live(): bool {
+    $built = (bool) apply_filters('ias_live_pushing_built', false); // Phase 5 turns this on with the real sender
+    return $built && ias_setting('master', false) && !ias_setting('dry_run', true) && !ias_setting('paused', false) && ias_type_on('listing');
+  }
+}
+add_filter('ia_social_facebook_managed', function ($managed) {
+  return $managed || ias_facebook_live();
+});

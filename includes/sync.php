@@ -66,11 +66,17 @@ if (!function_exists('ias_candidate_opts')) {
       $installed = ias_now()->format('Y-m-d');
       update_option('ias_installed_at', $installed, false);
     }
+    // Listings with a Results post still on the plan: theirs never expires, however long it waits.
+    $results = [];
+    foreach (ias_posts_query(['type' => 'results', 'status' => ias_live_statuses(), 'limit' => 500]) as $p) {
+      foreach ((array) $p['listing_ids'] as $id) $results[] = (int) $id;
+    }
     return [
       'weights'      => (array) ias_setting('weights', []),
       'bid_tiers'    => (array) ias_setting('bid_tiers', []),
       'installed_at' => $installed,
       'live_since'   => (string) get_option('ias_live_since', ''),
+      'keep_results' => array_values(array_unique($results)),
     ];
   }
 }
@@ -123,6 +129,23 @@ if (!function_exists('ias_sync')) {
     }
     $sum['listings'] = count($facts);
     $cands = ias_build_candidates(array_values($facts), $today, ias_candidate_opts());
+    $facts_of = function (array $ids) use ($facts) {
+      return array_values(array_filter(array_map(function ($id) use ($facts) { return $facts[(int) $id] ?? null; }, $ids)));
+    };
+
+    // Approved but not yet out: the yes was for these facts about these listings. If a
+    // listing left the post (unpublished, Cancel posts, a date moved) or a fact behind it
+    // changed (a corrected price), the approval is withdrawn before anything else.
+    foreach ($cands as $key => $c) {
+      $row = ias_post_by_slot($key);
+      if (!$row || $row['status'] !== 'approved') continue;
+      $flags_meta = ['meta' => $c['meta'], 'needs' => $c['needs']];
+      $lost = array_values(array_diff(array_map('intval', $row['listing_ids']), array_map('intval', $c['listing_ids'])));
+      $hash = ias_facts_hash(['type' => $c['type'], 'flags' => array_merge($row['flags'], $flags_meta)], $facts_of($row['listing_ids']));
+      if (!$lost && ($row['facts_hash'] === '' || $hash === $row['facts_hash'])) continue;
+      ias_approval_withdraw($row, $c, $lost ? 'A listing in it is no longer part of it' : 'The listing changed');
+      $sum['updated']++;
+    }
 
     // Frozen posts (approved, pushed, published) never change listings; a listing
     // that joins their sale day later gets a post of its own.
@@ -159,21 +182,7 @@ if (!function_exists('ias_sync')) {
         }
         continue;
       }
-      if (in_array($row['status'], ['pushed', 'published', 'human'], true)) continue;
-      if ($row['status'] === 'approved') {
-        // Approved but not yet out: if the facts behind it changed, the yes was for other facts.
-        $hash = ias_facts_hash(['type' => $c['type'], 'flags' => array_merge($row['flags'], $flags_meta)], array_values(array_filter(array_map(function ($id) use ($facts) { return $facts[$id] ?? null; }, $c['listing_ids']))));
-        if ($row['facts_hash'] !== '' && $hash !== $row['facts_hash'] && $c['listing_ids'] === $row['listing_ids']) {
-          $flags = array_merge($row['flags'], $flags_meta, ['stale' => true]);
-          unset($flags['edited_by']);
-          if (function_exists('ias_approval_void')) ias_approval_void((int) $row['id']);
-          ias_post_update((int) $row['id'], ['status' => 'planned', 'flags' => $flags, 'note' => 'The listing changed after it was approved: it is rewritten and sent for approval again.', 'approved_at' => null, 'approved_by' => '']);
-          ias_post_trail((int) $row['id'], 'The listing changed after approval — back to be rewritten and approved again');
-          ias_log('planned', (int) $row['listing_id'], ['post' => (int) $row['id'], 'type' => $row['type'], 'summary' => 'Approval withdrawn: the listing changed after it was approved'], 'system');
-          $sum['updated']++;
-        }
-        continue;
-      }
+      if (in_array($row['status'], ['pushed', 'published', 'human', 'approved'], true)) continue; // approved: handled above
 
       $fields = ias_candidate_fields($c);
       $flags = array_merge($row['flags'], $flags_meta);
@@ -181,26 +190,53 @@ if (!function_exists('ias_sync')) {
       $trail = '';
       $by_system = function (string $st) use ($row) { return ($row['flags'][$st . '_by'] ?? '') === 'system'; };
 
+      $restored = ($row['flags']['restored_over'] ?? null) === $c['note']; // a person pressed Restore over this very reason
+
       if ($c['status'] === 'planned' && in_array($status, ['cancelled', 'skipped', 'dropped'], true) && $by_system($status)) {
         $trail = 'Back on the plan' . ($row['note'] !== '' ? ' (was: ' . $row['note'] . ')' : '');
         unset($flags[$status . '_by']);
-        $status = 'planned';
-        $fields['note'] = '';
+        $status = ias_back_on_plan_status(['flags' => $flags]); // a draft that stopped for a person comes back stopped
+        $fields['note'] = $status === 'held' ? 'Needs a decision: ' . (string) ($flags['holds'][0] ?? '') : '';
         $sum['revived']++;
-      } elseif ($c['status'] !== 'planned' && in_array($status, ['planned', 'held', 'waiting'], true)) {
+      } elseif ($c['status'] !== 'planned' && in_array($status, ['planned', 'held', 'waiting'], true) && !$restored) {
         $status = $c['status'];
         $flags[$status . '_by'] = 'system';
         $fields['note'] = $c['note'];
         $trail = ucfirst($status) . ': ' . $c['note'];
+        if ($row['status'] === 'waiting' && function_exists('ias_approval_void')) ias_approval_void((int) $row['id']);
+      } elseif ($c['status'] !== 'planned' && $restored) {
+        // Kept on the plan by a person. The system's window for a skipped post is its one lost day,
+        // so it gets a week from today instead (a Listing post: never later than the day before its sale).
+        if (!empty($fields['window_end']) && (string) $fields['window_end'] < $day) {
+          $end = ias_day_add($day, 7);
+          $sale = (string) ($c['meta']['sale_day'] ?? '');
+          if ($c['type'] === 'listing' && $sale !== '') $end = max($day, min($end, ias_day_add($sale, -1)));
+          $fields['window_start'] = $day;
+          $fields['window_ideal'] = $day;
+          $fields['window_end'] = $end;
+        }
       } elseif ($c['status'] === 'planned' && $status === 'planned' && $row['note'] !== '' && empty($c['needs']) && !empty($row['flags']['needs'])) {
         $fields['note'] = ''; // photos arrived: the "waiting for photos" note goes
       }
       if ($c['status'] === 'planned' && !empty($c['needs'])) $fields['note'] = $c['note'];
 
-      // The listing changed under a draft: rewrite it (or, if a person edited it, tell them).
-      if (!empty($row['content']['text']) && $row['facts_hash'] !== '' && in_array($status, ['planned', 'held', 'waiting'], true)) {
-        $hash = ias_facts_hash(['type' => $c['type'], 'flags' => $flags], array_values(array_filter(array_map(function ($id) use ($facts) { return $facts[$id] ?? null; }, $c['listing_ids']))));
-        if ($hash !== $row['facts_hash']) $flags['stale'] = true;
+      // The listing changed under a draft. One nobody touched is rewritten on the next run; one a
+      // person edited, or one already stopped for a person, stops (again) for that person.
+      if (!empty($row['content']['text']) && $row['facts_hash'] !== '' && empty($row['flags']['stale']) && in_array($status, ['planned', 'held', 'waiting'], true)) {
+        $hash = ias_facts_hash(['type' => $c['type'], 'flags' => $flags], $facts_of($c['listing_ids']));
+        if ($hash !== $row['facts_hash']) {
+          $flags['stale'] = true;
+          if ($row['status'] === 'waiting' && function_exists('ias_approval_void')) ias_approval_void((int) $row['id']); // old links must not approve old facts
+          $edited = !empty($row['flags']['edited_by']);
+          if ($edited || $status === 'held') {
+            $why = ias_stale_hold($edited);
+            $flags['holds'] = array_values(array_unique(array_merge([$why], (array) ($flags['holds'] ?? []))));
+            unset($flags['released_by']);
+            $status = 'held';
+            $fields['note'] = 'Needs a decision: ' . $why;
+            $trail = $trail !== '' ? $trail : 'Needs a decision: ' . $why;
+          }
+        }
       }
 
       $fields['flags'] = $flags;
@@ -237,6 +273,35 @@ if (!function_exists('ias_sync')) {
       $sum['cancelled']++;
     }
     return $sum;
+  }
+}
+
+/**
+ * Withdraw an approval that no longer fits: $c is the post's candidate now.
+ * The post takes the candidate's listings and window; a draft nobody edited
+ * is rewritten on the next run and sent for a fresh yes, while one a person
+ * edited stops for that person (their words are never rewritten behind their
+ * back). The old links stop working.
+ */
+if (!function_exists('ias_approval_withdraw')) {
+  function ias_approval_withdraw(array $row, array $c, string $what): void {
+    $flags = array_merge($row['flags'], ['meta' => $c['meta'], 'needs' => $c['needs'], 'stale' => true]);
+    $edited = !empty($row['flags']['edited_by']);
+    if ($edited) {
+      $why = ias_stale_hold(true);
+      $flags['holds'] = array_values(array_unique(array_merge([$why], (array) ($flags['holds'] ?? []))));
+      unset($flags['released_by']);
+    }
+    if (function_exists('ias_approval_void')) ias_approval_void((int) $row['id']);
+    ias_post_update((int) $row['id'], ias_candidate_fields($c) + [
+      'status'      => $edited ? 'held' : 'planned',
+      'flags'       => $flags,
+      'note'        => $edited ? 'Needs a decision: ' . $flags['holds'][0] : $what . ' after it was approved: it is rewritten and sent for approval again.',
+      'approved_at' => null,
+      'approved_by' => '',
+    ]);
+    ias_post_trail((int) $row['id'], $what . ' after approval — ' . ($edited ? 'it needs a decision, then a fresh yes' : 'back to be rewritten and approved again'));
+    ias_log('planned', (int) $row['listing_id'], ['post' => (int) $row['id'], 'type' => $row['type'], 'summary' => 'Approval withdrawn: ' . lcfirst($what) . ' after it was approved'], 'system');
   }
 }
 

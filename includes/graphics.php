@@ -25,10 +25,10 @@ if (!defined('IAS_DEEP'))  define('IAS_DEEP', [15, 29, 56]);    // #0f1d38
 if (!defined('IAS_SLATE')) define('IAS_SLATE', [96, 128, 143]); // #60808f
 if (!defined('IAS_MIST'))  define('IAS_MIST', [207, 224, 234]); // #cfe0ea
 
-/** Can this server draw? (GD with FreeType.) */
+/** Can this server draw? (GD with FreeType; the `ias_gd_ready` filter can say no, as the tests do.) */
 if (!function_exists('ias_gd_ready')) {
   function ias_gd_ready(): bool {
-    return function_exists('imagecreatetruecolor') && function_exists('imagettftext');
+    return (bool) apply_filters('ias_gd_ready', function_exists('imagecreatetruecolor') && function_exists('imagettftext'));
   }
 }
 

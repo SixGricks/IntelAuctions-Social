@@ -23,6 +23,9 @@ add_action('ias_calendar_action', function (string $action): void {
   if (($action === 'send_approval' || $action === 'remind') && $id > 0) {
     $_POST['ias_back'] = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]);
     if (ias_is_sunday()) { $flash('No approval emails go out on Sunday — it goes tomorrow morning.', 'warning'); return; }
+    $p = ias_post_get($id);
+    $can = $p && ($action === 'remind' ? $p['status'] === 'waiting' && empty($p['flags']['stale']) : ias_approval_ready($p));
+    if (!$can) { $flash('This post cannot be sent for approval now — it needs a decision, or its draft is being rewritten.', 'warning'); return; }
     $n = ias_approval_send($id, $action === 'remind');
     $flash($n ? 'Sent to ' . esc_html(implode(', ', ias_approvers())) . '.' : 'Nothing was sent (no approvers set, or the email failed).', $n ? 'success' : 'error');
     return;
@@ -40,10 +43,10 @@ add_action('ias_calendar_action', function (string $action): void {
 /** Approve / Send buttons on a post. */
 add_action('ias_post_view_actions', function (array $p, callable $form): void {
   if ($p['lane'] !== 'A' || empty($p['content']['text'])) return;
-  $clean = empty($p['flags']['holds']) || !empty($p['flags']['released_by']);
+  $clean = !ias_post_needs_decision($p) && empty($p['flags']['stale']); // a stale draft is rewritten first
   if (in_array($p['status'], ['planned', 'waiting'], true) && $clean) echo $form('approve', 'Approve', 'button button-primary', '', 'Approve this post? It goes on the plan at the next free time.');
   if ($p['status'] === 'planned' && $clean) echo $form('send_approval', 'Send for approval now', 'button');
-  if ($p['status'] === 'waiting') echo $form('remind', 'Send a reminder now', 'button');
+  if ($p['status'] === 'waiting' && $clean) echo $form('remind', 'Send a reminder now', 'button');
 }, 10, 2);
 
 /** Who was asked, when, and who said yes. */

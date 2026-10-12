@@ -108,8 +108,9 @@ if (!function_exists('ias_group_division')) {
 /**
  * The posts that should exist. $opts: weights (type => int), bid_tiers,
  * installed_at (Y-m-d, the day the plugin first ran), live_since (Y-m-d, the
- * day Facebook Listing posts went live through this plugin; '' = not yet).
- * Returns rows keyed by slot_key.
+ * day Facebook Listing posts went live through this plugin; '' = not yet),
+ * keep_results (listing ids whose Results post is still on the plan — those
+ * are called for however old the sale is). Returns rows keyed by slot_key.
  */
 if (!function_exists('ias_build_candidates')) {
   function ias_build_candidates(array $all, DateTimeImmutable $today_dt, array $opts): array {
@@ -118,6 +119,7 @@ if (!function_exists('ias_build_candidates')) {
     $tiers   = (array) ($opts['bid_tiers'] ?? [[0, 1.0]]);
     $installed = (string) ($opts['installed_at'] ?? $today);
     $live_since = (string) ($opts['live_since'] ?? '');
+    $keep_results = array_fill_keys(array_map('intval', (array) ($opts['keep_results'] ?? [])), true);
     $out = [];
 
     $base = function (string $type, array $facts_list, float $multiplier) use ($weights) {
@@ -222,7 +224,9 @@ if (!function_exists('ias_build_candidates')) {
       if ($f['stage'] === 'past' && $sale !== '') {
         $from = max(ias_day_add($installed, -7), ias_day_add($today, -30));
         $has_result = $f['price'] !== '' || $f['kind'] === 'liquidation';
-        if ($sale >= $from && $sale < $today && $has_result) $res_groups[$sale . ':' . ias_place_key($f)][] = $f;
+        // A Results post already on the plan never expires, however long it waits for a yes.
+        $kept = isset($keep_results[(int) $id]);
+        if (($sale >= $from || $kept) && $sale < $today && $has_result) $res_groups[$sale . ':' . ias_place_key($f)][] = $f;
       }
     }
 

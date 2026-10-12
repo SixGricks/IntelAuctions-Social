@@ -60,6 +60,15 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   every post type and the Facebook Event cards ship **off**, dry run ships **on**,
   and Pause stops every push. A change that could make a post public needs all of
   them checked on its path.
+- **The dry run keeps its own record of what it "sent"** (`dry_hash` in a post's
+  flags) and treats it like OneUp: fixed inside the veto window, a logged delete
+  when it stops being ready, and `published` with `flags.dry_run` once its time
+  passes. When Phase 5 makes pushing live, clear every `dry_hash` first, so
+  nothing counts as sent that was not.
+- **A person's decision holds.** Anything that puts a post back on the plan uses
+  `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
+  never planned); a person-edited post is never rewritten by the system — when
+  its facts change it is held with `ias_stale_hold()`.
 - **Never post on Sunday, never send an approval email or reminder on Sunday.**
   Times are the site's time zone (`ia_wp_tz()`), always.
 - **Field names** resolve through the toolkit's helpers (`ia_acf_field_*`); the

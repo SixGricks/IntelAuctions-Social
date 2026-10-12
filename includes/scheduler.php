@@ -40,12 +40,14 @@ if (!defined('ABSPATH')) exit;
  *   guaranteed (bool), lane ('A'|'B'), approved (bool),
  *   start, ideal, end (Y-m-d; end null = open-ended), hard_end (Y-m-d|null: never after this, even late),
  *   fixed_at ('Y-m-d H:i' — fixed in place) or current_at ('Y-m-d H:i' — where it is now), pushed (bool:
- *   on the OneUp calendar already, so only moved when something forces it), after (keys that must come first).
+ *   on the OneUp calendar already, so only moved when something forces it), after (keys that must come first),
+ *   blocked (reason: not to be placed yet — it waits for something else).
  * $cfg: now (DateTimeImmutable, site time), cap, min, gap (minutes), lead (minutes, Lane B floor),
  *   lead_a (minutes, approved Lane A floor), days (plan horizon), slots ([[start, end] minutes]),
  *   slot_order (slot indexes, best first), jitter (minutes), late_days.
  * Returns ['at' => key => 'Y-m-d H:i', 'dropped' => key => reason, 'late' => key => reason,
- *   'relaxed' => key => reason, 'unplaced' => key => reason, 'later' => key => reason (window opens after the plan)].
+ *   'relaxed' => key => reason, 'unplaced' => key => reason, 'later' => key => reason (window opens after the plan),
+ *   'blocked' => key => reason (waits for something else)].
  */
 if (!function_exists('ias_schedule')) {
   function ias_schedule(array $posts, array $cfg): array {
@@ -90,7 +92,7 @@ if (!function_exists('ias_schedule')) {
 
     $placed = []; // day => [key]
     $day_of = []; // key => day
-    $out = ['at' => [], 'dropped' => [], 'late' => [], 'relaxed' => [], 'unplaced' => [], 'later' => []];
+    $out = ['at' => [], 'dropped' => [], 'late' => [], 'relaxed' => [], 'unplaced' => [], 'later' => [], 'blocked' => []];
 
     $on_day = function (string $d) use (&$placed, &$fixed) {
       $keys = $placed[$d] ?? [];
@@ -255,6 +257,10 @@ if (!function_exists('ias_schedule')) {
     while ($queue) {
       $k = array_shift($queue);
       $p = $P[$k];
+      if (!empty($p['blocked'])) {
+        $out['blocked'][$k] = (string) $p['blocked'];
+        continue;
+      }
       if ((string) ($p['start'] ?? '') > $horizon) {
         $out['later'][$k] = 'Its window opens after the ' . ($cfg['days'] ?? 30) . '-day plan.';
         continue;
@@ -381,7 +387,10 @@ if (!function_exists('ias_free_minute')) {
  * $lead is the Lane B floor in minutes. Pure.
  *
  *   fixed   — published and human posts, posts locked by an edit in OneUp, and
- *             posts already on the OneUp calendar inside the veto window;
+ *             posts already sent inside the veto window (on the OneUp calendar —
+ *             or, in the dry run, logged as sent: `dry_hash`);
+ *   blocked — a property's Open House and Auction Week posts while its Listing
+ *             post waits for photos (the Listing post comes first);
  *   left out — skipped and cancelled posts, posts dropped for want of a window,
  *             listings still waiting for photos, and anything with no day yet.
  */
@@ -389,6 +398,12 @@ if (!function_exists('ias_engine_posts')) {
   function ias_engine_posts(array $rows, DateTimeImmutable $now, int $lead): array {
     $floor = $now->modify('+' . $lead . ' minutes')->format('Y-m-d H:i');
     $today = $now->format('Y-m-d');
+    $no_photos = []; // listing id => true while its Listing post waits for photos
+    foreach ($rows as $r) {
+      if ($r['type'] === 'listing' && !empty($r['flags']['needs']) && in_array((string) $r['status'], ['planned', 'held', 'waiting'], true)) {
+        foreach ((array) $r['listing_ids'] as $lid) $no_photos[(int) $lid] = true;
+      }
+    }
     $in = [];
     foreach ($rows as $r) {
       $status = (string) $r['status'];
@@ -398,9 +413,10 @@ if (!function_exists('ias_engine_posts')) {
         if (!in_array($status, ['published', 'human'], true)) continue;
       }
       $at = !empty($r['scheduled_at']) ? substr((string) $r['scheduled_at'], 0, 16) : '';
+      $sent = $status === 'pushed' || !empty($r['flags']['dry_hash']);
       $fixed = '';
       if (in_array($status, ['published', 'human'], true) || !empty($r['locked'])) $fixed = $at;
-      elseif ($status === 'pushed' && $at !== '' && $at < $floor) $fixed = $at; // inside the veto window: it stays
+      elseif ($sent && $at !== '' && $at < $floor) $fixed = $at; // sent and inside the veto window: it stays
       if ($fixed === '' && in_array($status, ['published', 'human'], true)) continue;
       if ($fixed !== '' && substr($fixed, 0, 10) < $today) continue; // already behind us
       $meta = (array) ($r['flags']['meta'] ?? []);
@@ -422,9 +438,14 @@ if (!function_exists('ias_engine_posts')) {
         'hard_end'   => ($r['type'] === 'listing' && $sale !== '') ? ias_day_add($sale, -1) : null,
         'fixed_at'   => $fixed !== '' ? $fixed : null,
         'current_at' => $fixed === '' && $at !== '' ? $at : null,
-        'pushed'     => $status === 'pushed',
+        'pushed'     => $sent,
         'after'      => [],
       ];
+      if ($fixed === '' && in_array($r['type'], ['open_house', 'auction_week'], true)) {
+        foreach ((array) $r['listing_ids'] as $lid) {
+          if (isset($no_photos[(int) $lid])) $in[$r['slot_key']]['blocked'] = 'Waits for its Listing post, which is waiting for photos — the Listing post goes first.';
+        }
+      }
     }
     // A property's Open House and Auction Week posts come after its Listing post.
     foreach ($in as $k => $p) {

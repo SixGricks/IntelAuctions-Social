@@ -29,11 +29,11 @@ if (!defined('ABSPATH')) exit;
 
 if (!defined('IAS_APPROVAL_DAYS')) define('IAS_APPROVAL_DAYS', 4);
 
-/** Lane A posts that can be sent for approval: a draft, no holds, not yet asked or answered. */
+/** Lane A posts that can be sent for approval: a draft of today's facts, no holds, not yet asked or answered. */
 if (!function_exists('ias_approval_ready')) {
   function ias_approval_ready(array $p): bool {
     return $p['lane'] === 'A' && $p['status'] === 'planned' && !empty($p['content']['text'])
-      && (empty($p['flags']['holds']) || !empty($p['flags']['released_by']));
+      && !ias_post_needs_decision($p) && empty($p['flags']['stale']);
   }
 }
 
@@ -84,7 +84,8 @@ if (!function_exists('ias_approval_tokens')) {
 /**
  * Check a link: ['ok' => bool, 'reason' => code, 'email' => approver, 'post' => row].
  * Reasons: no_post, bad (unknown or altered), used, expired, replaced (the
- * post's words changed after the email), decided (the post was already
+ * post's words changed after the email), changed (a fact behind it changed
+ * after the email: it is being rewritten), decided (the post was already
  * approved or is no longer waiting).
  */
 if (!function_exists('ias_approval_check')) {
@@ -94,8 +95,10 @@ if (!function_exists('ias_approval_check')) {
     $hash = hash('sha256', $token);
     foreach ((array) ($p['approvals']['tokens'] ?? []) as $t) {
       if (!hash_equals((string) $t['h'], $hash)) continue;
-      if (!empty($t['void'])) return ['ok' => false, 'reason' => 'replaced', 'post' => $p, 'email' => $t['email']];
+      $stale = !empty($p['flags']['stale']) && in_array($p['status'], ['waiting', 'planned'], true);
+      if (!empty($t['void'])) return ['ok' => false, 'reason' => $stale ? 'changed' : 'replaced', 'post' => $p, 'email' => $t['email']];
       if (!empty($t['used'])) return ['ok' => false, 'reason' => $p['status'] === 'waiting' ? 'used' : 'decided', 'post' => $p, 'email' => $t['email']];
+      if ($stale) return ['ok' => false, 'reason' => 'changed', 'post' => $p, 'email' => $t['email']];
       if ($p['status'] !== 'waiting') return ['ok' => false, 'reason' => 'decided', 'post' => $p, 'email' => $t['email']];
       if ((int) $t['exp'] < time()) return ['ok' => false, 'reason' => 'expired', 'post' => $p, 'email' => $t['email']];
       return ['ok' => true, 'reason' => '', 'post' => $p, 'email' => $t['email']];
@@ -117,7 +120,8 @@ if (!function_exists('ias_approve')) {
     if (!in_array($p['status'], ['waiting', 'planned'], true) || $p['lane'] !== 'A' || empty($p['content']['text'])) {
       return ['ok' => false, 'message' => 'This post cannot be approved now (it is ' . (ias_statuses()[$p['status']]['label'] ?? $p['status']) . ').'];
     }
-    if (!empty($p['flags']['holds']) && empty($p['flags']['released_by'])) return ['ok' => false, 'message' => 'This draft needs a decision first: ' . implode(' ', (array) $p['flags']['holds'])];
+    if (ias_post_needs_decision($p)) return ['ok' => false, 'message' => 'This draft needs a decision first: ' . implode(' ', (array) $p['flags']['holds'])];
+    if (!empty($p['flags']['stale'])) return ['ok' => false, 'message' => 'A fact behind this draft changed after it was written, so it is being rewritten. Approve the new version — it comes in its own email.'];
 
     $a = $p['approvals'];
     foreach ((array) ($a['tokens'] ?? []) as $i => $t) $a['tokens'][$i]['used'] = 1;
@@ -221,7 +225,7 @@ if (!function_exists('ias_approvals_run')) {
         if (ias_approval_send((int) $p['id'], false)) $out['requests']++;
         continue;
       }
-      if ($p['status'] !== 'waiting' || !$morning) continue;
+      if ($p['status'] !== 'waiting' || !$morning || !empty($p['flags']['stale'])) continue; // a stale draft is being rewritten: its new version brings its own email
       $sent = (array) ($p['approvals']['sent'] ?? []);
       $last = $sent ? substr((string) end($sent)['at'], 0, 10) : '';
       if ($last < $today && ias_approval_send((int) $p['id'], true)) $out['reminders']++;
@@ -266,12 +270,16 @@ if (!function_exists('ias_approval_response')) {
         'bad'      => ['This link does not work', 'It may have been copied incompletely or changed. Nothing was approved. Use the newest email, or open the post in WordPress.'],
         'used'     => ['This link was already used', 'Each link works once. Nothing was changed.'],
         'replaced' => ['This post was changed since this email', 'Its words were edited or rewritten, so this link no longer approves it. Nothing was approved — the new version comes in its own email.'],
+        'changed'  => ['The listing changed since this email', 'A fact behind this post (a date, a price…) changed after it was written, so this version can no longer be approved. Nothing was approved — the corrected version comes in its own email.'],
         'expired'  => ['This link has expired', 'Links last ' . IAS_APPROVAL_DAYS . ' days. Nothing was approved — the post is still waiting. The next morning\'s reminder brings a new link, or open it in WordPress.'],
         'decided'  => ['Already decided', $p && $p['status'] === 'approved'
           ? 'It was approved by ' . esc_html((string) $p['approved_by']) . ' on ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $p['approved_at']))) . ' — the first yes wins. Nothing else to do.'
           : 'This post is no longer waiting for approval (it is ' . esc_html((string) (ias_statuses()[$p['status'] ?? '']['label'] ?? ($p['status'] ?? ''))) . '). Nothing was changed.'],
       ][$check['reason']] ?? ['This link does not work', 'Nothing was approved.'];
-      ias_log('approved', $p ? (int) $p['listing_id'] : 0, ['post' => $post_id, 'summary' => 'Approval link refused: ' . $check['reason'], 'refused' => $check['reason']], (string) ($check['email'] ?? 'link'));
+      // Only a real approver's link is worth a log line; unknown and altered links are anyone's (and could flood the shared log).
+      if (!in_array($check['reason'], ['bad', 'no_post'], true)) {
+        ias_log('approved', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Approval link refused: ' . $check['reason'], 'refused' => $check['reason']], (string) ($check['email'] ?? 'link'));
+      }
       return ['title' => $msg[0], 'body' => '<p>' . $msg[1] . '</p><p>' . ($check['reason'] === 'no_post' ? '' : $edit) . '</p>', 'status' => $check['reason'] === 'bad' ? 403 : 200, 'reason' => $check['reason']];
     }
 
@@ -344,7 +352,7 @@ if (!function_exists('ias_review_email')) {
       foreach ($week as $p) {
         $when = ias_post_when($p);
         $html .= '<tr style="border-bottom:1px solid #f0f0f1"><td style="white-space:nowrap;vertical-align:top">' . esc_html($when ? date_i18n(!empty($p['scheduled_at']) ? 'D M j, g:i a' : 'D M j', strtotime($when->format('Y-m-d H:i:s'))) : '') . '</td>'
-          . '<td>' . $link($p) . '</td><td style="white-space:nowrap">' . esc_html(ias_statuses()[$p['status']]['label'] ?? $p['status']) . '</td></tr>';
+          . '<td>' . $link($p) . '</td><td style="white-space:nowrap">' . esc_html((ias_statuses()[$p['status']]['label'] ?? $p['status']) . (!empty($p['flags']['dry_run']) ? ' (dry run)' : '')) . '</td></tr>';
       }
       $html .= '</table>';
     }

@@ -209,6 +209,14 @@ if (!function_exists('ias_media_image')) {
   }
 }
 
+/** A listing's one best photo: its featured image, else the best-graded wide shot (0 = none). */
+if (!function_exists('ias_media_best_photo')) {
+  function ias_media_best_photo(array $f): int {
+    if ((int) $f['featured'] > 0) return (int) $f['featured'];
+    return (int) (ias_pick_photos(ias_photo_grades((array) $f['photos']), 'auction_week', [])[0] ?? 0);
+  }
+}
+
 /** A generated graphic as an image entry. */
 if (!function_exists('ias_media_graphic')) {
   function ias_media_graphic(array $g): array {
@@ -239,7 +247,15 @@ if (!function_exists('ias_media_for_post')) {
 
     if ($type === 'roundup') {
       $g = ias_graphic_collage($facts_list, $slug . '-' . substr(md5((string) wp_json_encode(array_column($facts_list, 'id')) . wp_json_encode(array_column($facts_list, 'brochure'))), 0, 8));
-      if ($g) $media['images'][] = ias_media_graphic($g);
+      if ($g) {
+        $media['images'][] = ias_media_graphic($g);
+      } else {
+        // No collage (no GD on this server): the brochure covers themselves, else each listing's best photo.
+        foreach ($facts_list as $f) {
+          $pick = (int) $f['brochure'] > 0 ? (int) $f['brochure'] : ias_media_best_photo($f);
+          if ($pick > 0 && count($media['images']) < 10) $media['images'][] = ias_media_image($pick, $f);
+        }
+      }
       return $media;
     }
 
@@ -257,11 +273,20 @@ if (!function_exists('ias_media_for_post')) {
       $sold_on = !empty($facts_list[0]['date']) ? $facts_list[0]['date']->format('F j, Y') : '';
       if ($items) {
         $g = ias_graphic_results($items, $sold_on, $slug . '-' . substr(md5((string) wp_json_encode($items)), 0, 8));
-        if ($g) $media['images'][] = ias_media_graphic($g);
+        if ($g) {
+          $media['images'][] = ias_media_graphic($g);
+        } else {
+          // No graphic (no GD on this server): each sold property's plain photo — the price is in the words.
+          foreach ($facts_list as $f) {
+            if ($f['price'] === '' || $f['kind'] === 'liquidation') continue;
+            $pick = ias_media_best_photo($f);
+            if ($pick > 0 && count($media['images']) < 10) $media['images'][] = ias_media_image($pick, $f);
+          }
+        }
       } else {
         // A liquidation's thank-you: a plain photo, never a price.
         $f = $facts_list[0];
-        $pick = $f['featured'] > 0 ? (int) $f['featured'] : (int) (ias_pick_photos(ias_photo_grades($f['photos']), 'auction_week', [])[0] ?? 0);
+        $pick = ias_media_best_photo($f);
         if ($pick > 0) $media['images'][] = ias_media_image($pick, $f);
       }
       return $media;

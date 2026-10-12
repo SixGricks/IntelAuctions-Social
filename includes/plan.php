@@ -7,8 +7,8 @@
  * each post's day and time, the posts dropped and why, the ones running late.
  * Then the pushes: every post scheduled in the next 21 days that is ready —
  * a Lane B post with a clean draft, or a Lane A post someone approved — is
- * rendered for OneUp, and every post that left the plan after going out is
- * taken back. In this version that is a dry run: each request is written to
+ * rendered for OneUp, and every post that went out and is no longer ready
+ * is taken back. In this version that is a dry run: each request is written to
  * the log (`ias.dryrun`) once, when it is new or has changed, with what would
  * stop it really being sent. **Plan now** on the calendar runs it at once.
  *
@@ -29,7 +29,7 @@ if (!function_exists('ias_plan_run')) {
     $by_key = [];
     foreach ($rows as $r) $by_key[$r['slot_key']] = $r;
     $plan = ias_schedule(ias_engine_posts($rows, $now, 60 * (int) $s['lead_hours']), ias_engine_cfg($s, $now));
-    $sum = ['placed' => 0, 'moved' => 0, 'dropped' => 0, 'reinstated' => 0, 'late' => 0, 'relaxed' => 0, 'unplaced' => 0];
+    $sum = ['placed' => 0, 'moved' => 0, 'dropped' => 0, 'reinstated' => 0, 'late' => 0, 'relaxed' => 0, 'unplaced' => 0, 'blocked' => 0];
     $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
 
     foreach ($plan['at'] as $key => $at) {
@@ -39,10 +39,14 @@ if (!function_exists('ias_plan_run')) {
       $old = (string) ($r['scheduled_at'] ?? '');
       $fields = [];
       $flags = $r['flags'];
+      if (!empty($flags['plan_note'])) { // the plan's own note ("waits for…", "could not be placed") goes once it is placed
+        if ((string) $r['note'] === (string) $flags['plan_note']) $fields['note'] = '';
+        unset($flags['plan_note']);
+      }
       if ($r['status'] === 'dropped') {
-        $fields['status'] = 'planned';
         unset($flags['dropped_by']);
-        $fields['note'] = '';
+        $fields['status'] = ias_back_on_plan_status(['flags' => $flags]); // a draft that stopped for a person comes back stopped
+        $fields['note'] = $fields['status'] === 'held' ? 'Needs a decision: ' . (string) ($flags['holds'][0] ?? '') : '';
         ias_post_trail((int) $r['id'], 'Back on the plan: room opened up on ' . $fmt($at), $actor);
         ias_log('planned', (int) $r['listing_id'], ['post' => (int) $r['id'], 'type' => $r['type'], 'summary' => 'Back on the plan for ' . $fmt($at)], $actor);
         $sum['reinstated']++;
@@ -83,12 +87,17 @@ if (!function_exists('ias_plan_run')) {
       if ($r['status'] === 'pushed') do_action('ias_post_cancelled', (int) $r['id'], $r);
       $sum['dropped']++;
     }
-    foreach ($plan['unplaced'] as $key => $why) {
-      $r = $by_key[$key] ?? null;
-      if (!$r) continue;
-      ias_post_update((int) $r['id'], ['note' => $why]);
-      ias_log('late', (int) $r['listing_id'], ['post' => (int) $r['id'], 'type' => $r['type'], 'summary' => 'Could not be placed: ' . $why], $actor);
-      $sum['unplaced']++;
+    // Posts the plan could not place lose their old time, so nothing goes out at a time the plan no longer holds.
+    foreach (['unplaced' => 'Could not be placed: ', 'blocked' => ''] as $what => $prefix) {
+      foreach ($plan[$what] ?? [] as $key => $why) {
+        $r = $by_key[$key] ?? null;
+        if (!$r) continue;
+        $flags = $r['flags'];
+        $flags['plan_note'] = $why;
+        ias_post_update((int) $r['id'], ['note' => $why, 'flags' => $flags, 'scheduled_at' => null]);
+        if ((string) $r['note'] !== $why) ias_log('late', (int) $r['listing_id'], ['post' => (int) $r['id'], 'type' => $r['type'], 'summary' => $prefix . $why], $actor);
+        $sum[$what] = ($sum[$what] ?? 0) + 1;
+      }
     }
     foreach ($plan['later'] as $key => $why) {
       $r = $by_key[$key] ?? null;
@@ -116,7 +125,7 @@ if (!function_exists('ias_push_ready')) {
   function ias_push_ready(array $p): string {
     if (empty($p['scheduled_at'])) return 'no time yet';
     if (empty($p['content']['text'])) return 'no draft yet';
-    if ($p['status'] === 'held') return 'it needs a decision';
+    if ($p['status'] === 'held' || ias_post_needs_decision($p)) return 'it needs a decision';
     if (!empty($p['flags']['stale'])) return 'the listing changed and the draft has not been rewritten yet';
     if ($p['lane'] === 'A' && $p['status'] !== 'approved') return 'it is waiting for approval';
     if (!in_array($p['status'], ['planned', 'approved', 'pushed'], true)) return 'it is ' . $p['status'];
@@ -126,24 +135,52 @@ if (!function_exists('ias_push_ready')) {
 
 /**
  * Bring OneUp in line with the plan for the next `push_days` days: create new
- * posts, re-create moved or changed ones, delete ones that left the plan. In a
- * dry run each request is logged once per change; in this version a dry run
- * is the only mode (live pushing is Phase 5).
+ * posts, re-create moved or changed ones, delete ones that are no longer
+ * ready or left the plan. In a dry run each request is logged once per
+ * change; in this version a dry run is the only mode (live pushing is Phase 5).
+ *
+ * The dry run keeps its own record of what it "sent" (`dry_hash`), and treats
+ * it the way live pushing will treat OneUp: a post sent and inside the veto
+ * window is fixed in place (scheduler.php), a post sent and no longer ready —
+ * stale, held, its approval withdrawn, moved off the plan or out of reach —
+ * is taken back, and a post whose time came while it was sent counts as
+ * published (flagged `dry_run`: nothing went anywhere). So the plan settles
+ * the way it will when it is live. A Lane B post never sent goes out only
+ * while its time is still outside the veto window; otherwise it waits for the
+ * next morning's plan to give it a later one.
+ *
+ * Phase 5: when pushing goes live, `dry_hash` must be cleared first, so that
+ * nothing counts as sent that was not.
  */
 if (!function_exists('ias_push_run')) {
   function ias_push_run(): array {
-    $out = ['dryrun' => 0, 'deleted' => 0, 'skipped' => []];
+    $out = ['dryrun' => 0, 'deleted' => 0, 'published' => 0, 'skipped' => []];
     if (!ias_db_ready()) return $out;
     $now = ias_now();
     $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
     $nowsql = $now->format('Y-m-d H:i:s');
+    $floor_b = $now->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:00');
+    $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
 
     foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
       if ($p['type'] === 'human') continue;
       $flags = $p['flags'];
       $sent = (string) ($flags['dry_hash'] ?? '');
-      $in_range = !empty($p['scheduled_at']) && $p['scheduled_at'] >= $nowsql && $p['scheduled_at'] <= $until;
+      $at = (string) ($p['scheduled_at'] ?? '');
+
+      // Its time came while it was out: it went out.
+      if ($sent !== '' && $at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'held', 'waiting', 'approved'], true)) {
+        $flags['dry_run'] = true;
+        ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'note' => 'Its time came in the dry run: it counts as published, but nothing was sent to OneUp.']);
+        ias_post_trail((int) $p['id'], 'Its time came (dry run — nothing was sent)');
+        ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Would have been published on ' . $fmt($at) . ' — nothing was sent.']);
+        $out['published']++;
+        continue;
+      }
+
+      $in_range = $at !== '' && $at >= $nowsql && $at <= $until;
       $why_not = ias_push_ready($p);
+      if ($why_not === '' && $sent === '' && $p['lane'] !== 'A' && $at !== '' && $at < $floor_b) $why_not = 'its time is inside the 48-hour veto window';
 
       if ($in_range && $why_not === '') {
         $req = ias_render_facebook($p);
@@ -154,19 +191,19 @@ if (!function_exists('ias_push_run')) {
         ias_post_update((int) $p['id'], ['flags' => $flags]);
         ias_log('dryrun', (int) $p['listing_id'], [
           'post' => (int) $p['id'], 'type' => $p['type'],
-          'summary' => ($sent !== '' ? 'Would replace on OneUp (changed or moved)' : 'Would schedule on OneUp') . ' for ' . date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) . ' — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
+          'summary' => ($sent !== '' ? 'Would replace on OneUp (changed or moved)' : 'Would schedule on OneUp') . ' for ' . $fmt($at) . ' — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
           'payload' => count($calls) === 1 ? $calls[0] : $calls,
         ]);
         $out['dryrun']++;
         continue;
       }
-      // It went out (in the dry run's sense) and has since left the plan: take it back.
-      if ($sent !== '' && in_array($p['status'], ['dropped', 'skipped', 'cancelled'], true)) {
+      // It went out (in the dry run's sense) and is no longer ready, or left the next push_days days: take it back.
+      if ($sent !== '') {
         unset($flags['dry_hash']);
         ias_post_update((int) $p['id'], ['flags' => $flags]);
         ias_log('dryrun', (int) $p['listing_id'], [
           'post' => (int) $p['id'], 'type' => $p['type'],
-          'summary' => 'Would delete from OneUp (' . $p['status'] . ') — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
+          'summary' => 'Would delete from OneUp (' . ($why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days') . ') — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
           'payload' => ias_render_delete($p),
         ]);
         $out['deleted']++;
@@ -188,6 +225,7 @@ add_filter('ias_job_run', function (array $result): array {
   $push = ias_push_run();
   $result['push'] = $push;
   if ($push['dryrun'] || $push['deleted']) $result['parts'][] = 'dry run: ' . ($push['dryrun'] + $push['deleted']) . ' payloads logged';
+  if ($push['published']) $result['parts'][] = 'dry run: ' . $push['published'] . ' would have gone out';
   return $result;
 }, 10);
 

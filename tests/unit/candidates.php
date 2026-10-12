@@ -110,3 +110,10 @@ t_eq(['2026-11-06', '2026-11-06', '2026-11-07'], [$ru['window_start'], $ru['wind
 t_eq([41, 44, 42], $ru['listing_ids'], 'roundup names this week\'s announcements, soonest sale first, undated last');
 t_ok($ru['lane'] === 'A' && $ru['guaranteed'], 'roundup: lane A, guaranteed');
 t_ok(!isset($c['listing:41']), 'no individual post for a Recently Announced listing');
+
+// Results: from a week before install, for 30 days — but one already on the plan never expires.
+$past = $listing(['id' => 51, 'stage' => 'past', 'sale' => '2026-11-07', 'price' => '$425,000', 'town' => 'Narvon']);
+$late = $dt('2026-12-08 05:00'); // 31 days after the sale
+t_ok(isset(ias_build_candidates([$past], $dt('2026-12-07 05:00'), $opts)['results:2026-11-07:narvon']), 'a Results post is called for 30 days after the sale');
+t_eq([], ias_build_candidates([$past], $late, $opts), '…and not after, when none was ever planned (a price entered weeks late)');
+t_ok(isset(ias_build_candidates([$past], $late, $opts + ['keep_results' => [51]])['results:2026-11-07:narvon']), 'but one already on the plan, still waiting for a yes, never expires');

@@ -90,6 +90,34 @@ if (!function_exists('ias_live_statuses')) {
   }
 }
 
+/**
+ * Does this post wait for a person? It has reasons it stopped (`holds`) and
+ * nobody has pressed Keep as written since. Whatever brings a post back onto
+ * the plan brings such a post back as Needs a decision, never as Planned.
+ */
+if (!function_exists('ias_post_needs_decision')) {
+  function ias_post_needs_decision(array $p): bool {
+    $flags = (array) ($p['flags'] ?? []);
+    return !empty($flags['holds']) && empty($flags['released_by']);
+  }
+}
+
+/** The status a post returns to when it comes back onto the plan. */
+if (!function_exists('ias_back_on_plan_status')) {
+  function ias_back_on_plan_status(array $p): string {
+    return ias_post_needs_decision($p) ? 'held' : 'planned';
+  }
+}
+
+/** The reason a draft stops when its listing changed and only a person may rewrite it. */
+if (!function_exists('ias_stale_hold')) {
+  function ias_stale_hold(bool $edited): string {
+    return $edited
+      ? 'The listing changed after a person edited this post — check the words against the listing, then save them (or press Rewrite).'
+      : 'The listing changed after this draft was written — check it against the listing, or press Rewrite.';
+  }
+}
+
 if (!function_exists('ias_status_badge')) {
   function ias_status_badge(string $status): string {
     $all = ias_statuses();

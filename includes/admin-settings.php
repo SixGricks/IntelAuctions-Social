@@ -166,6 +166,7 @@ if (!function_exists('ias_settings_render')) {
         . ($help !== '' ? '<br><span class="description">' . $help . '</span>' : '');
     };
     $num = function (string $name, $value, int $min, int $max, string $after = '') {
+      $value = max($min, min($max, (int) $value)); // a stored value out of range must never make the form unsaveable
       return '<input type="number" name="' . esc_attr($name) . '" value="' . esc_attr((string) $value) . '" min="' . $min . '" max="' . $max . '" class="small-text"> ' . $after;
     };
 

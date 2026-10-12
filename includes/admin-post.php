@@ -56,11 +56,13 @@ add_action('ias_calendar_action', function (string $action): void {
       $flags['edited_by'] = $actor;
       $flags['holds'] = $check['holds'];
       $flags['fixes'] = $check['fixes'];
-      unset($flags['stale']);
+      unset($flags['stale'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
       $status = $check['holds'] ? 'held' : ($p['status'] === 'held' ? 'planned' : $p['status']);
       if (in_array($p['status'], ['waiting', 'approved'], true) && !$check['holds']) $status = 'planned'; // changed words need a fresh yes
       if (in_array($p['status'], ['waiting', 'approved'], true) && function_exists('ias_approval_void')) ias_approval_void($id); // old links must not approve new words
-      ias_post_update($id, ['content' => $content, 'flags' => $flags, 'status' => $status, 'note' => $check['holds'] ? 'Needs a decision: ' . $check['holds'][0] : '']);
+      $update = ['content' => $content, 'flags' => $flags, 'status' => $status, 'note' => $check['holds'] ? 'Needs a decision: ' . $check['holds'][0] : '', 'facts_hash' => ias_facts_hash($p, ias_post_facts($p))];
+      if ($p['status'] === 'approved') $update += ['approved_at' => null, 'approved_by' => ''];
+      ias_post_update($id, $update);
       ias_history_forget_post($id, ['opener']);
       ias_history_add('opener', $content['opener'], (int) $p['listing_id'], $id);
       ias_post_trail($id, 'Text edited' . ($check['holds'] ? ' — still needs a decision: ' . $check['holds'][0] : ''), $actor);
@@ -101,9 +103,11 @@ add_action('ias_calendar_action', function (string $action): void {
     case 'restore':
       if (!in_array($p['status'], ['skipped', 'cancelled', 'dropped'], true)) return;
       $flags = $p['flags'];
+      // Restoring over the system's reason ("Facebook already got it", "photos never arrived"): the sync leaves it be.
+      if (($flags[$p['status'] . '_by'] ?? '') === 'system') $flags['restored_over'] = (string) $p['note'];
       unset($flags['skipped_by'], $flags['cancelled_by'], $flags['dropped_by']);
-      $status = !empty($flags['holds']) && empty($flags['released_by']) ? 'held' : 'planned';
-      ias_post_update($id, ['status' => $status, 'flags' => $flags, 'note' => '']);
+      $status = ias_back_on_plan_status(['flags' => $flags]);
+      ias_post_update($id, ['status' => $status, 'flags' => $flags, 'note' => $status === 'held' ? 'Needs a decision: ' . (string) ($flags['holds'][0] ?? '') : '']);
       ias_post_trail($id, 'Restored to the plan', $actor);
       ias_log('planned', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Restored to the plan'], $actor);
       $flash('Back on the plan.');
@@ -113,7 +117,8 @@ add_action('ias_calendar_action', function (string $action): void {
       if ($p['status'] !== 'held' || empty($p['content']['text'])) return;
       $flags = $p['flags'];
       $flags['released_by'] = $actor;
-      ias_post_update($id, ['status' => 'planned', 'flags' => $flags, 'note' => 'Kept as written by ' . $actor]);
+      unset($flags['stale']); // the reasons it stopped include the listing having changed: kept as written over that too
+      ias_post_update($id, ['status' => 'planned', 'flags' => $flags, 'note' => 'Kept as written by ' . $actor, 'facts_hash' => ias_facts_hash($p, ias_post_facts($p))]);
       ias_post_trail($id, 'Kept as written despite: ' . implode(' ', (array) ($flags['holds'] ?? [])), $actor);
       ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Kept as written despite the hold'], $actor);
       do_action('ias_post_released', $id);
@@ -139,10 +144,10 @@ add_action('ias_post_view_main', function (array $p): void {
     foreach ((array) $flags['holds'] as $h) echo '<li>' . esc_html((string) $h) . '</li>';
     echo '</ul><p>Edit the text below, rewrite it, skip it — or, if it is right as it is, keep it as written.</p></div>';
   }
-  if (!empty($flags['stale'])) {
+  if (!empty($flags['stale']) && $p['status'] !== 'held') {
     echo '<div class="notice notice-warning inline"><p>' . (!empty($flags['edited_by'])
-      ? 'The listing changed since <strong>' . esc_html((string) $flags['edited_by']) . '</strong> edited this post. Check the text, or press Rewrite.'
-      : 'The listing changed since this draft was written; it is rewritten on the next run.') . '</p></div>';
+      ? 'The listing changed since <strong>' . esc_html((string) $flags['edited_by']) . '</strong> edited this post. Check the text and save it, or press Rewrite.'
+      : 'The listing changed since this draft was written; it is rewritten on the next run, and goes nowhere until then.') . '</p></div>';
   }
   if (!empty($flags['fixes'])) {
     echo '<p class="description">' . esc_html(implode(' ', (array) $flags['fixes'])) . '</p>';

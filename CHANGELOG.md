@@ -1,5 +1,50 @@
 # Intel Auctions Social changelog
 
+## 0.4.2 (2026-10-12) — a person's decision holds, and the plan settles
+From an independent review of 0.4.1; each fix has a test that fails on 0.4.1
+(`tests/wp/05-decisions.php`, `tests/unit/engine.php`).
+- **A draft that stopped for a person stays stopped.** Its reasons alone keep
+  it from being pushed, and being dropped and brought back, revived by the
+  sync, or restored brings it back as Needs a decision, never as Planned. An
+  edit clears any old Keep as written.
+- **Edits count.** Saving a post's text (or Keep as written) records that it
+  was checked against the listing as it is now, so "the listing changed" no
+  longer comes back for good. If the listing changes after a person edited a
+  post — even an approved one — it stops for that person instead of being
+  rewritten behind their back.
+- **The dry run settles.** A post it logged counts as sent: inside the 48 hours
+  it is fixed in place (no more moving every Lane B post back a day every
+  morning, and no "would replace" a day in the log), and once its time passes
+  it counts as published, marked dry run on the calendar, the listing panel and
+  the Monday email — so its Facebook Event cards appear.
+- **Pushes check again.** A Lane B post never sent goes only while its time is
+  still 48 hours away (one released late waits for the next plan); a sent post
+  that stops being ready — held, stale, its approval withdrawn, moved past the
+  push range — gets a logged delete; a post the plan can't place loses its old
+  time.
+- An approved roundup or Results post that loses a listing (one of two
+  same-day sales unpublished) loses its approval and is rewritten, like one
+  whose facts changed; the listings are compared as sets.
+- **Results never expire:** a Results post on the plan is no longer cancelled
+  30 days after the sale.
+- **Restore** over a skip the plugin made itself (the webhook already posted
+  it; photos never arrived) sticks, with a week from today to go out.
+- **Open House and Auction Week posts wait** while their Listing post waits for
+  photos, so they never go first.
+- **Approval links for out-of-date facts** are refused ("the listing changed
+  since this email"): a waiting post whose facts change has its links voided,
+  gets no reminder, and cannot be approved until it is rewritten.
+- Refused approval links that belong to no approver are no longer logged (an
+  anonymous loop could have filled the shared log).
+- Without GD, a priced Results post goes out with each property's plain photo
+  and the roundup with the brochure covers (it went out with no picture).
+- The toolkit contract is wired: `ia_social_facebook_managed` answers yes only
+  when posts can really reach OneUp (live pushing built — Phase 5 — master on,
+  dry run off, not paused, Listing posts on), so the toolkit's webhook keeps
+  posting Facebook until then and stops the moment this plugin takes over.
+- A stored setting outside its field's range is shown clamped, so it can never
+  make the Settings form unsaveable.
+
 ## 0.4.1 (2026-10-12) — review fixes from the end-to-end run
 - An approved roundup or Results post whose facts change before it goes out
   (a corrected sale price) loses its approval: it is rewritten and sent for a

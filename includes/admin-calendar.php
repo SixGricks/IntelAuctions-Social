@@ -144,7 +144,7 @@ if (!function_exists('ias_calendar_chip')) {
     $def  = ias_post_type((string) $p['type']);
     $time = !empty($p['scheduled_at']) ? date_i18n('g:i a', strtotime((string) $p['scheduled_at'])) : 'unscheduled';
     $statuses = ias_statuses();
-    $title = ($statuses[$p['status']]['label'] ?? $p['status']) . ' · score ' . number_format((float) $p['score'], 0);
+    $title = ($statuses[$p['status']]['label'] ?? $p['status']) . (!empty($p['flags']['dry_run']) ? ' in the dry run (nothing was sent)' : '') . ' · score ' . number_format((float) $p['score'], 0);
     return '<a class="ias-chip st-' . esc_attr((string) $p['status']) . '" href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '" title="' . esc_attr($title) . '">'
       . '<span class="t">' . esc_html($def['short']) . '</span> ' . esc_html($time)
       . '<span class="s">' . esc_html(ias_post_subject($p)) . '</span></a>';
@@ -190,7 +190,7 @@ if (!function_exists('ias_post_facts_card')) {
     $def = ias_post_type((string) $p['type']);
     $fmt = function ($d) { return $d ? date_i18n('D M j', strtotime((string) $d)) : '—'; };
     echo '<div class="ias-card"><h3>About this post</h3><table class="ias-kv">';
-    echo '<tr><th>Status</th><td>' . ias_status_badge((string) $p['status']) . '</td></tr>';
+    echo '<tr><th>Status</th><td>' . ias_status_badge((string) $p['status']) . (!empty($p['flags']['dry_run']) ? ' <span class="description">in the dry run — nothing was sent to OneUp</span>' : '') . '</td></tr>';
     echo '<tr><th>Lane</th><td>' . esc_html($p['lane'] === 'A' ? 'A — approve first (email)' : ($p['lane'] === 'B' ? 'B — scheduled, 48-hour veto window' : '—')) . '</td></tr>';
     echo '<tr><th>Window</th><td>' . esc_html($fmt($p['window_start']) . ' → ' . $fmt($p['window_ideal']) . ' → ' . ($p['window_end'] ? $fmt($p['window_end']) : 'whenever approved')) . '</td></tr>';
     echo '<tr><th>Scheduled</th><td>' . esc_html($p['scheduled_at'] ? date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) : 'not yet') . '</td></tr>';
