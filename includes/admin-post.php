@@ -59,11 +59,17 @@ add_action('ias_calendar_action', function (string $action): void {
       unset($flags['stale']);
       $status = $check['holds'] ? 'held' : ($p['status'] === 'held' ? 'planned' : $p['status']);
       if (in_array($p['status'], ['waiting', 'approved'], true) && !$check['holds']) $status = 'planned'; // changed words need a fresh yes
+      if (in_array($p['status'], ['waiting', 'approved'], true) && function_exists('ias_approval_void')) ias_approval_void($id); // old links must not approve new words
       ias_post_update($id, ['content' => $content, 'flags' => $flags, 'status' => $status, 'note' => $check['holds'] ? 'Needs a decision: ' . $check['holds'][0] : '']);
       ias_history_forget_post($id, ['opener']);
       ias_history_add('opener', $content['opener'], (int) $p['listing_id'], $id);
       ias_post_trail($id, 'Text edited' . ($check['holds'] ? ' — still needs a decision: ' . $check['holds'][0] : ''), $actor);
       ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Text edited' . ($check['holds'] ? '; held: ' . implode(' ', $check['holds']) : '')], $actor);
+      if (!empty($_POST['ias_and_approve']) && !$check['holds'] && $p['lane'] === 'A' && function_exists('ias_approve')) {
+        $r = ias_approve($id, $actor, 'edited and approved in WordPress');
+        $flash(esc_html('Saved. ' . $r['message']), $r['ok'] ? 'success' : 'warning');
+        return;
+      }
       do_action('ias_post_edited', $id, $check['holds']);
       $flash($check['holds'] ? 'Saved, but it still needs a decision: ' . esc_html(implode(' ', $check['holds'])) : 'Saved.', $check['holds'] ? 'warning' : 'success');
       return;
@@ -188,7 +194,8 @@ add_action('ias_post_view_main', function (array $p): void {
       echo '<p><label for="ias-comment"><strong>First comment</strong></label><br><textarea id="ias-comment" name="ias_comment" rows="3" class="large-text" style="max-width:640px">' . esc_textarea((string) $c['first_comment']) . '</textarea></p>';
     }
     echo '<p class="description">Saved text is checked again (bidding, figures, fair housing). A roundup or Results post that was approved needs approving again once its words change.</p>'
-      . '<p><button class="button button-primary">Save text</button></p></form>';
+      . '<p><button class="button button-primary">Save text</button>'
+      . ($p['lane'] === 'A' ? ' <button class="button" name="ias_and_approve" value="1">Save and approve</button>' : '') . '</p></form>';
   }
   if (in_array($p['status'], ['pushed', 'published'], true)) {
     echo '<p class="description">This post has gone to OneUp. Live posts are never edited — editing resets their reach — so a correction is posted as a comment.</p>';

@@ -1,5 +1,32 @@
 # Intel Auctions Social changelog
 
+## 0.4.0 (2026-10-12) — Phase 4: approval
+- **Lane A by email.** A roundup or Results post with a clean draft becomes
+  Waiting for approval and each approver gets the full text, the picture, the
+  first comment, **Approve** and **Edit in WordPress**. Approve is a signed
+  one-time link per approver (random, stored only as a hash, 4 days) opening a
+  page whose button approves — just following the link changes nothing. The
+  first yes wins; used, expired, altered and pre-edit links fail safely and say
+  why. Reminders every morning with fresh links until someone answers; never
+  expires; no approval email or reminder on Sunday. Approving plans the post at
+  once (an hour ahead, no 48-hour wait) and queues it. Changing a waiting
+  post's words voids its links and asks again. On the calendar: Approve, Send
+  for approval now, Send a reminder now, Save and approve, and the approval
+  history.
+- **The Monday email** at 7:00 to the approvers: the week ahead, waiting for
+  approval, needs a decision, new since last week, dropped with reasons, the
+  Facebook Events to create, and the OneUp calendar link. Send it now from
+  Settings. The review day can no longer be Sunday.
+- **Facebook Event cards.** Facebook does not let apps create Page events and
+  OneUp's events are GBP-only, so each open house and auction day is prepared
+  for a one-minute manual create once the Listing post has gone out: name,
+  start and end, address, description and cover photo, with Mark created and
+  Skip; in the Monday email while the Facebook Events switch is on.
+- Every stored timestamp now comes from the plugin's own clock (`ias_now()`),
+  so stored times and the rules comparing them never disagree.
+- **Acceptance:** `tests/wp/04-approval.php` — a Results post round-trips
+  (email, approve, queued) and an expired link fails safely.
+
 ## 0.3.0 (2026-10-12) — Phase 3: the scheduler
 - **The morning plan.** From 5:00 the hourly job re-plans the next 30 days
   with a scheduler that places guaranteed posts first, bumps lower ones when it

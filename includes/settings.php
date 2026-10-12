@@ -132,3 +132,14 @@ if (!function_exists('ias_now')) {
     return new DateTimeImmutable('now', ia_wp_tz());
   }
 }
+
+/**
+ * The plugin's "now" as a MySQL datetime in site time. Every timestamp the
+ * plugin stores comes from here (not current_time()), so stored times and the
+ * rules that compare against them run on the same clock — the one tests pin.
+ */
+if (!function_exists('ias_now_sql')) {
+  function ias_now_sql(): string {
+    return ias_now()->format('Y-m-d H:i:s');
+  }
+}

@@ -163,7 +163,7 @@ if (!function_exists('ias_post_encode')) {
       $fields['listing_ids'] = ias_ids_to_column($fields['listing_ids']);
     }
     unset($fields['id']);
-    $fields['updated_at'] = current_time('mysql');
+    $fields['updated_at'] = ias_now_sql();
     return $fields;
   }
 }
@@ -266,7 +266,7 @@ if (!function_exists('ias_post_trail')) {
     if (!$post) return;
     $flags = $post['flags'];
     $trail = isset($flags['trail']) && is_array($flags['trail']) ? $flags['trail'] : [];
-    $trail[] = ['at' => current_time('mysql'), 'by' => $actor, 'what' => $what];
+    $trail[] = ['at' => ias_now_sql(), 'by' => $actor, 'what' => $what];
     $flags['trail'] = array_slice($trail, -30);
     ias_post_update($id, ['flags' => $flags]);
   }
@@ -293,7 +293,7 @@ if (!function_exists('ias_history_add')) {
       'value'      => $value,
       'listing_id' => $listing_id,
       'post_id'    => $post_id,
-      'used_at'    => current_time('mysql'),
+      'used_at'    => ias_now_sql(),
     ], ['%s', '%s', '%s', '%d', '%d', '%s']);
   }
 }
@@ -303,7 +303,7 @@ if (!function_exists('ias_history_used')) {
   function ias_history_used(string $kind, string $value, int $days = 30, int $except_post = 0): bool {
     if (!ias_db_ready() || trim($value) === '') return false;
     global $wpdb;
-    $since = wp_date('Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS);
+    $since = ias_now()->modify('-' . $days . ' days')->format('Y-m-d H:i:s');
     return (bool) $wpdb->get_var($wpdb->prepare(
       'SELECT id FROM ' . ias_table('history') . ' WHERE kind = %s AND value_hash = %s AND used_at >= %s AND post_id <> %d LIMIT 1',
       $kind, md5(ias_history_norm($value)), $since, $except_post
@@ -316,7 +316,7 @@ if (!function_exists('ias_history_recent')) {
   function ias_history_recent(string $kind, int $days = 30, int $listing_id = 0, int $limit = 60): array {
     if (!ias_db_ready()) return [];
     global $wpdb;
-    $since = wp_date('Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS);
+    $since = ias_now()->modify('-' . $days . ' days')->format('Y-m-d H:i:s');
     $sql = 'SELECT value FROM ' . ias_table('history') . ' WHERE kind = %s AND used_at >= %s';
     $vals = [$kind, $since];
     if ($listing_id > 0) { $sql .= ' AND listing_id = %d'; $vals[] = $listing_id; }

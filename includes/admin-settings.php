@@ -77,7 +77,7 @@ if (!function_exists('ias_settings_sanitize')) {
     $int('push_days', 1, 60);
     $int('plan_hour', 0, 23);
     $int('jitter_minutes', 0, 59);
-    $int('review_day', 1, 7);
+    $int('review_day', 1, 6); // never on Sunday
     $int('review_hour', 0, 23);
     $int('generate_per_run', 0, 30);
 
@@ -226,7 +226,7 @@ if (!function_exists('ias_settings_render')) {
 
     echo '<h2>Approvals and the weekly email</h2><table class="form-table" role="presentation">';
     echo '<tr><th scope="row"><label for="ias-appr">Approvers</label></th><td><input id="ias-appr" type="text" name="ias[approvers]" value="' . esc_attr((string) $s['approvers']) . '" class="large-text"><br><span class="description">Who gets the roundup and Results posts to approve (Lane A), the morning reminders and the Monday email. The first to approve wins.</span></td></tr>';
-    $days = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday'];
+    $days = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday']; // never Sunday
     echo '<tr><th scope="row">Weekly review email</th><td><select name="ias[review_day]">';
     foreach ($days as $n => $name) echo '<option value="' . $n . '" ' . selected((int) $s['review_day'], $n, false) . '>' . esc_html($name) . '</option>';
     echo '</select> at ' . $num('ias[review_hour]', $s['review_hour'], 0, 23, ':00') . '</td></tr>';

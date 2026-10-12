@@ -556,7 +556,7 @@ if (!function_exists('ias_generate_post')) {
       'content'      => $content,
       'images_used'  => $images_used,
       'facts_hash'   => ias_facts_hash($post, $facts_list),
-      'generated_at' => current_time('mysql'),
+      'generated_at' => ias_now_sql(),
       'flags'        => $flags,
       'status'       => $status,
       'note'         => $holds ? 'Needs a decision: ' . $holds[0] : '',

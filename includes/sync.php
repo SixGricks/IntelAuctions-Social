@@ -253,7 +253,7 @@ if (!function_exists('ias_drafts_due')) {
       if ($ideal === '' || $ideal > $horizon) continue;
       $has = !empty($p['content']['text']);
       $stale = !empty($p['flags']['stale']) && empty($p['flags']['edited_by'])
-        && strtotime((string) $p['generated_at']) < current_time('timestamp') - 6 * HOUR_IN_SECONDS;
+        && strtotime((string) $p['generated_at']) < strtotime(ias_now_sql()) - 6 * HOUR_IN_SECONDS;
       if ($has && !$stale) continue;
       if ($p['status'] === 'held' && $has) continue; // a held draft waits for its person
       // The roundup is written on its Friday, once the week's announcements are in.

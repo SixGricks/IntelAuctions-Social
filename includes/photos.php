@@ -151,7 +151,7 @@ if (!function_exists('ias_photos_grade')) {
           'q'    => max(1, min(10, (int) ($row['quality'] ?? 5))),
           'kind' => $kind,
           'alt'  => mb_substr(trim(wp_strip_all_tags((string) ($row['alt'] ?? ''))), 0, 160),
-          'at'   => current_time('mysql'),
+          'at'   => ias_now_sql(),
         ]);
         $done++;
       }
