@@ -15,7 +15,8 @@ if (!defined('ABSPATH')) exit;
 /** Statuses a person may still change the words of. */
 if (!function_exists('ias_post_editable')) {
   function ias_post_editable(array $p): bool {
-    return in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'skipped', 'dropped'], true) && $p['type'] !== 'human';
+    // A post a person edited in OneUp is changed there: the plugin never replaces their version.
+    return in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'skipped', 'dropped'], true) && $p['type'] !== 'human' && empty($p['locked']);
   }
 }
 
@@ -90,7 +91,7 @@ add_action('ias_calendar_action', function (string $action): void {
       return;
 
     case 'skip':
-      if (!in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'dropped'], true)) { $flash('Only a post that has not gone out can be skipped.', 'error'); return; }
+      if (!in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'dropped', 'failed'], true)) { $flash('Only a post that has not gone out can be skipped.', 'error'); return; }
       $why = sanitize_text_field((string) wp_unslash($_POST['ias_why'] ?? ''));
       $flags = $p['flags'];
       $flags['skipped_by'] = 'person';
@@ -111,6 +112,17 @@ add_action('ias_calendar_action', function (string $action): void {
       ias_post_trail($id, 'Restored to the plan', $actor);
       ias_log('planned', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Restored to the plan'], $actor);
       $flash('Back on the plan.');
+      return;
+
+    case 'correction_done':
+      if ($p['status'] !== 'published' || empty($p['flags']['correction']['text'])) return;
+      $flags = $p['flags'];
+      $done = (string) ($_POST['ias_done'] ?? '') === 'posted' ? 'posted' : 'not needed';
+      $flags['correction']['done'] = $done . ' by ' . $actor . ' ' . ias_now_sql();
+      ias_post_update($id, ['flags' => $flags]);
+      ias_post_trail($id, 'Correction ' . $done, $actor);
+      ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Correction comment ' . $done], $actor);
+      $flash($done === 'posted' ? 'Marked: the correction is posted.' : 'Marked: no correction needed.');
       return;
 
     case 'release':
@@ -207,7 +219,7 @@ add_action('ias_post_view_main', function (array $p): void {
   }
   if ($p['status'] === 'held' && $text !== '') echo $form('release', 'Keep as written', 'button', '', 'Keep this draft exactly as it is, despite the reasons it stopped?');
   if (ias_post_editable($p) && $p['status'] !== 'skipped') echo $form('regenerate', $text === '' ? 'Write it now' : 'Rewrite', 'button', '', $text === '' ? '' : 'Throw away this draft and have Claude write a new one? (Counts against the monthly Claude cap.)');
-  if (in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'dropped'], true) && $p['type'] !== 'human') {
+  if (in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'dropped', 'failed'], true) && $p['type'] !== 'human') {
     echo $form('skip', 'Skip this post', 'button', '<input type="text" name="ias_why" placeholder="Why (optional)" class="regular-text" style="width:180px;margin-right:4px">');
   }
   if (in_array($p['status'], ['skipped', 'cancelled', 'dropped'], true)) echo $form('restore', 'Restore to the plan', 'button');
@@ -219,7 +231,7 @@ add_action('ias_post_view_main', function (array $p): void {
 /* ---------------- Under the grid ---------------- */
 
 add_action('ias_calendar_after_grid', function (array $posts_in_range): void {
-  $held    = ias_posts_query(['status' => 'held', 'limit' => 100]);
+  $held    = ias_posts_query(['status' => ['held', 'failed'], 'limit' => 100]);
   $planned = ias_posts_query(['status' => 'planned', 'limit' => 1000]);
   $photos  = array_values(array_filter($planned, function ($p) { return !empty($p['flags']['needs']); }));
   $nodraft = array_values(array_filter($planned, function ($p) { return empty($p['flags']['needs']) && empty($p['content']['text']); }));
@@ -242,6 +254,21 @@ add_action('ias_calendar_after_grid', function (array $posts_in_range): void {
 
   echo '<div class="ias-cols" style="margin-top:16px"><div>';
   $list('Needs a decision', $held, 'Nothing is waiting on a decision.', 'note');
+  $fixes = function_exists('ias_corrections_waiting') ? ias_corrections_waiting() : [];
+  if ($fixes) {
+    echo '<div class="ias-card"><h3>Corrections to post as a comment <span class="description">(' . count($fixes) . ')</span></h3><p class="description">A fact changed after these went out. A post that has gone out is never edited — that resets its reach — so post the correction as a comment on it in Facebook, then mark it.</p>';
+    foreach ($fixes as $p) {
+      echo '<div style="border-top:1px solid #f0f0f1;padding:8px 0"><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '"><strong>' . esc_html(ias_post_type((string) $p['type'])['short']) . '</strong> · ' . esc_html(ias_post_subject($p)) . '</a>'
+        . '<textarea readonly rows="2" class="large-text" onclick="this.select()" style="margin:6px 0">' . esc_textarea((string) $p['flags']['correction']['text']) . '</textarea>';
+      foreach (['posted' => 'Comment posted', 'not_needed' => 'Not needed'] as $done => $label) {
+        echo '<form method="post" style="display:inline-block;margin-right:6px">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
+          . '<input type="hidden" name="ias_cal_action" value="correction_done"><input type="hidden" name="ias_post" value="' . (int) $p['id'] . '"><input type="hidden" name="ias_done" value="' . esc_attr($done) . '">'
+          . '<button class="button' . ($done === 'posted' ? ' button-primary' : '') . '">' . esc_html($label) . '</button></form>';
+      }
+      echo '</div>';
+    }
+    echo '</div>';
+  }
   echo '</div><div>';
   echo '<div class="ias-card"><h3>Drafts</h3><p>' . count($nodraft) . ' planned post' . (count($nodraft) === 1 ? ' has' : 's have') . ' no draft yet; a few are written every hour (Settings: drafts per run). '
     . $button . '</p><p class="description">Each draft is one Claude call, counted against the toolkit\'s monthly Claude cap.</p></div>';

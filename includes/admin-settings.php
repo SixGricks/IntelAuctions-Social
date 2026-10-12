@@ -105,6 +105,8 @@ if (!function_exists('ias_settings_sanitize')) {
 
     $out['oneup_category_id']  = sanitize_text_field((string) ($in['oneup_category_id'] ?? ''));
     $out['oneup_account_id']   = sanitize_text_field((string) ($in['oneup_account_id'] ?? ''));
+    // The page's name in OneUp's lists is looked up (Check connection, Verify OneUp), never typed: a new id forgets it.
+    $out['oneup_account_name'] = $out['oneup_account_id'] === (string) ($old['oneup_account_id'] ?? '') ? (string) ($old['oneup_account_name'] ?? '') : '';
     $out['oneup_calendar_url'] = esc_url_raw((string) ($in['oneup_calendar_url'] ?? ''));
     $out['utm_source'] = sanitize_key((string) ($in['utm_source'] ?? 'facebook')) ?: 'facebook';
     $out['utm_medium'] = sanitize_key((string) ($in['utm_medium'] ?? 'social')) ?: 'social';
@@ -123,6 +125,10 @@ if (!function_exists('ias_settings_sanitize')) {
     if (($out['push_days'] ?? $old['push_days']) > $plan_days) $out['push_days'] = $plan_days;
     if (($out['lead_hours'] ?? $old['lead_hours']) < 48) {
       $problems[] = 'The veto window is under 48 hours — the spec promises DJ and Jacob two days to veto a scheduled post.';
+    }
+    $verify = get_option('ias_oneup_verify', []);
+    if (!empty($out['master']) && empty($out['dry_run']) && empty($verify['ok'])) {
+      $problems[] = 'Live pushing is on, but Verify OneUp has not passed yet — run it (below) before any post type is switched on.';
     }
     return [$out, $problems];
   }
@@ -175,7 +181,7 @@ if (!function_exists('ias_settings_render')) {
     echo '<input type="hidden" name="ias_settings_save" value="1">';
 
     echo '<h2>Safety switches</h2><table class="form-table" role="presentation">';
-    echo '<tr><th scope="row">Master switch</th><td>' . $check('ias[master]', !empty($s['master']), '<strong>On</strong> — let the plugin call OneUp', 'Off means the plugin plans, drafts and logs, and never calls OneUp. Live pushing arrives in Phase 5; until then nothing is sent whatever this says.') . '</td></tr>';
+    echo '<tr><th scope="row">Master switch</th><td>' . $check('ias[master]', !empty($s['master']), '<strong>On</strong> — let the plugin call OneUp', 'Off means the plugin plans, drafts and logs, and never calls OneUp. On, it reads back what OneUp holds for the page every hour — and, with dry run off, sends the posts of each type that is switched on.') . '</td></tr>';
     echo '<tr><th scope="row">Dry run</th><td>' . $check('ias[dry_run]', !empty($s['dry_run']), 'Write the exact payloads it would send to the <a href="' . esc_url(ias_admin_url(IAS_PAGE_LOG, ['event' => 'dryrun'])) . '">log</a> instead of sending them') . '</td></tr>';
     echo '<tr><th scope="row">Paused</th><td>' . $check('ias[paused]', !empty($s['paused']), 'Stop every push at once (the same as the Pause button on the calendar)') . '</td></tr>';
     echo '<tr><th scope="row">Post types</th><td>';
@@ -192,7 +198,9 @@ if (!function_exists('ias_settings_render')) {
       ? ia_ui_badge('Set in wp-config', 'ok') . ' <code>…' . esc_html(substr($key, -4)) . '</code>'
       : ia_ui_badge('Not set', 'warn') . '<br><span class="description">Add <code>define(\'INTEL_ONEUP_API_KEY\', \'…\');</code> to wp-config.php (from oneupapp.io → API access). It is never stored in the database.</span>') . '</td></tr>';
     echo '<tr><th scope="row"><label for="ias-cat">Category id</label></th><td><input id="ias-cat" type="text" name="ias[oneup_category_id]" value="' . esc_attr((string) $s['oneup_category_id']) . '" class="regular-text"><br><span class="description">The OneUp category that holds the Intel Facebook page.</span></td></tr>';
-    echo '<tr><th scope="row"><label for="ias-acct">Facebook account id</label></th><td><input id="ias-acct" type="text" name="ias[oneup_account_id]" value="' . esc_attr((string) $s['oneup_account_id']) . '" class="regular-text"><br><span class="description">The page\'s <code>social_network_id</code> in that category. Facebook is the only channel at launch.</span></td></tr>';
+    echo '<tr><th scope="row"><label for="ias-acct">Facebook account id</label></th><td><input id="ias-acct" type="text" name="ias[oneup_account_id]" value="' . esc_attr((string) $s['oneup_account_id']) . '" class="regular-text">'
+      . ((string) $s['oneup_account_name'] !== '' ? ' ' . ia_ui_badge((string) $s['oneup_account_name'], 'ok') : '')
+      . '<br><span class="description">The page\'s <code>social_network_id</code> in that category. Facebook is the only channel at launch; the category\'s other accounts (Google Business Profile, YouTube) are left alone.</span></td></tr>';
     echo '<tr><th scope="row"><label for="ias-calurl">Calendar link</label></th><td><input id="ias-calurl" type="url" name="ias[oneup_calendar_url]" value="' . esc_attr((string) $s['oneup_calendar_url']) . '" class="regular-text"><br><span class="description">Where the Monday email\'s "Open the OneUp calendar" button goes.</span></td></tr>';
     echo '<tr><th scope="row">Listing link</th><td>' . $check('ias[link_in_comment]', !empty($s['link_in_comment']), 'Put the link in the first comment', 'Facebook shows posts with a link in them to fewer people. Untick only if OneUp cannot post first comments: the link then goes at the end of the post.') . '</td></tr>';
     echo '</table>';

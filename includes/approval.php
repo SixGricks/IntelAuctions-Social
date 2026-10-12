@@ -352,7 +352,7 @@ if (!function_exists('ias_review_email')) {
       foreach ($week as $p) {
         $when = ias_post_when($p);
         $html .= '<tr style="border-bottom:1px solid #f0f0f1"><td style="white-space:nowrap;vertical-align:top">' . esc_html($when ? date_i18n(!empty($p['scheduled_at']) ? 'D M j, g:i a' : 'D M j', strtotime($when->format('Y-m-d H:i:s'))) : '') . '</td>'
-          . '<td>' . $link($p) . '</td><td style="white-space:nowrap">' . esc_html((ias_statuses()[$p['status']]['label'] ?? $p['status']) . (!empty($p['flags']['dry_run']) ? ' (dry run)' : '')) . '</td></tr>';
+          . '<td>' . $link($p) . '</td><td style="white-space:nowrap">' . esc_html((ias_statuses()[ias_post_shown_status($p)]['label'] ?? $p['status']) . (!empty($p['flags']['dry_run']) ? ' (dry run)' : '')) . '</td></tr>';
       }
       $html .= '</table>';
     }
@@ -361,8 +361,10 @@ if (!function_exists('ias_review_email')) {
     $html .= $h('Waiting for approval (' . count($waiting) . ')');
     $html .= $waiting ? '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '</li>'; }, $waiting)) . '</ul><p style="font-size:13px;color:#646970">Each has its own email with an Approve button; the morning reminders bring fresh ones.</p>' : '<p>Nothing is waiting.</p>';
 
-    $held = ias_posts_query(['status' => 'held', 'limit' => 50]);
+    $held = ias_posts_query(['status' => ['held', 'failed'], 'limit' => 50]);
     if ($held) $html .= $h('Needs a decision (' . count($held) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="color:#646970;font-size:13px">' . esc_html((string) $p['note']) . '</span></li>'; }, $held)) . '</ul>';
+    $fixes = function_exists('ias_corrections_waiting') ? ias_corrections_waiting() : [];
+    if ($fixes) $html .= $h('Corrections to post as a comment (' . count($fixes) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</span></li>'; }, $fixes)) . '</ul><p style="font-size:13px;color:#646970">A post that has gone out is never edited (that resets its reach): post the correction as a comment on it, then press Comment posted on the Social Calendar.</p>';
 
     $new = array_filter(ias_posts_query(['order' => 'id', 'limit' => 300]), function ($p) use ($since) { return (string) $p['created_at'] >= $since && $p['type'] !== 'human'; });
     $counts = array_count_values(array_map(function ($p) { return ias_post_type((string) $p['type'])['label']; }, $new));
@@ -372,6 +374,12 @@ if (!function_exists('ias_review_email')) {
     $dropped = array_filter(ias_posts_query(['status' => 'dropped', 'order' => 'id', 'limit' => 100]), function ($p) use ($since) { return (string) $p['updated_at'] >= $since; });
     $html .= $h('Dropped this week (' . count($dropped) . ')');
     $html .= $dropped ? '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="color:#646970;font-size:13px">' . esc_html((string) $p['note']) . '</span></li>'; }, $dropped)) . '</ul>' : '<p>Nothing was dropped.</p>';
+
+    // The first weekly email of a month carries last month's summary.
+    if ((int) $now->format('j') <= 7 && function_exists('ias_summary_html')) {
+      $ym = $now->modify('first day of last month')->format('Y-m');
+      $html .= $h('Last month: ' . date_i18n('F Y', strtotime($ym . '-01'))) . ias_summary_html($ym, true);
+    }
 
     $cal = (string) ias_setting('oneup_calendar_url', '');
     $html .= '<p style="margin-top:24px">'

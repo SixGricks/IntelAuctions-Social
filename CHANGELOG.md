@@ -1,5 +1,50 @@
 # Intel Auctions Social changelog
 
+## 0.5.0 (2026-10-12) — Phase 5: OneUp live (built, every switch still off)
+- **Live pushing.** With the master switch on, dry run off and the key and ids
+  set, each ready post of a type that is switched on is scheduled on OneUp for
+  the Facebook page; a changed or moved post is taken off and scheduled again;
+  a post that stops being ready is taken back; a cancelled listing's posts come
+  off at once (before the page that cancelled them has finished). Pause and a
+  type's switch stop new posts, never a take-back. A refused post is retried
+  each hour and stops as Failed after the third refusal; a replace refused
+  inside the 48 hours is retried, not left off OneUp. The live record
+  (`flags.oneup`: id, fingerprint, text, time, facts) works exactly like the dry
+  run's, and going live clears the dry run's record. On the calendar a post on
+  OneUp shows as Pushed, with its OneUp id.
+- **Read-back** every hour while the master switch is on, for the Facebook page
+  only (the category's Google Business Profile and YouTube posts are ignored):
+  a post a person moved or edited in OneUp keeps their version and is locked;
+  one a person deleted there stays off the plan; a person's own posts on the
+  page become Human posts the plan works around (the spec's acceptance test: a
+  human post in OneUp moves the schedule around it); published posts are
+  confirmed; posts OneUp could not publish stop as Failed with its reason.
+  OneUp's scheduled times are read in the account's time, published ones as
+  UTC — as the real account reports them.
+- **Verify OneUp** (Settings): a safe round trip — a draft that never publishes
+  is saved, read back, its time compared with the site's, and deleted; the
+  scheduled, published and failed lists are read. Each step is shown. Turning
+  live pushing on before it passes is warned about.
+- **Corrections.** A post that went out is never edited; when a fact it carried
+  changes, a correction comment is drafted ("Update: the starting bid is now
+  $275,000 (not $300,000).") for a person to post, listed on the calendar and
+  in the Monday email, with Comment posted / Not needed.
+- **Monthly summary** at the top of the Log screen and in the first weekly
+  email of each month: posts by type and division (out, still to come,
+  dropped, skipped, cancelled, failed, late) and the site visits each type
+  brought — from Google Analytics through the toolkit's Site Kit connection,
+  using the utm_campaign / utm_content tags every link already carries.
+- **Pause no longer hands Facebook back to the toolkit's webhook** (it would
+  have posted what the plugin posts on resume); `ia_social_facebook_managed` is
+  true once Listing posts can really reach OneUp.
+- Fixes found on the way: OneUp listings answered as `{"accounts": […]}` /
+  `{"categories": […]}` (the real shape) were not read, so Check connection
+  could show no accounts; a failed post can now be skipped; a post edited in
+  OneUp is no longer editable here (change it in OneUp).
+- Tests: a fake OneUp shaped like the real account (`ias_t_oneup()`), the
+  Phase 5 acceptance test `tests/wp/07-oneup-live.php` (71 checks), and unit
+  tests for reading OneUp's answers in any of their shapes.
+
 ## 0.4.4 (2026-10-12) — from the Codex review of the build PR
 - **Two open-house sessions on the same day** share that day's Open House post
   (the spec's "each open house date") and its brief gives both times, in time

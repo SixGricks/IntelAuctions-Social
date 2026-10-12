@@ -10,7 +10,8 @@ require_once IAS_PATH . 'includes/dependency.php';
 
 // Optional helpers: each call site checks function_exists() first.
 $optional = ['ia_acf_field_team_email', 'ia_announced_thumb_id', 'ia_business_phone', 'ia_docs_md_to_html',
-  'ia_get_auction_type_value', 'ia_get_excerpt_plain', 'ia_social_full_pushed'];
+  'ia_get_auction_type_value', 'ia_get_excerpt_plain', 'ia_social_full_pushed',
+  'ia_sitekit_ready', 'ia_stats_ga4', 'ia_stats_ga4_rows']; // Google Analytics through Site Kit, for the monthly summary
 
 $listed = ias_required_toolkit_functions();
 $calls = [];

@@ -134,28 +134,33 @@ if (!function_exists('ias_push_ready')) {
 }
 
 /**
- * Bring OneUp in line with the plan for the next `push_days` days: create new
- * posts, re-create moved or changed ones, delete ones that are no longer
- * ready or left the plan. In a dry run each request is logged once per
- * change; in this version a dry run is the only mode (live pushing is Phase 5).
+ * Bring OneUp in line with the plan for the next `push_days` days: schedule
+ * new posts, re-schedule moved or changed ones (OneUp cannot change a
+ * scheduled post's time: delete, then schedule again), take back the ones that
+ * stopped being ready or left the plan.
  *
- * The dry run keeps its own record of what it "sent" (`dry_hash`), and treats
- * it the way live pushing will treat OneUp: a post sent and inside the veto
- * window is fixed in place (scheduler.php), a post sent and no longer ready —
+ * It runs in one of two modes (ias_push_mode()): **live** when the master
+ * switch is on, dry run off and the key and ids are set — then each request
+ * goes to OneUp (live.php), Pause and each post type's switch still stopping
+ * new posts (never a take-back); otherwise **dry run** — each request goes to
+ * the log once per change instead. Both keep the same record of what was
+ * "sent" (ias_post_sent(): the OneUp id and hash, or the dry run's hash), so
+ * the plan behaves the same either way: a post sent and inside the veto window
+ * is fixed in place (scheduler.php), a post sent and no longer ready —
  * stale, held, its approval withdrawn, moved off the plan or out of reach —
  * is taken back, and a post whose time came while it was sent counts as
- * published (flagged `dry_run`: nothing went anywhere). So the plan settles
- * the way it will when it is live. A Lane B post never sent goes out only
+ * published (a dry-run one flagged `dry_run`: nothing went anywhere; a live
+ * one until the read-back confirms it). A Lane B post never sent goes only
  * while its time is still outside the veto window; otherwise it waits for the
- * next morning's plan to give it a later one.
- *
- * Phase 5: when pushing goes live, `dry_hash` must be cleared first, so that
- * nothing counts as sent that was not.
+ * next morning's plan to give it a later one. A post a person edited in OneUp
+ * (`locked`) is never replaced, and taken back only when skipped or cancelled.
  */
 if (!function_exists('ias_push_run')) {
   function ias_push_run(): array {
-    $out = ['dryrun' => 0, 'deleted' => 0, 'published' => 0, 'skipped' => []];
+    $out = ['dryrun' => 0, 'deleted' => 0, 'published' => 0, 'pushed' => 0, 'failed' => 0, 'skipped' => []];
     if (!ias_db_ready()) return $out;
+    $mode = ias_push_mode();
+    if (function_exists('ias_push_mode_changed')) ias_push_mode_changed($mode);
     $now = ias_now();
     $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
     $nowsql = $now->format('Y-m-d H:i:s');
@@ -165,45 +170,63 @@ if (!function_exists('ias_push_run')) {
     foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
       if ($p['type'] === 'human') continue;
       $flags = $p['flags'];
-      $sent = (string) ($flags['dry_hash'] ?? '');
+      $sent = ias_post_sent($p);
       $at = (string) ($p['scheduled_at'] ?? '');
 
       // Its time came while it was out: it went out.
-      if ($sent !== '' && $at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'held', 'waiting', 'approved'], true)) {
-        $flags['dry_run'] = true;
-        ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'note' => 'Its time came in the dry run: it counts as published, but nothing was sent to OneUp.']);
-        ias_post_trail((int) $p['id'], 'Its time came (dry run — nothing was sent)');
-        ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Would have been published on ' . $fmt($at) . ' — nothing was sent.']);
+      if ($sent['hash'] !== '' && $at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed'], true)) {
+        if ($sent['mode'] === 'dry') {
+          $flags['dry_run'] = true;
+          ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'note' => 'Its time came in the dry run: it counts as published, but nothing was sent to OneUp.']);
+          ias_post_trail((int) $p['id'], 'Its time came (dry run — nothing was sent)');
+          ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Would have been published on ' . $fmt($at) . ' — nothing was sent.']);
+        } else {
+          $flags['unconfirmed'] = true; // the read-back confirms it (or reports it failed)
+          ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'published_at' => $at, 'note' => '']);
+          ias_post_trail((int) $p['id'], 'Its time came on OneUp');
+        }
         $out['published']++;
         continue;
       }
 
       $in_range = $at !== '' && $at >= $nowsql && $at <= $until;
       $why_not = ias_push_ready($p);
-      if ($why_not === '' && $sent === '' && $p['lane'] !== 'A' && $at !== '' && $at < $floor_b) $why_not = 'its time is inside the 48-hour veto window';
+      if ($why_not === '' && $sent['hash'] === '' && empty($flags['was_on_oneup']) && $p['lane'] !== 'A' && $at !== '' && $at < $floor_b) $why_not = 'its time is inside the 48-hour veto window';
 
       if ($in_range && $why_not === '') {
         $req = ias_render_facebook($p);
         $hash = md5((string) wp_json_encode($req));
-        if ($hash === $sent) continue;
-        $calls = $sent !== '' ? [ias_render_delete($p), $req] : [$req]; // a scheduled post's time cannot be edited: delete, then schedule again
+        if ($hash === $sent['hash'] || !empty($p['locked'])) continue; // unchanged, or a person edited it in OneUp
+        if ($mode === 'live') {
+          $blockers = ias_push_blockers($p);
+          if ($blockers) { $out['skipped'][] = '#' . (int) $p['id'] . ': ' . implode('; ', $blockers); continue; } // paused, or its type is off
+          if (ias_push_live_send($p, $req, $hash)) $out['pushed']++; else $out['failed']++;
+          continue;
+        }
+        $calls = $sent['hash'] !== '' ? [ias_render_delete($p), $req] : [$req]; // a scheduled post's time cannot be edited: delete, then schedule again
         $flags['dry_hash'] = $hash;
         ias_post_update((int) $p['id'], ['flags' => $flags]);
         ias_log('dryrun', (int) $p['listing_id'], [
           'post' => (int) $p['id'], 'type' => $p['type'],
-          'summary' => ($sent !== '' ? 'Would replace on OneUp (changed or moved)' : 'Would schedule on OneUp') . ' for ' . $fmt($at) . ' — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
+          'summary' => ($sent['hash'] !== '' ? 'Would replace on OneUp (changed or moved)' : 'Would schedule on OneUp') . ' for ' . $fmt($at) . ' — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
           'payload' => count($calls) === 1 ? $calls[0] : $calls,
         ]);
         $out['dryrun']++;
         continue;
       }
-      // It went out (in the dry run's sense) and is no longer ready, or left the next push_days days: take it back.
-      if ($sent !== '') {
+      // It went out and is no longer ready, or left the next push_days days: take it back.
+      if ($sent['hash'] !== '' || $sent['id'] !== '') {
+        if (!empty($p['locked']) && !in_array($p['status'], ['skipped', 'cancelled'], true)) continue; // a person's edit in OneUp stays unless the post is called off
+        $why = $why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days';
+        if ($sent['mode'] === 'live') {
+          if ($mode === 'live' && ias_push_live_delete($p, $why)) $out['deleted']++;
+          continue;
+        }
         unset($flags['dry_hash']);
         ias_post_update((int) $p['id'], ['flags' => $flags]);
         ias_log('dryrun', (int) $p['listing_id'], [
           'post' => (int) $p['id'], 'type' => $p['type'],
-          'summary' => 'Would delete from OneUp (' . ($why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days') . ') — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
+          'summary' => 'Would delete from OneUp (' . $why . ') — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
           'payload' => ias_render_delete($p),
         ]);
         $out['deleted']++;
@@ -224,8 +247,17 @@ add_filter('ias_job_run', function (array $result): array {
   }
   $push = ias_push_run();
   $result['push'] = $push;
-  if ($push['dryrun'] || $push['deleted']) $result['parts'][] = 'dry run: ' . ($push['dryrun'] + $push['deleted']) . ' payloads logged';
-  if ($push['published']) $result['parts'][] = 'dry run: ' . $push['published'] . ' would have gone out';
+  if ($push['dryrun']) $result['parts'][] = 'dry run: ' . $push['dryrun'] . ' payloads logged';
+  if ($push['pushed']) $result['parts'][] = $push['pushed'] . ' scheduled on OneUp';
+  if ($push['deleted']) $result['parts'][] = $push['deleted'] . ' taken back';
+  if ($push['failed']) $result['parts'][] = $push['failed'] . ' OneUp calls failed';
+  if ($push['published']) $result['parts'][] = $push['published'] . ' went out';
+  if (function_exists('ias_readback_run') && !ias_oneup_blockers(false)) {
+    $rb = ias_readback_run();
+    $result['readback'] = $rb;
+    if (!$rb['ok']) $result['parts'][] = 'read-back failed: ' . $rb['error'];
+    elseif ($rb['changes']) $result['parts'][] = 'read-back: ' . implode(', ', $rb['changes']);
+  }
   return $result;
 }, 10);
 

@@ -64,13 +64,26 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   draft: prompts forbid invented facts (`[VERIFY]` markers hold the post), and the
   fair-housing screen holds any flagged draft for a person.
 - **Nothing reaches Facebook until DJ turns a switch on.** The master switch and
-  every post type ship **off**, dry run ships **on**, and Pause stops every push.
-  A change that could make a post public needs all of them checked on its path.
-- **The dry run keeps its own record of what it "sent"** (`dry_hash` in a post's
-  flags) and treats it like OneUp: fixed inside the veto window, a logged delete
-  when it stops being ready, and `published` with `flags.dry_run` once its time
-  passes. When Phase 5 makes pushing live, clear every `dry_hash` first, so
-  nothing counts as sent that was not.
+  every post type ship **off**, dry run ships **on**, and Pause stops every new
+  post. A change that could make a post public needs all of them checked on its
+  path: every write to OneUp goes through `ias_push_blockers()` (a new post) or
+  `ias_oneup_blockers(true)` (a take-back), every read through
+  `ias_oneup_blockers(false)`; the master switch off means not one call.
+- **One record of what was "sent", in both modes** (`ias_post_sent()`): live, the
+  OneUp id, hash, text, time and facts in `flags.oneup` (and the id in
+  `oneup_post_id`); dry run, `flags.dry_hash`. Both are treated alike: fixed
+  inside the veto window, taken back when the post stops being ready, and
+  `published` once its time passes (`flags.dry_run` for the dry run's). Going
+  live clears every `dry_hash` (`ias_push_mode_changed()`). A post the read-back
+  finds moved or edited by a person in OneUp is `locked`: never replaced, taken
+  back only if skipped or cancelled. Status `pushed` is a display status
+  (`ias_post_shown_status()`), never stored.
+- **OneUp's API is only partly documented where this was built** (its site was
+  unreachable): the endpoint names and methods live in `ias_oneup_endpoints()`,
+  answers are read loosely (`ias_oneup_rows()`, `ias_oneup_find_id()`,
+  `ias_oneup_error_in()`), and **Verify OneUp** checks the real thing with a
+  draft. The list rows' shape (post_id, content, date_time in the account's time
+  zone, created_at in UTC, social_network_username) is from the real account.
 - **A person's decision holds.** Anything that puts a post back on the plan uses
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when

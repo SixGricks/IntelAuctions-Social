@@ -46,6 +46,7 @@ if (!function_exists('ias_settings_defaults')) {
       // OneUp (the API key lives in wp-config as INTEL_ONEUP_API_KEY).
       'oneup_category_id'  => '',
       'oneup_account_id'   => '',   // the Facebook page's social_network_id in OneUp
+      'oneup_account_name' => '',   // how OneUp's lists name that page (filled in by Check connection / Verify OneUp)
       'oneup_calendar_url' => 'https://www.oneupapp.io/',
       'link_in_comment'    => true, // false = OneUp cannot post first comments; the link ends the post instead
 
@@ -120,7 +121,8 @@ if (!function_exists('ias_approvers')) {
 /** The OneUp API key from wp-config ('' when not set). Never stored in the database. */
 if (!function_exists('ias_oneup_key')) {
   function ias_oneup_key(): string {
-    return (defined('INTEL_ONEUP_API_KEY') && is_string(INTEL_ONEUP_API_KEY)) ? trim(INTEL_ONEUP_API_KEY) : '';
+    $key = (defined('INTEL_ONEUP_API_KEY') && is_string(INTEL_ONEUP_API_KEY)) ? trim(INTEL_ONEUP_API_KEY) : '';
+    return trim((string) apply_filters('ias_oneup_key', $key)); // the tests supply theirs this way; never stored
   }
 }
 

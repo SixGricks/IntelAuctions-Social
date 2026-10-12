@@ -20,6 +20,8 @@ if (!function_exists('ias_log_render')) {
 
     ia_ui_header('Social Log', 'What the plugin did, newest first — kept in the toolkit\'s event log, which holds the most recent 5,000 entries across both plugins.');
     echo ias_switches_strip();
+    /** The monthly summary (summary.php). */
+    do_action('ias_log_top');
 
     echo '<form method="get" style="margin:8px 0 12px">';
     echo '<input type="hidden" name="post_type" value="' . esc_attr(ia_schema_post_type()) . '"><input type="hidden" name="page" value="' . esc_attr(IAS_PAGE_LOG) . '">';

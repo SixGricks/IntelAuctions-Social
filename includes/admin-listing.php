@@ -30,7 +30,7 @@ if (!function_exists('ias_listing_panel_render')) {
         echo '<tr><td style="padding:4px 6px"><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '"><strong>' . esc_html(ias_post_type((string) $p['type'])['short']) . '</strong></a>'
           . (count($p['listing_ids']) > 1 ? ' <span class="description">(shared)</span>' : '')
           . '<br><span class="description">' . esc_html($when ? date_i18n(!empty($p['scheduled_at']) ? 'D M j, g:i a' : 'D M j', $when->getTimestamp() + $when->getOffset()) : 'no day yet') . '</span></td>'
-          . '<td style="padding:4px 6px;text-align:right">' . ias_status_badge((string) $p['status']) . (!empty($p['flags']['dry_run']) ? '<br><span class="description">dry run</span>' : '') . '</td></tr>';
+          . '<td style="padding:4px 6px;text-align:right">' . ias_status_badge(ias_post_shown_status($p)) . (!empty($p['flags']['dry_run']) ? '<br><span class="description">dry run</span>' : '') . '</td></tr>';
       }
       echo '</tbody></table>';
     }

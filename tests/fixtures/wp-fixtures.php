@@ -22,7 +22,7 @@ function ias_t_reset(): void {
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders'] as $o) delete_option($o);
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify'] as $o) delete_option($o);
   update_option('ias_settings', [], true);
 }
 
@@ -165,4 +165,94 @@ function ias_t_claude_calls(): int { return (int) ($GLOBALS['ias_t_claude_n'] ??
 function ias_t_claude_off(): void {
   delete_option('ia_anthropic_api_key');
   remove_all_filters('pre_http_request');
+}
+
+/**
+ * A fake OneUp (pre_http_request on oneupapp.io/api/), shaped like the real
+ * account's answers: categories, the category's accounts (Google Business
+ * Profile and the Facebook page "Intel Auctions (Narvon)", id fb_123, in
+ * category 42), schedule (text/image/video, drafts with isDraftPost), delete,
+ * and the scheduled / published / drafts / failed lists (50 a page,
+ * next_start). The key must be 'test-oneup-key'. State in
+ * $GLOBALS['ias_t_oneup']: scheduled, published, drafts, failed (id => row),
+ * calls (every request: path, method, params), fail_next (refuse that many
+ * schedules), no_id (answer without a post id), tz_shift (hours OneUp's clock
+ * is off the site's), gbp (a Google Business Profile post on the list).
+ */
+function ias_t_oneup(): void {
+  $GLOBALS['ias_t_oneup'] = ['scheduled' => [], 'published' => [], 'drafts' => [], 'failed' => [], 'next' => 900001, 'calls' => [],
+    'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true];
+  add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
+  add_filter('pre_http_request', function ($pre, $args, $url) {
+    if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
+    $S =& $GLOBALS['ias_t_oneup'];
+    $parts = wp_parse_url((string) $url);
+    parse_str((string) ($parts['query'] ?? ''), $q);
+    $path = basename((string) $parts['path']);
+    $params = array_merge($q, is_array($args['body'] ?? null) ? $args['body'] : []);
+    $S['calls'][] = ['path' => $path, 'method' => (string) ($args['method'] ?? 'GET'), 'params' => $params];
+    $json = function (int $code, $data) {
+      return ['headers' => [], 'body' => (string) json_encode($data), 'response' => ['code' => $code, 'message' => 'OK'], 'cookies' => [], 'filename' => null];
+    };
+    if (($params['apiKey'] ?? '') !== 'test-oneup-key') return $json(401, ['error' => true, 'message' => 'Invalid API key']);
+    $fb = 'Intel Auctions (Narvon)';
+    $page = function (array $rows, string $time_key) use ($params, $json) {
+      $start = (int) ($params['start'] ?? 0);
+      $rows = array_values($rows);
+      if ($time_key === 'date_time' && !empty($GLOBALS['ias_t_oneup']['gbp'])) {
+        $rows[] = ['post_id' => 555, 'content' => 'A Google Business Profile post', 'source_url' => 'NA', $time_key => '2026-11-10 11:05:45', 'category_name' => 'Intel', 'video_url' => 'NA', 'content_image' => 'NA', 'social_network_username' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )'];
+      }
+      $slice = array_slice($rows, $start, 50);
+      return $json(200, ['posts' => $slice, 'start' => $start, 'count' => count($slice), 'next_start' => $start + 50 < count($rows) ? $start + 50 : null]);
+    };
+    switch ($path) {
+      case 'listcategory':
+        return $json(200, ['categories' => [['id' => 42, 'category_name' => 'Intel', 'isPaused' => 0]]]);
+      case 'listcategoryaccount':
+        return $json(200, ['accounts' => [
+          ['category_id' => 42, 'social_network_name' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )', 'social_network_id' => 'accounts/1/locations/2', 'social_network_type' => 'GBP'],
+          ['category_id' => 42, 'social_network_name' => $fb, 'social_network_id' => 'fb_123', 'social_network_type' => 'Facebook'],
+        ]]);
+      case 'scheduletextpost': case 'scheduleimagepost': case 'schedulevideopost':
+        if ($S['fail_next'] > 0) { $S['fail_next']--; return $json(200, ['error' => true, 'message' => 'The Facebook token has expired']); }
+        $id = $S['next']++;
+        $row = ['post_id' => $id, 'content' => (string) ($params['content'] ?? ''), 'source_url' => 'NA',
+          'date_time' => date('Y-m-d H:i:s', strtotime((string) $params['scheduled_date_time']) + 3600 * (int) $S['tz_shift']),
+          'category_name' => 'Intel', 'video_url' => (string) ($params['video_url'] ?? 'NA'), 'content_image' => (string) ($params['image_url'] ?? 'NA'),
+          'social_network_username' => ((string) ($params['social_network_id'] ?? '') === 'fb_123') ? $fb : 'someone else', 'first_comment' => (string) ($params['first_comment'] ?? '')];
+        if (($params['isDraftPost'] ?? '') === 'true') $S['drafts'][$id] = $row; else $S['scheduled'][$id] = $row;
+        return $json(200, $S['no_id'] ? ['error' => false, 'message' => 'Post scheduled successfully'] : ['error' => false, 'message' => 'Post scheduled successfully', 'data' => ['post_id' => $id]]);
+      case 'deletepost':
+        $id = (int) ($params['post_id'] ?? 0);
+        foreach (['scheduled', 'drafts'] as $list) {
+          if (isset($S[$list][$id])) { unset($S[$list][$id]); return $json(200, ['error' => false, 'message' => 'Post deleted']); }
+        }
+        return $json(404, ['error' => true, 'message' => 'Post not found']);
+      case 'getscheduledposts': return $page($S['scheduled'], 'date_time');
+      case 'getpublishedposts': return $page($S['published'], 'created_at');
+      case 'getdraftposts':     return $page($S['drafts'], 'date_time');
+      case 'getfailedposts':    return $page($S['failed'], 'date_time');
+    }
+    return $json(404, ['error' => true, 'message' => 'Unknown endpoint ' . $path]);
+  }, 10, 3);
+}
+
+/** The fake OneUp's calls since $from (index), optionally only to $path. */
+function ias_t_oneup_calls(int $from = 0, string $path = ''): array {
+  return array_values(array_filter(array_slice((array) ($GLOBALS['ias_t_oneup']['calls'] ?? []), $from), function ($c) use ($path) { return $path === '' || $c['path'] === $path; }));
+}
+
+/** OneUp publishes a scheduled post at its time (created_at in UTC, as OneUp reports it). */
+function ias_t_oneup_publish(int $id): void {
+  $S =& $GLOBALS['ias_t_oneup'];
+  $row = $S['scheduled'][$id];
+  $at = (string) $row['date_time'];
+  unset($S['scheduled'][$id], $row['date_time']);
+  $row['created_at'] = (new DateTimeImmutable($at, ia_wp_tz()))->modify('+1 minute')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+  $S['published'][$id] = $row;
+}
+
+function ias_t_oneup_off(): void {
+  remove_all_filters('pre_http_request');
+  remove_all_filters('ias_oneup_key');
 }
