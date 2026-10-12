@@ -200,14 +200,18 @@ if (!function_exists('ias_build_candidates')) {
         $row['meta'] = ['sale_day' => $sale];
         $out['listing:' . $id] = $row;
 
-        // Open houses, from promotion on.
-        foreach ($f['open_houses'] as $oh) {
-          $o = $oh['start']->format('Y-m-d');
+        // Open houses, from promotion on: one post per open-house date (the spec's "each open
+        // house date"); two sessions on the same day share it, and it gives both times.
+        $oh_days = [];
+        foreach ($f['open_houses'] as $oh) $oh_days[$oh['start']->format('Y-m-d')][] = $oh;
+        foreach ($oh_days as $o => $sessions) {
           if ($o < ias_day_add($today, -1)) continue; // long gone
+          usort($sessions, function ($a, $b) { return $a['start'] <=> $b['start']; });
           $start = max(ias_day_add($o, -7), $p);
           $end   = ias_day_add($o, -3);
           $row = $base('open_house', [$f], ias_bid_multiplier($f['starting_bid'], $tiers));
-          $row['meta'] = ['oh' => (int) $oh['n'], 'oh_day' => $o, 'sale_day' => $sale];
+          $row['meta'] = ['oh' => (int) $sessions[0]['n'], 'oh_day' => $o, 'sale_day' => $sale];
+          if (count($sessions) > 1) $row['meta']['ohs'] = array_map(function ($s) { return (int) $s['n']; }, $sessions);
           if ($start > $end) {
             $row['status'] = 'dropped';
             $row['note'] = 'The open house is less than 3 days after the listing went Upcoming — no room for its post.';

@@ -21,7 +21,9 @@ no hooks on listings. Keep it that way: nothing outside `dependency.php` and
 `updater.php` may run before `ias_boot()` has passed the check. When a feature
 needs a new toolkit helper, add it to the toolkit (a release there, documented in
 its plugin guide §8.13), raise `IAS_MIN_TOOLKIT` and add the name to
-`ias_required_toolkit_functions()`.
+`ias_required_toolkit_functions()` (or, for a helper the plugin can do without,
+guard every call with `function_exists()` and add it to the optional list in
+`tests/unit/contract.php` — that test fails on any toolkit call that is neither).
 
 ## ⚠️ Documentation must stay current
 

@@ -345,10 +345,18 @@ if (!function_exists('ias_type_brief')) {
         if ($f['kind'] === 'liquidation') $b .= ' This is a liquidation / contents sale: talk about what is selling, from the description; there is no land or house to describe.';
         return $b;
       case 'open_house':
-        $oh = null;
-        foreach ($f['open_houses'] as $row) if ((int) $row['n'] === (int) ($meta['oh'] ?? 1)) $oh = $row;
-        $when = $oh ? ia_open_house_format($oh, 'range', 'l, F j,') . ' (' . ia_open_house_hours_label((float) $oh['hours']) . ')' : '[VERIFY: open house time]';
-        return 'OPEN HOUSE — invite people to walk the property at the open house on ' . $when . '. Give the day, the time range and how long it runs, what they will be able to see (from the facts only), and the auction date and how bidding works. About 50–100 words before the call to action.';
+        // Every session on this post's day (two on one day share the post), the first with its date.
+        $ns = array_map('intval', (array) ($meta['ohs'] ?? [$meta['oh'] ?? 1]));
+        $sessions = array_values(array_filter($f['open_houses'], function ($row) use ($ns) { return in_array((int) $row['n'], $ns, true); }));
+        usort($sessions, function ($a, $b) { return $a['start'] <=> $b['start']; }); // in time order, whichever was entered first
+        $times = [];
+        foreach ($sessions as $row) {
+          $times[] = ia_open_house_format($row, 'range', $times ? '' : 'l, F j,') . ' (' . ia_open_house_hours_label((float) $row['hours']) . ')';
+        }
+        $when = $times ? implode(' and again ', $times) : '[VERIFY: open house time]';
+        return 'OPEN HOUSE — invite people to walk the property at the open house on ' . $when . '. Give the day, '
+          . (count($times) > 1 ? 'both sessions\' time ranges and how long each runs' : 'the time range and how long it runs')
+          . ', what they will be able to see (from the facts only), and the auction date and how bidding works. About 50–100 words before the call to action.';
       case 'auction_week':
         $b = 'AUCTION WEEK — the sale is coming up. An urgency angle without hype: the auction date and start time, the place, how bidding works, the starting bid if given, and who to call with questions. Name the date; do not say how many days away it is (the post\'s day can move). About 50–100 words before the call to action.';
         if ($multi) $b .= ' SEVERAL PROPERTIES SELL THE SAME DAY: name each one on its own short line with its start time and how bidding works for it.';

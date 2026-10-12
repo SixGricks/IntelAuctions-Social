@@ -1,5 +1,16 @@
 # Intel Auctions Social changelog
 
+## 0.4.4 (2026-10-12) — from the Codex review of the build PR
+- **Two open-house sessions on the same day** share that day's Open House post
+  (the spec's "each open house date") and its brief gives both times, in time
+  order. Before, the second session silently replaced the first, so the post
+  named only one of them.
+- **`ia_ui_empty`** is now on the list of toolkit functions checked before the
+  plugin boots (the empty Calendar and Log call it), so a half-loaded toolkit
+  leaves the plugin off with its notice instead of a fatal on those screens. A
+  new test, `tests/unit/contract.php`, fails on any toolkit call that is neither
+  on that list nor an optional helper guarded at every call.
+
 ## 0.4.3 (2026-10-12) — Facebook Events are out
 - DJ's decision: "don't worry about facebook events at all". The Facebook
   Event cards are gone — the list under the calendar with Mark created and

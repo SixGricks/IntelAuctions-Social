@@ -30,7 +30,7 @@ if (!function_exists('ias_required_toolkit_functions')) {
       'ia_results_figures', 'ia_results_format_price',
       // engine, log, cron, admin look
       'ia_ai_generate', 'ia_ai_brand_context', 'ia_event_log', 'ia_events_recent', 'ia_cron_jobs',
-      'ia_ui_header', 'ia_ui_badge', 'ia_flash_set', 'ia_flash_out',
+      'ia_ui_header', 'ia_ui_badge', 'ia_ui_empty', 'ia_flash_set', 'ia_flash_out',
     ]);
   }
 }

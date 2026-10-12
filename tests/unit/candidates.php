@@ -117,3 +117,13 @@ $late = $dt('2026-12-08 05:00'); // 31 days after the sale
 t_ok(isset(ias_build_candidates([$past], $dt('2026-12-07 05:00'), $opts)['results:2026-11-07:narvon']), 'a Results post is called for 30 days after the sale');
 t_eq([], ias_build_candidates([$past], $late, $opts), '…and not after, when none was ever planned (a price entered weeks late)');
 t_ok(isset(ias_build_candidates([$past], $late, $opts + ['keep_results' => [51]])['results:2026-11-07:narvon']), 'but one already on the plan, still waiting for a yes, never expires');
+
+// Two open-house sessions on one day share one post (the spec: "each open house date"), naming both.
+$am = ['n' => 1, 'start' => $dt('2026-11-14 10:00'), 'end' => $dt('2026-11-14 12:00'), 'hours' => 2.0];
+$pm = ['n' => 2, 'start' => $dt('2026-11-14 16:00'), 'end' => $dt('2026-11-14 18:00'), 'hours' => 2.0];
+$c = ias_build_candidates([$listing(['id' => 61, 'sale' => '2026-11-21', 'open_houses' => [$pm, $am]])], $today, $opts);
+$ohs = array_values(array_filter(array_keys($c), function ($k) { return strpos($k, 'open_house:61:') === 0; }));
+t_eq(['open_house:61:20261114'], $ohs, 'two sessions on one day: one Open House post, not one lost under the other');
+t_eq([1, 2], $c['open_house:61:20261114']['meta']['ohs'] ?? null, '…carrying both sessions, earliest first');
+$c = ias_build_candidates([$listing(['id' => 62, 'sale' => '2026-11-21', 'open_houses' => [$am, ['n' => 2, 'start' => $dt('2026-11-15 13:00'), 'end' => $dt('2026-11-15 15:00'), 'hours' => 2.0]]])], $today, $opts);
+t_ok(isset($c['open_house:62:20261114'], $c['open_house:62:20261115']) && !isset($c['open_house:62:20261114']['meta']['ohs']), 'two open-house days: a post each, as before');
