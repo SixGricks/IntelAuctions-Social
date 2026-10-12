@@ -292,6 +292,7 @@ if (!function_exists('ias_listing_facts')) {
       'photos_at'   => ias_listing_day($id, '_ias_photos_at'),
       'webhook_pushed' => $webhook,
       'published_at' => $post ? substr((string) $post->post_date, 0, 10) : '',
+      'posts_cancelled' => (string) get_post_meta($id, '_ias_posts_cancelled', true),
     ];
   }
 }

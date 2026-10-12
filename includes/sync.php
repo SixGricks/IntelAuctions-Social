@@ -211,12 +211,14 @@ if (!function_exists('ias_sync')) {
     // Posts no longer called for.
     foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved'], 'limit' => 2000]) as $row) {
       if ($row['type'] === 'human' || isset($cands[$row['slot_key']])) continue;
-      $gone = false;
+      $gone = false; $held = '';
       foreach ((array) $row['listing_ids'] as $id) {
         $p = get_post((int) $id);
         if (!$p || $p->post_status !== 'publish' || $p->post_password !== '') $gone = true;
+        elseif (get_post_meta((int) $id, '_ias_posts_cancelled', true) !== '') $held = (string) get_post_meta((int) $id, '_ias_posts_cancelled', true);
       }
-      $why = $gone ? 'The listing was unpublished or deleted.' : 'No longer called for — the listing\'s dates, open houses or stage changed.';
+      $why = $gone ? 'The listing was unpublished, made private, password-protected or deleted.'
+        : ($held !== '' ? 'Cancel posts was pressed on the listing (' . $held . ').' : 'No longer called for — the listing\'s dates, open houses or stage changed.');
       ias_post_cancel($row, $why, 'system');
       $sum['cancelled']++;
     }

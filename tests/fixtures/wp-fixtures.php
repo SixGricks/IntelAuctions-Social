@@ -22,8 +22,7 @@ function ias_t_reset(): void {
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_ias_test', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
-  delete_option('ias_installed_at');
-  delete_option('ias_live_since');
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders'] as $o) delete_option($o);
   update_option('ias_settings', [], true);
 }
 

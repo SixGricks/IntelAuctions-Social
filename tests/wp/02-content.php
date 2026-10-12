@@ -59,7 +59,7 @@ t_ok(empty($r['errors']), 'the run had no errors: ' . wp_json_encode($r['errors'
 
 $by_slot = [];
 foreach (ias_posts_query(['limit' => 200]) as $p) $by_slot[$p['slot_key']] = $p;
-$want = ['listing:' . $farm, 'open_house:' . $farm . ':20261114', 'auction_week:2026-11-21', 'auction_week:2026-11-18', 'results:2026-10-31', 'roundup:2026-11-06'];
+$want = ['listing:' . $farm, 'open_house:' . $farm . ':20261114', 'auction_week:2026-11-21:narvon', 'auction_week:2026-11-18:sunbury', 'results:2026-10-31:paradise', 'roundup:2026-11-06'];
 foreach ($want as $slot) t_ok(isset($by_slot[$slot]), "post {$slot} is planned");
 foreach ($twins as $id) t_ok(isset($by_slot['listing:' . $id]), 'each twin has its own Listing post');
 t_ok(!isset($by_slot['listing:' . $new1]), 'no individual post for a Recently Announced listing');
@@ -89,17 +89,17 @@ $oh = $by_slot['open_house:' . $farm . ':20261114'];
 $oh_imgs = array_column((array) $oh['content']['media']['images'], 'id');
 t_ok(!array_intersect($oh_imgs, (array) $lp['images_used']), 'the Open House post uses none of the Listing post\'s photos');
 t_ok(count($oh_imgs) >= 3 && count($oh_imgs) <= 5, 'the Open House post has 3–5 photos');
-$aw = $by_slot['auction_week:2026-11-21'];
+$aw = $by_slot['auction_week:2026-11-21:narvon'];
 t_ok(!in_array($aw['content']['media']['images'][0]['id'], array_merge($lp['images_used'], $oh['images_used']), true), 'Auction Week leads with a photo this property has not used');
 
-$tw = $by_slot['auction_week:2026-11-18'];
+$tw = $by_slot['auction_week:2026-11-18:sunbury'];
 t_eq($twins, $tw['listing_ids'], 'the three same-day sales share one Auction Week post');
 t_ok(substr_count((string) $tw['content']['text'], 'Intel Phone Bidding') === 3, 'the shared post states phone bidding for each sale');
 $bad = $by_slot['listing:' . $twins[1]];
 t_eq('held', $bad['status'], 'a draft with "perfect for families" is held for a decision');
 t_ok((bool) array_filter((array) $bad['flags']['holds'], function ($h) { return strpos($h, 'Fair housing') === 0; }), '…and says why');
 
-$res = $by_slot['results:2026-10-31'];
+$res = $by_slot['results:2026-10-31:paradise'];
 t_eq([$sold, $contents], $res['listing_ids'], 'the sale and the contents sale share a Results post');
 t_eq('A', $res['lane'], 'Results is Lane A');
 $g = $res['content']['media']['images'][0] ?? [];
@@ -183,7 +183,7 @@ t_eq('planned', ias_post_get((int) $bad['id'])['status'], 'Keep as written relea
 wp_update_post(['ID' => $twins[2], 'post_status' => 'draft']);
 ias_sync();
 t_eq('cancelled', ias_post_by_slot('listing:' . $twins[2])['status'], 'unpublishing a listing cancels its posts');
-t_eq([$twins[0], $twins[1]], ias_post_by_slot('auction_week:2026-11-18')['listing_ids'], '…and takes it out of the shared post');
+t_eq([$twins[0], $twins[1]], ias_post_by_slot('auction_week:2026-11-18:sunbury')['listing_ids'], '…and takes it out of the shared post');
 wp_update_post(['ID' => $twins[2], 'post_status' => 'publish']);
 ias_sync();
 t_eq('planned', ias_post_by_slot('listing:' . $twins[2])['status'], 'republishing brings its posts back');

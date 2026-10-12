@@ -69,7 +69,10 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
 
 - `php tests/run.php` — the pure tests (no WordPress, `tests/unit/`). Must print
   ALL PASSED. Keep anything that is logic rather than WordPress plumbing testable
-  here.
+  here — the candidate builder, the scheduler and the checks are pure on
+  purpose. **`tests/unit/november.php` is the scheduler's acceptance test** (35
+  auctions, every morning for ten weeks): any change to planning must keep it
+  passing.
 - `php tests/wp-run.php /path/to/wordpress` — every `tests/wp/*.php` inside a
   real throwaway WordPress with the toolkit active (see `tests/README.md`; never a
   live site). Must print ALL PASSED. Add a check for every new behaviour.

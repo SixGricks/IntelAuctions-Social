@@ -1,6 +1,6 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.2.0.** The canonical user documentation, rendered inside
+> **Documented version: 0.3.0.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
@@ -20,12 +20,12 @@ The plugin is built in phases. Each ships with publishing off and is checked bef
 |---|---|---|
 | 1. Foundation | The plugin, the dependency check, its tables, settings, the log and the Social Calendar (read-only) | 0.1.0 |
 | 2. Content | Drafts for every post type, photo grading, crops, the results graphic, the fair-housing screen | 0.2.0 |
-| 3. Scheduler | The 5:00 plan, the rules, cancellations, dry-run payloads | — |
+| 3. Scheduler | The 5:00 plan, the rules, cancellations, dry-run payloads | 0.3.0 |
 | 4. Approval | The approval emails and their links, morning reminders, the Monday email, Facebook Event cards | — |
 | 5. OneUp live | Pushing to OneUp, reading back, cancelling, the first-comment link | — |
 | 6. The rest | Each post type switched on in turn | — |
 
-This version is **phase 2**: every current listing gets its posts planned on their ideal days and drafted by Claude, with their photos and graphics, and checked. Nothing is scheduled at a time yet and nothing is sent anywhere.
+This version is **phase 3**: every current listing's posts are drafted, checked and planned to the minute every morning, and what would go to OneUp is written to the log as a dry run. Nothing is sent anywhere yet.
 
 ## 3. Installing it
 
@@ -64,7 +64,7 @@ Click a post to open it: the preview as it would appear (text, pictures with the
 - **Skip this post** — take it off the plan, with a reason if you like. A skipped post stays skipped until you press **Restore to the plan**.
 - **Keep as written** — for a post that stopped for a decision: you have read why, and it is right as it is.
 
-Under the grid: **Needs a decision** (drafts that stopped, with why), **Drafts** (how many planned posts have no draft yet, and **Write drafts now**, which writes up to four on the spot), and **Waiting for photos** (Upcoming listings whose Listing post waits for a gallery).
+Above the grid, when the plan last ran and what it did; beside **Pause**, **Plan now**. Under the grid: **Needs a decision** (drafts that stopped, with why), **Drafts** (how many planned posts have no draft yet, and **Write drafts now**, which writes up to four on the spot), **Waiting for photos** (Upcoming listings whose Listing post waits for a gallery), **Dropped in the last 30 days** (with each reason) and **Running late or squeezed**. Each post's view also shows **What would go to OneUp**.
 
 Across the top of every screen, the **switches strip** shows the master switch, dry run, pause and each post type, so it is always plain whether anything can reach Facebook. **Pause all pushes** on the calendar stops every push at once without deactivating the plugin; **Resume pushes** undoes it. Planning and drafting carry on while paused.
 
@@ -88,7 +88,7 @@ This page.
 
 ### On each auction
 
-The edit screen of every auction has a **Social posts (Facebook)** box listing that property's posts — its own and the ones it shares (a same-day sale, the weekly roundup) — with each one's day and status, and a link to the calendar. Below the list, three things the site has no field for, saved with the auction:
+The edit screen of every auction has a **Social posts (Facebook)** box with **Cancel posts** (and **Resume posts** once pressed), listing that property's posts — its own and the ones it shares (a same-day sale, the weekly roundup) — with each one's day and status, and a link to the calendar. Below the list, three things the site has no field for, saved with the auction:
 
 - **Sale kind** — real estate, or a liquidation / contents sale (its Results post is a thank-you with no price graphic). Left alone, the title decides: "liquidation", "contents", "equipment", "tools", "personal property" and the like with no acreage mean a liquidation.
 - **Parcels** — for a multi-parcel sale, one per line: `name | size | starting bid`. The Listing post then leads with the parcel breakdown.
@@ -117,11 +117,11 @@ The plugin checks every hour which posts the listings call for (the table in §5
 
 - A listing in **Recently Announced** gets no post of its own; it goes into that Friday's **New This Week** roundup (announced from the Friday before through Thursday). Listings already posted in full to Facebook by the toolkit's webhook before this plugin took Facebook over don't get a second Listing post — theirs shows as skipped, with the date.
 - Moving to **Upcoming** (Publish Upcoming) starts the **Listing** post's window that day — or the day photos arrive, if they come later. A listing that is already Upcoming when the plugin first sees it counts from that day. With no photos yet, the Listing post waits (under **Waiting for photos**). If the photos still aren't there when its auction week starts, the Listing post is skipped and the **Auction Week** post runs anyway, guaranteed, with the brochure cover.
-- Each **open house** gets its post 7 → 5 → 3 days before (never before the listing went Upcoming); the **sale** gets its Auction Week post 10 → 7 → 3 days before. Two or more listings selling the **same day** share one Auction Week post and one Results post.
+- Each **open house** gets its post 7 → 5 → 3 days before (never before the listing went Upcoming); the **sale** gets its Auction Week post 10 → 7 → 3 days before. Two or more listings selling the **same day at the same place** (the same town — the Sunbury twins, both Lila Lane duplexes, 393 Boyer Rd and its contents) share one Auction Week post and one Results post. Two unrelated sales that only share a date keep their own posts.
 - **Results** come the day after the sale once it is in Past with a price (a Saturday sale's on the Monday), and wait as long as it takes for a yes. A liquidation needs no price: its post is a thank-you for the turnout. Installing the plugin does not dig up old results — only sales from a week before it arrived on.
-- A listing that is unpublished, made private, password-protected or deleted loses its posts on the next run (Phase 3 makes it immediate); republish it and they come back. A post that is no longer called for (a date or an open house changed) is cancelled. What a person decided — skipped, cancelled, edited — is never undone, and a post already approved or sent is never changed: a listing that joins its sale day afterwards gets its own post.
+- A listing that is unpublished, made private, password-protected, trashed or deleted loses its posts **at once** — before the page that did it has finished loading — and a shared post simply loses that listing; republish it and they come back. **Cancel posts** on the listing panel does the same on purpose (for the rare sale that is called off); **Resume posts** undoes it. A post that is no longer called for (a date or an open house changed) is cancelled. What a person decided — skipped, cancelled, edited — is never undone, and a post already approved or sent is never changed: a listing that joins its sale day afterwards gets its own post.
 
-Every post sits on its **ideal day** on the calendar (a Sunday ideal moves to Monday, or Saturday when Monday is past the window). Phase 3 gives each one its time.
+Each post has a window and an ideal day (a Sunday ideal moves to Monday, or Saturday when Monday is past the window); the morning plan (below) gives each one its day and minute.
 
 ### The words
 
@@ -170,18 +170,54 @@ The plugin's job runs every hour on the toolkit's dispatcher (`ias_social`, list
 
 Nothing is paid for twice: a draft is rewritten only when the listing's facts behind it change (and nobody has edited it), at most every 6 hours, or when a person presses **Rewrite** (at most hourly). A failed call waits 6 hours before trying again.
 
-## 7. What it stores
+## 7. The plan
+
+### The morning run
+
+Every morning from **5:00** (Settings: the planning hour) the plugin's hourly job re-plans the next **30 days**. **Plan now** on the calendar runs the same plan on the spot. In order:
+
+1. **What is fixed stays put.** A post already published, a human post, a post someone edited in OneUp, and a post already on the OneUp calendar inside the 48-hour veto window are never moved or dropped; the plan works around them (reading them back from OneUp is Phase 5).
+2. **Cancelled listings are already gone** — cancelling happens the moment a listing is unpublished or deleted (§6).
+3. **Every other post goes on its ideal day** if it can. **Guaranteed posts first** (Listing, Results, the roundup), by priority; then the rest by priority.
+4. **A full day** (three posts) pushes the newcomer to the nearest day in its window with room. A post that finds no room anywhere makes a lower one move: a guaranteed post can move any Open House or Auction Week post, and a higher-priority Open House or Auction Week post can move a lower one. The post that made way looks again elsewhere in its own window.
+5. **A droppable post with no room anywhere in its window is dropped**, with the reason, under **Dropped in the last 30 days** on the calendar and in the log. A guaranteed post is never dropped: with no room in its window it **runs late** (up to 14 days after it, but a Listing post never later than the day before its sale), and only if even that fails is the same-county rule bent for it — both are listed under **Running late or squeezed**.
+6. **A day with fewer than two posts** pulls in the best post whose window reaches it — a dropped one first, else one moved from a day with three. (Blog fill-ins join here once blogs resume.)
+7. **The sense rules hold throughout**: one post per property per day, no two posts about the same county on one day, a property's Open House and Auction Week posts after its Listing post, and when two days are equally good, the one without that division already.
+8. **The pushes** (below).
+
+A post keeps the day and minute it already has whenever they still work, so the calendar — and later OneUp — only changes when something forces it. A dropped post comes back by itself if room opens up.
+
+### Times
+
+- **Never on Sunday.** Monday to Saturday, at most **3 posts a day**, at least **3 hours apart**.
+- In the posting windows **6:00–7:30 AM, 11:30 AM–1:00 PM and 7:00–9:00 PM**: the day's highest-priority post takes the evening, the next midday, the third the morning (working around any fixed post's time).
+- Each post's time is shifted by **up to 25 minutes** from the window's start — the same shift for the same post every day — and never lands on the hour.
+- **Nothing new closer than 48 hours** for Listing, Open House and Auction Week posts (Lane B): that is the window to veto it in OneUp. A roundup or Results post (Lane A) is planned at least an hour ahead, because it goes nowhere until someone approves it; once approved, it takes the next free time.
+
+### The pushes — a dry run in this version
+
+After planning, every post scheduled in the next **21 days** that is ready — a Lane B post with a draft that passed its checks, or an approved Lane A post — is turned into the exact request for OneUp's API, and every post that went out and has since been dropped, skipped or cancelled is turned into the request that takes it back:
+
+- A post with pictures is `scheduleimagepost` (up to 10 pictures, their addresses joined by `~~`), a video `schedulevideopost`, words alone `scheduletextpost`, each with the OneUp category id, the Facebook account id, the time as `YYYY-MM-DD HH:MM` (site time — OneUp's account time zone must match), the text, and the tagged link as `first_comment`.
+- A moved or changed post is deleted and scheduled again (OneUp cannot change a scheduled post's time). Live posts are never edited.
+- The API key (`INTEL_ONEUP_API_KEY`) is added only when sending and never appears in the log or on screen.
+
+In this version **nothing is sent**: each request goes to the log as a `dryrun` entry, once when it is new and again only when it changes, with what is stopping it (master switch off, dry run on, paused, the post type off, no key or ids — and, until Phase 5, that live pushing is not built yet). Each post's view shows **What would go to OneUp** too. A Results post or roundup waiting for approval never appears there.
+
+**Check connection** under Settings asks OneUp for its categories and their accounts with the key from wp-config — a read-only call that changes nothing — so the category id and the Facebook account id can be copied in.
+
+## 8. What it stores
 
 - `{prefix}ias_posts` — one row per post: its listing(s), type, status, priority, window, scheduled time, OneUp post id, content, the images it used, approvals and its history.
 - `{prefix}ias_history` — the openers, calls to action, hashtag sets, templates and images already used, for the no-repeat rules.
-- The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it).
-- On each listing: `_ias_announced_at` and `_ias_promoted_at` (the days it entered Recently Announced and Upcoming), `_ias_photos_at` (the day its photos were first seen), and the panel's `_ias_sale_kind`, `_ias_parcels` and `_ias_brochure_cover`.
+- The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it); `ias_last_plan` and `ias_last_plan_summary` (the morning plan's day and counts).
+- On each listing: `_ias_announced_at` and `_ias_promoted_at` (the days it entered Recently Announced and Upcoming), `_ias_photos_at` (the day its photos were first seen), the panel's `_ias_sale_kind`, `_ias_parcels` and `_ias_brochure_cover`, and `_ias_posts_cancelled` while Cancel posts is on.
 - On each photo: `_ias_photo` (its grade, kind and alt text) and `_ias_crops` (the three crops).
 - Pictures in `uploads/intel-social/` (`graphics/` and `crops/`).
 - Its log entries in the toolkit's `{prefix}ia_events` table, as `ias.*` events.
 
 **Deleting the plugin removes all of it** — both tables, the options, its log entries, its per-image and per-listing data and its generated pictures. The listings themselves and anything already on Facebook are untouched. The full list is `uninstall.php`.
 
-## 8. Requirements
+## 9. Requirements
 
 PHP 7.4+, WordPress 5.3+, the Intel Auctions Toolkit 4.66.0+ with its Anthropic key set (drafts and photo grading use the toolkit's Claude engine and monthly cap), and GD with FreeType for the pictures it draws (without it, Results and roundup posts go out with a plain photo). It uses the toolkit's helpers by name; if a toolkit update ever removes one, the plugin stops with the notice rather than failing half way through a run.

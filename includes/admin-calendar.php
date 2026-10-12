@@ -57,6 +57,8 @@ if (!function_exists('ias_calendar_render')) {
       . '<input type="hidden" name="ias_cal_action" value="' . ($paused ? 'resume' : 'pause') . '">'
       . '<button class="button ' . ($paused ? 'button-primary' : '') . '">' . ($paused ? '▶ Resume pushes' : '❚❚ Pause all pushes') . '</button></form>';
 
+    /** Later phases add buttons beside Pause (Plan now). */
+    $button = (string) apply_filters('ias_calendar_header_actions', $button);
     ia_ui_header(
       'Social Calendar',
       'The next ' . (int) ias_setting('plan_days', 30) . ' days of Facebook posts for every listing. Click a post to see it. '
@@ -64,6 +66,8 @@ if (!function_exists('ias_calendar_render')) {
       $button
     );
     echo ias_switches_strip();
+    /** A line about the last plan (Phase 3). */
+    do_action('ias_calendar_before_grid');
 
     if (!ias_db_ready()) {
       echo '<div class="notice notice-warning"><p>The plugin\'s tables are not set up yet. Reload this page; if this stays, deactivate and activate the plugin.</p></div></div>';
@@ -173,6 +177,8 @@ if (!function_exists('ias_calendar_render_post')) {
     }
     echo '</div><div>';
     ias_post_facts_card($p);
+    /** Later phases add cards to the right-hand column (what would go to OneUp). */
+    do_action('ias_post_view_side', $p);
     ias_post_trail_card($p);
     echo '</div></div></div>';
   }

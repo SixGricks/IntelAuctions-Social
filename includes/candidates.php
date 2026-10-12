@@ -17,10 +17,10 @@
  *   Open House      — each open house O: O−7 → O−5 → O−3, never before the
  *                     listing was promoted.
  *   Auction Week    — the sale A: A−10 → A−7 → A−3. Listings selling the same
- *                     day share one post.
+ *                     day at the same place share one post.
  *   Results         — a past listing with a sale price (or a liquidation, with
  *                     none): the day after the sale → whenever approved;
- *                     same-day sales share one post. Only for sales from a
+ *                     same-day sales at the same place share one post. Only for sales from a
  *                     week before the plugin arrived on, so installing it does
  *                     not unearth a year of results.
  *   New This Week   — Friday F, when listings entered Recently Announced from
@@ -68,6 +68,22 @@ if (!function_exists('ias_bid_multiplier')) {
       if ($bid >= (float) $t[0]) return (float) $t[1];
     }
     return 1.0; // below every tier's floor (the last row does not start at $0)
+  }
+}
+
+/**
+ * Where a sale happens, for merging: same-day sales merge only when they are
+ * at the same place — the town, else the county, else the listing alone. The
+ * spec's examples are all one place (the Sunbury twins, both Lila Lane
+ * duplexes, 393 Boyer Rd and its contents); two unrelated sales that happen to
+ * share a date keep their own posts.
+ */
+if (!function_exists('ias_place_key')) {
+  function ias_place_key(array $f): string {
+    $place = strtolower(trim((string) ($f['town'] ?? '')));
+    if ($place === '') $place = strtolower(trim((string) ($f['county'] ?? '')));
+    if ($place === '') return 'id' . (int) $f['id'];
+    return trim((string) preg_replace('/[^a-z0-9]+/', '-', $place), '-');
   }
 }
 
@@ -132,6 +148,7 @@ if (!function_exists('ias_build_candidates')) {
     $live = [];
     foreach ($all as $f) {
       if (($f['status'] ?? '') !== 'publish' || !empty($f['password'])) continue; // drafts, private and password-protected sales get nothing
+      if (!empty($f['posts_cancelled'])) continue; // Cancel posts on the listing panel
       $live[(int) $f['id']] = $f;
     }
 
@@ -178,6 +195,7 @@ if (!function_exists('ias_build_candidates')) {
             $window($row, $start, $start, $end);
           }
         }
+        $row['meta'] = ['sale_day' => $sale];
         $out['listing:' . $id] = $row;
 
         // Open houses, from promotion on.
@@ -187,7 +205,7 @@ if (!function_exists('ias_build_candidates')) {
           $start = max(ias_day_add($o, -7), $p);
           $end   = ias_day_add($o, -3);
           $row = $base('open_house', [$f], ias_bid_multiplier($f['starting_bid'], $tiers));
-          $row['meta'] = ['oh' => (int) $oh['n'], 'oh_day' => $o];
+          $row['meta'] = ['oh' => (int) $oh['n'], 'oh_day' => $o, 'sale_day' => $sale];
           if ($start > $end) {
             $row['status'] = 'dropped';
             $row['note'] = 'The open house is less than 3 days after the listing went Upcoming — no room for its post.';
@@ -198,18 +216,19 @@ if (!function_exists('ias_build_candidates')) {
           $out['open_house:' . $id . ':' . str_replace('-', '', $o)] = $row;
         }
 
-        if ($sale !== '' && $sale >= $today) $aw_groups[$sale][] = $f;
+        if ($sale !== '' && $sale >= $today) $aw_groups[$sale . ':' . ias_place_key($f)][] = $f;
       }
 
       if ($f['stage'] === 'past' && $sale !== '') {
         $from = max(ias_day_add($installed, -7), ias_day_add($today, -30));
         $has_result = $f['price'] !== '' || $f['kind'] === 'liquidation';
-        if ($sale >= $from && $sale < $today && $has_result) $res_groups[$sale][] = $f;
+        if ($sale >= $from && $sale < $today && $has_result) $res_groups[$sale . ':' . ias_place_key($f)][] = $f;
       }
     }
 
-    // Auction Week: one post per sale day.
-    foreach ($aw_groups as $sale => $group) {
+    // Auction Week: one post per sale day and place.
+    foreach ($aw_groups as $group_key => $group) {
+      $sale = substr($group_key, 0, 10);
       usort($group, function ($a, $b) { return [$a['date'], $a['id']] <=> [$b['date'], $b['id']]; });
       $mult = max(array_map(function ($f) use ($tiers) { return ias_bid_multiplier($f['starting_bid'], $tiers); }, $group));
       $row = $base('auction_week', $group, $mult);
@@ -227,11 +246,12 @@ if (!function_exists('ias_build_candidates')) {
         $start = $end; // promoted inside the window's tail: one possible day
       }
       $window($row, $start, max($start, ias_day_add($sale, -7)), $end);
-      $out['auction_week:' . $sale] = $row;
+      $out['auction_week:' . $group_key] = $row;
     }
 
-    // Results: one post per sale day, the day after the sale, open-ended.
-    foreach ($res_groups as $sale => $group) {
+    // Results: one post per sale day and place, the day after the sale, open-ended.
+    foreach ($res_groups as $group_key => $group) {
+      $sale = substr($group_key, 0, 10);
       usort($group, function ($a, $b) { return [$a['date'], $a['id']] <=> [$b['date'], $b['id']]; });
       $mult = max(array_map(function ($f) use ($tiers) { return ias_bid_multiplier($f['starting_bid'], $tiers); }, $group));
       $row = $base('results', $group, $mult);
@@ -240,7 +260,7 @@ if (!function_exists('ias_build_candidates')) {
       $ideal = max($start, $today);
       $row['meta'] = ['sale_day' => $sale];
       $window($row, $start, $ideal, null);
-      $out['results:' . $sale] = $row;
+      $out['results:' . $group_key] = $row;
     }
 
     // New This Week: the Friday whose window is still open, and the one after it.

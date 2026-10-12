@@ -1,5 +1,39 @@
 # Intel Auctions Social changelog
 
+## 0.3.0 (2026-10-12) — Phase 3: the scheduler
+- **The morning plan.** From 5:00 the hourly job re-plans the next 30 days
+  with a scheduler that places guaranteed posts first, bumps lower ones when it
+  must (a guaranteed post is never moved aside or dropped; it runs late, or as
+  a last resort bends the county rule — both reported), drops a droppable post
+  only when its whole window is full (with the reason), and pulls posts into
+  days with fewer than two. Never Sunday, at most 3 a day, 3 hours apart, in
+  the three posting windows with a stable shift of up to 25 minutes, never on
+  the hour; nothing new inside the 48-hour veto window for Lane B; one post per
+  property per day, no two posts about the same county on one day, a
+  property's later posts after its Listing post, divisions mixed when it is a
+  tie. A post keeps its day and minute while they still work. **Plan now** on
+  the calendar.
+- **Acceptance:** `tests/unit/november.php` — 35 auctions across November,
+  planned every morning from Oct 1 to Dec 10 with posts pushed, published and
+  approved between mornings: no guaranteed post dropped, every rule kept every
+  morning, every property's Listing and Results posts out, every roundup on its
+  Friday or Saturday.
+- **Same-day sales merge only at the same place** (same town): the Sunbury
+  twins share a post; a Lancaster farm selling the same day keeps its own. Slot
+  keys gain the place (`auction_week:2026-11-18:sunbury`).
+- **Dry-run pushes.** Every ready post in the next 21 days becomes the exact
+  OneUp request (`scheduleimagepost` / `schedulevideopost` / `scheduletextpost`
+  with the category and account ids, the time, the text and the tagged
+  `first_comment`; a moved post is delete-then-schedule; a dropped or cancelled
+  one is a delete), logged once per change with what stops it being sent. The
+  API key never appears. Live sending is not built (Phase 5).
+- **Cancelling at once.** Unpublishing, password-protecting, trashing or
+  deleting a listing cancels its posts before the request ends; republishing
+  brings them back. **Cancel posts / Resume posts** on the listing panel.
+- **Calendar:** last plan line, Plan now, Dropped in the last 30 days, Running
+  late or squeezed, and each post's What would go to OneUp. **Settings:** Check
+  connection (a read-only call listing OneUp's categories and accounts).
+
 ## 0.2.0 (2026-10-12) — Phase 2: content
 - **Every current listing gets its posts.** An hourly job (`ias_social` on the
   toolkit's dispatcher) reads every listing's facts through the toolkit and plans

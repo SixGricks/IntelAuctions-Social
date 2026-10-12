@@ -257,6 +257,9 @@ if (!function_exists('ias_settings_render')) {
     do_action('ias_settings_sections', $s);
 
     submit_button('Save settings');
-    echo '</form></div>';
+    echo '</form>';
+    /** Later phases add forms of their own below the settings (the OneUp connection check). */
+    do_action('ias_settings_after_form');
+    echo '</div>';
   }
 }
