@@ -1,5 +1,19 @@
 # Intel Auctions Social changelog
 
+## 0.4.1 (2026-10-12) — review fixes from the end-to-end run
+- An approved roundup or Results post whose facts change before it goes out
+  (a corrected sale price) loses its approval: it is rewritten and sent for a
+  fresh yes, and its old links stop working.
+- A draft whose listing changed is never pushed until it has been rewritten,
+  and it is rewritten on the next run (at most once an hour), not after 6
+  hours.
+- The roundup's name on the calendar and in emails reads "3 new sales".
+- The OneUp request box on a post wraps long addresses.
+- Tests: an uninstall test (both tables, options, meta, pictures and log
+  entries gone; listings and the toolkit's own data untouched); the fixtures'
+  marker no longer uses the plugin's `_ias_` prefix, so an uninstall test
+  cannot strand other tests' data.
+
 ## 0.4.0 (2026-10-12) — Phase 4: approval
 - **Lane A by email.** A roundup or Results post with a clean draft becomes
   Waiting for approval and each approver gets the full text, the picture, the

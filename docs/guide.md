@@ -1,6 +1,6 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.4.0.** The canonical user documentation, rendered inside
+> **Documented version: 0.4.1.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
@@ -169,7 +169,7 @@ Two things are fixed without asking: a web address in the text is removed (the l
 
 The plugin's job runs every hour on the toolkit's dispatcher (`ias_social`, listed with the toolkit's jobs): it updates the plan, then writes up to **8 drafts** (Settings), approve-first posts (Results, the roundup) first and then by day, for the next 30 days. The roundup is written on its Friday, once the week's announcements are in. Each draft is one Claude call (two if the first answer was unusable or repeated itself), each photo batch another, all counted against the toolkit's monthly Claude cap — when the cap is reached, drafting stops until next month or until the cap is raised.
 
-Nothing is paid for twice: a draft is rewritten only when the listing's facts behind it change (and nobody has edited it), at most every 6 hours, or when a person presses **Rewrite** (at most hourly). A failed call waits 6 hours before trying again.
+Nothing is paid for twice: a draft is rewritten only when the listing's facts behind it change (and nobody has edited it) — on the next run, at most once an hour — or when a person presses **Rewrite** (at most hourly). A failed call waits 6 hours before trying again. Until a draft whose facts changed has been rewritten, it is never pushed.
 
 ## 7. The plan
 
@@ -220,7 +220,7 @@ The links are **signed one-time links**: each approver gets their own, random an
 
 A post still waiting gets a **reminder every morning** (from the planning hour, with fresh links) until someone answers. **It never expires.** **No approval email or reminder goes out on Sunday** — Sunday's go on Monday morning.
 
-Approving puts the post on the plan **at once**, at the next free time at least an hour ahead (the approval was the yes, so it doesn't wait out the 48-hour veto window), and it joins the pushes. Changing the words of a waiting or approved post — by Edit, Rewrite, or because the listing changed and the draft was rewritten — needs a fresh yes: the old links stop working and new emails go out.
+Approving puts the post on the plan **at once**, at the next free time at least an hour ahead (the approval was the yes, so it doesn't wait out the 48-hour veto window), and it joins the pushes. Changing the words of a waiting or approved post — by Edit, Rewrite, or because the listing changed and the draft was rewritten — needs a fresh yes: the old links stop working and new emails go out. That includes a fact corrected **after** the yes (say, the sale price on Post Auction Results): the approval is withdrawn, the post is rewritten with the new figure and sent for approval again, and it cannot be pushed in between.
 
 ### The Monday email
 

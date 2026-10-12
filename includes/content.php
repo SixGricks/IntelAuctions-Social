@@ -16,8 +16,10 @@
  * "Needs a decision" rather than letting it near Facebook.
  *
  * Paying twice is guarded: a draft is written once, and again only when the
- * listing's facts changed (and nobody has edited or approved it) or a person
- * presses Regenerate (at most once an hour); a failed call waits 6 hours.
+ * listing's facts changed (at most once an hour, and never over a person's
+ * edit) or a person presses Rewrite (at most once an hour); a failed call
+ * waits 6 hours. A draft whose facts changed is never pushed until rewritten,
+ * and an approved post whose facts changed goes back for a fresh yes.
  */
 
 if (!defined('ABSPATH')) exit;

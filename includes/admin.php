@@ -123,7 +123,7 @@ if (!function_exists('ias_admin_styles')) {
       .ias-kv{border-collapse:collapse}
       .ias-kv th{text-align:left;padding:3px 12px 3px 0;color:#50575e;font-weight:600;vertical-align:top;white-space:nowrap}
       .ias-kv td{padding:3px 0;vertical-align:top}
-      .ias-json{white-space:pre-wrap;font-family:Menlo,Consolas,monospace;font-size:12px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;padding:8px;max-height:420px;overflow:auto}
+      .ias-json{white-space:pre-wrap;overflow-wrap:anywhere;font-family:Menlo,Consolas,monospace;font-size:12px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;padding:8px;max-height:420px;overflow:auto}
       @media (max-width:1100px){.ias-cols{grid-template-columns:1fr}.ias-cal{grid-template-columns:repeat(2,minmax(0,1fr))}.ias-cal-head{display:none}.ias-day.blank{display:none}}
     </style>';
   }

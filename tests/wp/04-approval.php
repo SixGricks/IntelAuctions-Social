@@ -168,3 +168,29 @@ t_eq([], $errors, 'no PHP notices on the screens');
 
 remove_all_filters('pre_wp_mail');
 ias_t_claude_off();
+
+// ---- An approved post whose facts change goes back for a fresh yes ----
+ias_t_clock('2026-11-10 05:30');
+$GLOBALS['ias_t_mail'] = [];
+add_filter('pre_wp_mail', function ($null, $atts) { $GLOBALS['ias_t_mail'][] = $atts; return true; }, 10, 2);
+ias_t_claude();
+$sold3 = ias_t_listing(['title' => '3 Fix Road', 'address' => '3 Fix Road, Lititz, PA 17543, USA', 'town' => 'Lititz', 'county' => 'Lancaster',
+  'sale' => '2026-11-07 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'price' => '500000', 'featured' => ias_t_photo('Fix front')]);
+ia_stage_set($sold3, 'past');
+ias_job_run();
+$r3 = ias_post_by_slot('results:2026-11-07:lititz');
+$ok = ias_approve((int) $r3['id'], 'dj@intelauctions.com', 'test');
+t_eq('approved', ias_post_get((int) $r3['id'])['status'], 'approved');
+update_post_meta($sold3, '_ia_result_price', '505000'); // the price is corrected after the yes
+ias_sync();
+$r3 = ias_post_get((int) $r3['id']);
+t_eq('planned', $r3['status'], 'a corrected price after approval withdraws the approval');
+t_eq('the listing changed and the draft has not been rewritten yet', ias_push_ready($r3), '…and it cannot be pushed with the old price');
+$GLOBALS['ias_t_mail'] = [];
+global $wpdb;
+$wpdb->update(ias_table('posts'), ['generated_at' => '2026-11-10 03:00:00'], ['id' => $r3['id']]);
+ias_job_run();
+$r3 = ias_post_get((int) $r3['id']);
+t_ok(strpos((string) $r3['content']['text'], '$505,000') !== false && $r3['status'] === 'waiting', 'it is rewritten with the new price and sent for a fresh yes');
+remove_all_filters('pre_wp_mail');
+ias_t_claude_off();

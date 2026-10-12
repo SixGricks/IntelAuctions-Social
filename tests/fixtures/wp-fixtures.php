@@ -19,7 +19,7 @@ function ias_t_reset(): void {
   $wpdb->query('TRUNCATE ' . ias_table('posts'));
   $wpdb->query('TRUNCATE ' . ias_table('history'));
   $wpdb->query("DELETE FROM {$wpdb->prefix}ia_events WHERE event LIKE 'ias.%'");
-  foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_ias_test', 'fields' => 'ids']) as $id) {
+  foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
   foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders'] as $o) delete_option($o);
@@ -66,7 +66,7 @@ function ias_t_photo(string $label, array $rgb = [90, 120, 80]): int {
   $id = wp_insert_attachment(['post_mime_type' => 'image/jpeg', 'post_title' => $label, 'post_status' => 'inherit'], $file);
   require_once ABSPATH . 'wp-admin/includes/image.php';
   wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $file));
-  update_post_meta($id, '_ias_test', 1);
+  update_post_meta($id, '_iast_fixture', 1);
   return (int) $id;
 }
 
@@ -78,7 +78,7 @@ function ias_t_photo(string $label, array $rgb = [90, 120, 80]): int {
 function ias_t_listing(array $a): int {
   $id = wp_insert_post(['post_type' => 'auction', 'post_status' => $a['status'] ?? 'publish', 'post_title' => $a['title'],
     'post_content' => $a['content'] ?? 'A well-kept property with good road frontage.', 'post_excerpt' => $a['excerpt'] ?? '']);
-  update_post_meta($id, '_ias_test', 1);
+  update_post_meta($id, '_iast_fixture', 1);
   if (!empty($a['terms'])) wp_set_object_terms($id, array_map('intval', $a['terms']), 'category', true);
   if (!empty($a['sale'])) update_post_meta($id, 'auction_date', $a['sale'] . ':00');
   if (isset($a['bid'])) update_post_meta($id, 'Starting_Bid', $a['bid']);
@@ -104,7 +104,7 @@ function ias_t_listing(array $a): int {
 
 function ias_t_team(string $name, string $phone): int {
   $id = wp_insert_post(['post_type' => 'team-member', 'post_status' => 'publish', 'post_title' => $name]);
-  update_post_meta($id, '_ias_test', 1);
+  update_post_meta($id, '_iast_fixture', 1);
   update_post_meta($id, 'phone_number', $phone);
   return (int) $id;
 }

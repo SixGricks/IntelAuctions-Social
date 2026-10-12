@@ -159,7 +159,21 @@ if (!function_exists('ias_sync')) {
         }
         continue;
       }
-      if (in_array($row['status'], ['approved', 'pushed', 'published', 'human'], true)) continue;
+      if (in_array($row['status'], ['pushed', 'published', 'human'], true)) continue;
+      if ($row['status'] === 'approved') {
+        // Approved but not yet out: if the facts behind it changed, the yes was for other facts.
+        $hash = ias_facts_hash(['type' => $c['type'], 'flags' => array_merge($row['flags'], $flags_meta)], array_values(array_filter(array_map(function ($id) use ($facts) { return $facts[$id] ?? null; }, $c['listing_ids']))));
+        if ($row['facts_hash'] !== '' && $hash !== $row['facts_hash'] && $c['listing_ids'] === $row['listing_ids']) {
+          $flags = array_merge($row['flags'], $flags_meta, ['stale' => true]);
+          unset($flags['edited_by']);
+          if (function_exists('ias_approval_void')) ias_approval_void((int) $row['id']);
+          ias_post_update((int) $row['id'], ['status' => 'planned', 'flags' => $flags, 'note' => 'The listing changed after it was approved: it is rewritten and sent for approval again.', 'approved_at' => null, 'approved_by' => '']);
+          ias_post_trail((int) $row['id'], 'The listing changed after approval — back to be rewritten and approved again');
+          ias_log('planned', (int) $row['listing_id'], ['post' => (int) $row['id'], 'type' => $row['type'], 'summary' => 'Approval withdrawn: the listing changed after it was approved'], 'system');
+          $sum['updated']++;
+        }
+        continue;
+      }
 
       $fields = ias_candidate_fields($c);
       $flags = array_merge($row['flags'], $flags_meta);
@@ -252,8 +266,10 @@ if (!function_exists('ias_drafts_due')) {
       $ideal = (string) ($p['window_ideal'] ?? '');
       if ($ideal === '' || $ideal > $horizon) continue;
       $has = !empty($p['content']['text']);
+      // A stale draft is rewritten on the next run — at most once an hour, so a listing edited
+      // five times in an afternoon costs a handful of calls, not one per save.
       $stale = !empty($p['flags']['stale']) && empty($p['flags']['edited_by'])
-        && strtotime((string) $p['generated_at']) < strtotime(ias_now_sql()) - 6 * HOUR_IN_SECONDS;
+        && strtotime((string) $p['generated_at']) < strtotime(ias_now_sql()) - HOUR_IN_SECONDS;
       if ($has && !$stale) continue;
       if ($p['status'] === 'held' && $has) continue; // a held draft waits for its person
       // The roundup is written on its Friday, once the week's announcements are in.

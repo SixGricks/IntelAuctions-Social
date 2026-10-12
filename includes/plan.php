@@ -117,6 +117,7 @@ if (!function_exists('ias_push_ready')) {
     if (empty($p['scheduled_at'])) return 'no time yet';
     if (empty($p['content']['text'])) return 'no draft yet';
     if ($p['status'] === 'held') return 'it needs a decision';
+    if (!empty($p['flags']['stale'])) return 'the listing changed and the draft has not been rewritten yet';
     if ($p['lane'] === 'A' && $p['status'] !== 'approved') return 'it is waiting for approval';
     if (!in_array($p['status'], ['planned', 'approved', 'pushed'], true)) return 'it is ' . $p['status'];
     return '';

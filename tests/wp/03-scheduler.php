@@ -121,6 +121,12 @@ $_GET = ['page' => IAS_PAGE_CALENDAR];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
 t_ok(strpos($html, 'Plan now') !== false && strpos($html, 'Last planned') !== false, 'the calendar has Plan now and the last plan');
 t_ok(strpos($html, 'Dropped in the last 30 days') !== false, '…and the dropped list');
+// The open house moved, so the farm's Listing draft is stale: it is rewritten before it can be pushed.
+t_eq('the listing changed and the draft has not been rewritten yet', ias_push_ready(ias_post_get((int) $lp['id'])), 'a stale draft is never pushed');
+$wpdb->update(ias_table('posts'), ['generated_at' => '2026-11-02 03:00:00'], ['id' => $lp['id']]);
+ias_drafts_run(30);
+ias_plan_run();
+t_eq('', ias_push_ready(ias_post_get((int) $lp['id'])), '…and is ready again once rewritten');
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $lp['id']];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
 t_ok(strpos($html, 'What would go to OneUp') !== false && strpos($html, 'scheduled_date_time') !== false, 'a post shows what would go to OneUp');

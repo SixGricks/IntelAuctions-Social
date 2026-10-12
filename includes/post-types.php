@@ -106,7 +106,7 @@ if (!function_exists('ias_post_subject')) {
   function ias_post_subject(array $post): string {
     $ids = (array) ($post['listing_ids'] ?? []);
     if (($post['type'] ?? '') === 'roundup') {
-      return 'New this week: ' . count($ids) . ' ' . (count($ids) === 1 ? 'sale' : 'sales');
+      return count($ids) . ' new ' . (count($ids) === 1 ? 'sale' : 'sales');
     }
     if (count($ids) > 1) {
       $day = !empty($post['content']['sale_day']) ? ' on ' . date_i18n('M j', strtotime((string) $post['content']['sale_day'])) : '';

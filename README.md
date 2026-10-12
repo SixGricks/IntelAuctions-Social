@@ -1,7 +1,7 @@
 # Intel Auctions Social
 
 A WordPress plugin for intelauctions.com, the sister of the
-[Intel Auctions Toolkit](https://github.com/SixGricks/IntelAuction) (**v0.4.0**). It turns
+[Intel Auctions Toolkit](https://github.com/SixGricks/IntelAuction) (**v0.4.1**). It turns
 each auction into a set of Facebook posts, plans them three a day through OneUp, and keeps
 a person in the loop on the posts that carry hard facts.
 
