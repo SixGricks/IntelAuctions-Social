@@ -126,9 +126,8 @@ if (!function_exists('ias_settings_sanitize')) {
     if (($out['lead_hours'] ?? $old['lead_hours']) < 48) {
       $problems[] = 'The veto window is under 48 hours — the spec promises DJ and Jacob two days to veto a scheduled post.';
     }
-    $verify = get_option('ias_oneup_verify', []);
-    if (!empty($out['master']) && empty($out['dry_run']) && empty($verify['ok'])) {
-      $problems[] = 'Live pushing is on, but Verify OneUp has not passed yet — run it (below) before any post type is switched on.';
+    if (!empty($out['master']) && empty($out['dry_run']) && function_exists('ias_oneup_verified') && !ias_oneup_verified()) {
+      $problems[] = 'Dry run is off, but nothing is sent to OneUp until Verify OneUp (below) passes for this page.';
     }
     return [$out, $problems];
   }

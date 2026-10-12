@@ -214,7 +214,7 @@ add_action('ias_post_view_main', function (array $p): void {
       . '<p><button class="button button-primary">Save text</button>'
       . ($p['lane'] === 'A' ? ' <button class="button" name="ias_and_approve" value="1">Save and approve</button>' : '') . '</p></form>';
   }
-  if (in_array($p['status'], ['pushed', 'published'], true)) {
+  if (in_array(ias_post_shown_status($p), ['pushed', 'published'], true)) {
     echo '<p class="description">This post has gone to OneUp. Live posts are never edited — editing resets their reach — so a correction is posted as a comment.</p>';
   }
   if ($p['status'] === 'held' && $text !== '') echo $form('release', 'Keep as written', 'button', '', 'Keep this draft exactly as it is, despite the reasons it stopped?');

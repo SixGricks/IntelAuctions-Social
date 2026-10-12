@@ -1,5 +1,52 @@
 # Intel Auctions Social changelog
 
+## 0.5.1 (2026-10-12) — Phase 5 review: OneUp safety (every switch still off)
+Every finding of the Phase 5 review, each with a test against the fake OneUp
+(`tests/wp/08-oneup-safety.php`, and the tests fail on 0.5.0):
+- **Nothing is written to OneUp until Verify OneUp has passed for the page set
+  now** (`ias_oneup_verified()`: every step ok, OneUp's time zone the site's,
+  the same category and account). Until then the plugin stays in the dry run
+  and Facebook stays with the toolkit's webhook; set another page and it must
+  pass again. Verify needs the master switch on (dry run can stay on), sets
+  its draft a month out, and fails — taking the post off at once — if OneUp
+  schedules the draft as a real post. A test draft whose answer was lost is
+  looked for (scheduled and drafts) and deleted.
+- **Never sent twice.** An attempt is recorded before it is sent; when OneUp's
+  answer is lost (no answer, a 5xx) it is not taken for a refusal — the next
+  run (or the read-back) finds the post on OneUp's list by its text and time
+  and adopts it, and only a post that is not there is sent again. The
+  read-back no longer takes such a post for a person's Human post.
+- **One push run at a time** (`ias_push_lock`, atomic; a crashed run's lock is
+  taken over after 10 minutes). The read-back runs first in every push, so a
+  person's change in OneUp is never overwritten.
+- **"Deleted in OneUp by a person" needs proof**: only from a whole list that
+  really is a list (an error or "too many requests" body is a failed read),
+  only when missing on two read-backs at least 30 minutes apart, and never
+  when none of the plugin's posts are on the list (logged instead).
+- **Only an id takes a post off.** A bare `id` in an answer is no longer taken
+  for a post id; a post without one is found on the list by text and time, and
+  until then is neither replaced nor taken back (a take-back that cannot find
+  it says so, to delete by hand). OneUp's "not found" to a delete is believed
+  only when its list agrees; a "not found" while replacing, once confirmed, is
+  a person's delete and stands.
+- **Pause with a changed post**: a post on OneUp that changes while it is
+  paused (or its type is off) is taken back rather than left to go out with
+  the old words, and goes again when allowed.
+- **A person's edit in OneUp holds**: a locked post whose listing changes stops
+  as Needs a decision (fix it in OneUp) and is never redrafted by Claude; a
+  post on OneUp keeps its listings when another sale joins its day (the
+  newcomer gets its own Auction Week or Results post).
+- **The key never travels on**: every OneUp error is redacted (as typed or
+  URL-encoded) before it reaches the log, a note or an email.
+- **The master switch off means no call at all**, from Settings too: Check
+  connection and Verify OneUp are refused (and their buttons disabled, saying
+  why).
+- Read-back: a renamed page is followed; a post that went out although it was
+  cancelled or skipped here says so; a post OneUp has not confirmed a day after
+  its time gets a note, once. Published lists are read 4 pages deep.
+- Back in the dry run, the calendar lists posts still on OneUp that the plan no
+  longer wants as they are, to delete there.
+
 ## 0.5.0 (2026-10-12) — Phase 5: OneUp live (built, every switch still off)
 - **Live pushing.** With the master switch on, dry run off and the key and ids
   set, each ready post of a type that is switched on is scheduled on OneUp for

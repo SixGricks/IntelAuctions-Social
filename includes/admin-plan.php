@@ -28,6 +28,16 @@ add_action('ias_calendar_action', function (string $action): void {
 });
 
 add_action('ias_calendar_before_grid', function (): void {
+  // Back in the dry run, posts the plan no longer wants as they are can still be on the OneUp calendar.
+  if (ias_push_mode() === 'dry') {
+    $left = array_filter(ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled', 'failed'], 'limit' => 2000]), function ($p) {
+      return $p['type'] !== 'human' && ias_post_sent($p)['mode'] === 'live' && ($p['status'] !== 'planned' && $p['status'] !== 'approved' || !empty($p['flags']['stale']));
+    });
+    if ($left) {
+      echo '<div class="notice notice-warning inline"><p><strong>' . count($left) . ' post' . (count($left) === 1 ? ' is' : 's are') . ' still scheduled on OneUp</strong> from when pushing was live, though the plan no longer wants ' . (count($left) === 1 ? 'it' : 'them') . ' as ' . (count($left) === 1 ? 'it is' : 'they are') . ' (cancelled, skipped, changed or stopped for a decision). Delete ' . (count($left) === 1 ? 'it' : 'them') . ' in OneUp, or turn live pushing back on to let the plugin take ' . (count($left) === 1 ? 'it' : 'them') . ' off: ';
+      echo implode(', ', array_map(function ($p) { return '<a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '">' . esc_html(ias_post_type((string) $p['type'])['short'] . ' · ' . ias_post_subject($p)) . '</a>'; }, array_slice(array_values($left), 0, 10))) . '</p></div>';
+    }
+  }
   $last = get_option('ias_last_plan_summary', []);
   if (!is_array($last) || empty($last['at'])) {
     echo '<p class="description">Not planned yet — the first plan runs on the next hourly run after ' . (int) ias_setting('plan_hour', 5) . ':00, or press Plan now.</p>';
@@ -106,6 +116,11 @@ add_action('ias_post_view_side', function (array $p): void {
 add_action('admin_init', function () {
   if (!isset($_POST['ias_oneup_check']) || !current_user_can('manage_options')) return;
   check_admin_referer('ias_oneup_check');
+  if (!ias_setting('master', false)) { // off means the plugin never calls OneUp — not even to read
+    ia_flash_set('<div class="notice notice-warning"><p>Turn the <strong>master switch</strong> on first (dry run can stay on): while it is off, the plugin never calls OneUp.</p></div>');
+    wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS));
+    exit;
+  }
   $cats = ias_oneup_get('categories');
   if (is_wp_error($cats)) {
     ia_flash_set('<div class="notice notice-error"><p>OneUp did not answer: ' . esc_html($cats->get_error_message()) . '</p></div>');
@@ -142,15 +157,18 @@ add_action('admin_init', function () {
 });
 
 add_action('ias_settings_after_form', function () {
-  $ready = ias_oneup_key() !== '' && (string) ias_setting('oneup_category_id', '') !== '' && (string) ias_setting('oneup_account_id', '') !== '';
+  $master = (bool) ias_setting('master', false);
+  $ready = !ias_oneup_blockers(false);
   echo '<div class="ias-card" style="max-width:760px"><h2 style="margin-top:0">OneUp connection</h2>';
+  if (!$master) echo '<p class="description">The master switch is off, so the plugin never calls OneUp. Turn it on (dry run can stay on) to check the connection and verify.</p>';
   echo '<p><strong>Check connection</strong> asks OneUp for its categories and their accounts with the key in wp-config — a read-only check that changes nothing — so the ids above can be copied in.</p>';
   echo '<form method="post" style="margin-bottom:14px">' . wp_nonce_field('ias_oneup_check', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_check" value="1">'
-    . '<button class="button"' . (ias_oneup_key() === '' ? ' disabled title="No key in wp-config yet"' : '') . ' data-ia-busy="Asking OneUp…">Check connection</button></form>';
+    . '<button class="button"' . (ias_oneup_key() === '' || !$master ? ' disabled title="' . esc_attr(!$master ? 'Turn the master switch on first' : 'No key in wp-config yet') . '"' : '') . ' data-ia-busy="Asking OneUp…">Check connection</button></form>';
 
-  echo '<h3 id="ias-verify">Verify OneUp</h3><p>Before turning on live pushing, check every call the plugin makes, safely: it saves a <strong>draft</strong> for the page (drafts never publish), reads it back, compares its time with the site\'s, deletes it, and reads the scheduled, published and failed lists.</p>';
+  echo '<h3 id="ias-verify">Verify OneUp</h3><p>Nothing is sent to OneUp for real until this has passed for the page set above. It checks every call the plugin makes, safely: it saves a <strong>draft</strong> for the page (drafts never publish — and if OneUp scheduled it as a real post anyway, Verify says so and takes it off), reads it back, compares its time with the site\'s, deletes it, and reads the scheduled, published and failed lists.</p>';
   echo '<form method="post">' . wp_nonce_field('ias_oneup_verify', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_verify" value="1">'
-    . '<button class="button button-primary"' . ($ready ? '' : ' disabled title="Set the key, the category and the account id first"') . ' onclick="return confirm(\'Save a test draft in OneUp (it never publishes), read it back and delete it?\')" data-ia-busy="Checking OneUp…">Verify OneUp</button></form>';
+    . '<button class="button button-primary"' . ($ready ? '' : ' disabled title="' . esc_attr(implode('; ', ias_oneup_blockers(false))) . '"') . ' onclick="return confirm(\'Save a test draft in OneUp (it never publishes), read it back and delete it?\')" data-ia-busy="Checking OneUp…">Verify OneUp</button>'
+    . (ias_oneup_verified() ? ' ' . ia_ui_badge('passed for this page', 'ok') : '') . '</form>';
   $v = get_option('ias_oneup_verify', []);
   if (is_array($v) && !empty($v['steps'])) {
     echo '<p style="margin-top:10px">Last run ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $v['at']))) . ' by ' . esc_html((string) $v['by']) . ': ' . ($v['ok'] ? ia_ui_badge('passed', 'ok') : ia_ui_badge('a step failed', 'bad')) . '</p><table class="ias-kv">';

@@ -68,7 +68,20 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   post. A change that could make a post public needs all of them checked on its
   path: every write to OneUp goes through `ias_push_blockers()` (a new post) or
   `ias_oneup_blockers(true)` (a take-back), every read through
-  `ias_oneup_blockers(false)`; the master switch off means not one call.
+  `ias_oneup_blockers(false)`; the master switch off means not one call, from
+  any screen. A write also needs **Verify OneUp passed for the page set now**
+  (`ias_oneup_verified()`). The one write before that is Verify's own test
+  draft (master on, dry run may be on), which must never be left on OneUp.
+- **Never send twice, never delete by guess.** One push run at a time
+  (`ias_push_lock()`), and the read-back runs first in it. An attempt goes into
+  `flags.sending` before it is sent and stays there when the answer is lost
+  (`ias_oneup_uncertain()`): it is looked for on OneUp's list and adopted
+  (`ias_oneup_adopt_attempt()`), never re-sent blindly. A post is replaced or
+  taken back only by its `post_id` — never a bare `id`, never a match by
+  text — and OneUp's "not found" counts only when its list agrees
+  (`ias_oneup_confirm_absent()`). "Deleted by a person" needs a real, complete
+  list and two read-backs 30 minutes apart. Errors pass through
+  `ias_oneup_redact()` so the key never leaves the request.
 - **One record of what was "sent", in both modes** (`ias_post_sent()`): live, the
   OneUp id, hash, text, time and facts in `flags.oneup` (and the id in
   `oneup_post_id`); dry run, `flags.dry_hash`. Both are treated alike: fixed

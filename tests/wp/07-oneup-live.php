@@ -140,18 +140,26 @@ $bp = $lp($b);
 t_ok(substr((string) $bp['scheduled_at'], 0, 10) !== $day, 'a human post in OneUp moves the schedule around it (' . $day . ' → ' . substr((string) $bp['scheduled_at'], 0, 10) . ')');
 t_ok(count(ias_t_oneup_calls($n, 'deletepost')) === 1 && count(ias_t_oneup_calls($n, 'scheduleimagepost')) === 1, '…and the moved post is re-scheduled on OneUp');
 
-// ---- 8. A person deletes our post in OneUp ----
+// ---- 8. A person deletes our post in OneUp: believed on a second read-back, half an hour later ----
 ias_t_clock('2026-11-02 05:50');
 unset($S['scheduled'][(int) ias_post_sent($lp($b))['id']]);
 ias_readback_run();
 $bp = $lp($b);
-t_ok($bp['status'] === 'skipped' && ($bp['flags']['skipped_by'] ?? '') === 'person', 'a post a person deleted in OneUp stays off the plan');
+t_ok($bp['status'] !== 'skipped' && !empty($bp['flags']['missing_since']), 'one read-back that misses a post concludes nothing yet (it notes when it went missing)');
+$n = count($S['calls']);
+ias_push_run();
+t_eq([], $writes($n), '…and nothing is sent for it meanwhile');
+ias_t_clock('2026-11-02 06:25');
+ias_readback_run();
+$bp = $lp($b);
+t_ok($bp['status'] === 'skipped' && ($bp['flags']['skipped_by'] ?? '') === 'person', 'still missing half an hour later: a person deleted it in OneUp, and it stays off the plan');
 $n = count($S['calls']);
 ias_sync();
 ias_plan_run();
 ias_push_run();
 t_eq('skipped', $lp($b)['status'], '…the next sync and plan leave it off');
-t_eq([], $writes($n), '…and it is not sent again');
+t_eq([], ias_t_oneup_calls($n, 'scheduleimagepost'), '…and it is not sent again');
+t_eq('', ias_post_sent($lp($b))['mode'], '…and once OneUp\'s list confirms it gone, nothing of it is left to take back');
 
 // ---- 9. Cancelling at once, even while paused ----
 $c = $mk('3 Charlie Court', 'Leola', 'Berks', '2026-11-26 10:00');

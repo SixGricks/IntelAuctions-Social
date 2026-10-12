@@ -147,11 +147,12 @@ if (!function_exists('ias_sync')) {
       $sum['updated']++;
     }
 
-    // Frozen posts (approved, pushed, published) never change listings; a listing
-    // that joins their sale day later gets a post of its own.
+    // Frozen posts (approved, on OneUp, published) never take in a listing; one that joins
+    // their sale day later gets a post of its own, so nothing scheduled is redrafted for it.
+    $on_oneup = function (array $row) { return function_exists('ias_post_sent') && ias_post_sent($row)['mode'] === 'live'; };
     foreach ($cands as $key => $c) {
       $row = ias_post_by_slot($key);
-      if (!$row || !in_array($row['status'], ['approved', 'pushed', 'published'], true)) continue;
+      if (!$row || !(in_array($row['status'], ['approved', 'pushed', 'published'], true) || $on_oneup($row))) continue;
       $new = array_values(array_diff($c['listing_ids'], $row['listing_ids']));
       if (!$new || !in_array($c['type'], ['auction_week', 'results'], true)) continue;
       $extra = $c;
@@ -185,6 +186,11 @@ if (!function_exists('ias_sync')) {
       if (in_array($row['status'], ['pushed', 'published', 'human', 'approved'], true)) continue; // approved: handled above
 
       $fields = ias_candidate_fields($c);
+      if ($on_oneup($row)) {
+        // On OneUp: it keeps its own listings (a newcomer got its own post above); one that left the sale leaves it.
+        $keep = array_values(array_intersect(array_map('intval', $c['listing_ids']), array_map('intval', $row['listing_ids'])));
+        if ($keep) { $fields['listing_ids'] = $keep; $fields['listing_id'] = $keep[0]; }
+      }
       $flags = array_merge($row['flags'], $flags_meta);
       $status = $row['status'];
       $trail = '';
@@ -223,13 +229,14 @@ if (!function_exists('ias_sync')) {
       // The listing changed under a draft. One nobody touched is rewritten on the next run; one a
       // person edited, or one already stopped for a person, stops (again) for that person.
       if (!empty($row['content']['text']) && $row['facts_hash'] !== '' && empty($row['flags']['stale']) && in_array($status, ['planned', 'held', 'waiting'], true)) {
-        $hash = ias_facts_hash(['type' => $c['type'], 'flags' => $flags], $facts_of($c['listing_ids']));
+        $hash = ias_facts_hash(['type' => $c['type'], 'flags' => $flags], $facts_of($fields['listing_ids']));
         if ($hash !== $row['facts_hash']) {
           $flags['stale'] = true;
           if ($row['status'] === 'waiting' && function_exists('ias_approval_void')) ias_approval_void((int) $row['id']); // old links must not approve old facts
           $edited = !empty($row['flags']['edited_by']);
-          if ($edited || $status === 'held') {
-            $why = ias_stale_hold($edited);
+          $in_oneup = !empty($row['locked']); // a person changed it in OneUp: only they can fix it, there
+          if ($edited || $in_oneup || $status === 'held') {
+            $why = ias_stale_hold($edited, $in_oneup);
             $flags['holds'] = array_values(array_unique(array_merge([$why], (array) ($flags['holds'] ?? []))));
             unset($flags['released_by']);
             $status = 'held';
@@ -293,7 +300,12 @@ if (!function_exists('ias_approval_withdraw')) {
       unset($flags['released_by']);
     }
     if (function_exists('ias_approval_void')) ias_approval_void((int) $row['id']);
-    ias_post_update((int) $row['id'], ias_candidate_fields($c) + [
+    $fields = ias_candidate_fields($c);
+    if (function_exists('ias_post_sent') && ias_post_sent($row)['mode'] === 'live') { // on OneUp: newcomers get their own post
+      $keep = array_values(array_intersect(array_map('intval', $c['listing_ids']), array_map('intval', $row['listing_ids'])));
+      if ($keep) { $fields['listing_ids'] = $keep; $fields['listing_id'] = $keep[0]; }
+    }
+    ias_post_update((int) $row['id'], $fields + [
       'status'      => $edited ? 'held' : 'planned',
       'flags'       => $flags,
       'note'        => $edited ? 'Needs a decision: ' . $flags['holds'][0] : $what . ' after it was approved: it is rewritten and sent for approval again.',
@@ -333,7 +345,7 @@ if (!function_exists('ias_drafts_due')) {
       $has = !empty($p['content']['text']);
       // A stale draft is rewritten on the next run — at most once an hour, so a listing edited
       // five times in an afternoon costs a handful of calls, not one per save.
-      $stale = !empty($p['flags']['stale']) && empty($p['flags']['edited_by'])
+      $stale = !empty($p['flags']['stale']) && empty($p['flags']['edited_by']) && empty($p['locked'])
         && strtotime((string) $p['generated_at']) < strtotime(ias_now_sql()) - HOUR_IN_SECONDS;
       if ($has && !$stale) continue;
       if ($p['status'] === 'held' && $has) continue; // a held draft waits for its person

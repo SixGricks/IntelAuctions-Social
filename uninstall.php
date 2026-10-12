@@ -20,11 +20,11 @@ foreach (['posts', 'history'] as $name) {
   $wpdb->query('DROP TABLE IF EXISTS ' . $wpdb->prefix . 'ias_' . $name); // phpcs:ignore WordPress.DB.PreparedSQL
 }
 
-// Options: settings, schema stamp, run state.
+// Options: settings, schema stamp, run state (ias_push_lock: the push run's lock, written straight to the table).
 foreach ([
   'ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_live_since',
   'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review',
-  'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify',
+  'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock',
 ] as $key) {
   delete_option($key);
 }

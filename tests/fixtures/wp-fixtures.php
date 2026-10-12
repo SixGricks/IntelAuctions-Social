@@ -22,7 +22,7 @@ function ias_t_reset(): void {
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify'] as $o) delete_option($o);
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock'] as $o) delete_option($o);
   update_option('ias_settings', [], true);
 }
 
@@ -180,8 +180,14 @@ function ias_t_claude_off(): void {
  * is off the site's), gbp (a Google Business Profile post on the list).
  */
 function ias_t_oneup(): void {
+  // Switches for the ways OneUp can let us down: fail_next (refuse the next N posts), no_id (answer
+  // without a post id), tz_shift (hours the account is off the site), lose_answer (schedule the next N
+  // posts but answer 502), net_error (the next N posts never arrive; the error echoes the URL, key and
+  // all), delete_404 (the next N deletes answer "not found" without deleting), broken (paths that answer
+  // 200 with no list in it), draft_real (drafts are scheduled as real posts), fb (the page's name).
   $GLOBALS['ias_t_oneup'] = ['scheduled' => [], 'published' => [], 'drafts' => [], 'failed' => [], 'next' => 900001, 'calls' => [],
-    'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true];
+    'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true, 'lose_answer' => 0, 'net_error' => 0, 'delete_404' => 0,
+    'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)'];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -195,7 +201,8 @@ function ias_t_oneup(): void {
       return ['headers' => [], 'body' => (string) json_encode($data), 'response' => ['code' => $code, 'message' => 'OK'], 'cookies' => [], 'filename' => null];
     };
     if (($params['apiKey'] ?? '') !== 'test-oneup-key') return $json(401, ['error' => true, 'message' => 'Invalid API key']);
-    $fb = 'Intel Auctions (Narvon)';
+    if (in_array($path, (array) $S['broken'], true)) return $json(200, ['message' => 'Too many requests, slow down']);
+    $fb = (string) $S['fb'];
     $page = function (array $rows, string $time_key) use ($params, $json) {
       $start = (int) ($params['start'] ?? 0);
       $rows = array_values($rows);
@@ -214,16 +221,19 @@ function ias_t_oneup(): void {
           ['category_id' => 42, 'social_network_name' => $fb, 'social_network_id' => 'fb_123', 'social_network_type' => 'Facebook'],
         ]]);
       case 'scheduletextpost': case 'scheduleimagepost': case 'schedulevideopost':
+        if ($S['net_error'] > 0) { $S['net_error']--; return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds for ' . $url); }
         if ($S['fail_next'] > 0) { $S['fail_next']--; return $json(200, ['error' => true, 'message' => 'The Facebook token has expired']); }
         $id = $S['next']++;
         $row = ['post_id' => $id, 'content' => (string) ($params['content'] ?? ''), 'source_url' => 'NA',
           'date_time' => date('Y-m-d H:i:s', strtotime((string) $params['scheduled_date_time']) + 3600 * (int) $S['tz_shift']),
           'category_name' => 'Intel', 'video_url' => (string) ($params['video_url'] ?? 'NA'), 'content_image' => (string) ($params['image_url'] ?? 'NA'),
           'social_network_username' => ((string) ($params['social_network_id'] ?? '') === 'fb_123') ? $fb : 'someone else', 'first_comment' => (string) ($params['first_comment'] ?? '')];
-        if (($params['isDraftPost'] ?? '') === 'true') $S['drafts'][$id] = $row; else $S['scheduled'][$id] = $row;
+        if (($params['isDraftPost'] ?? '') === 'true' && !$S['draft_real']) $S['drafts'][$id] = $row; else $S['scheduled'][$id] = $row;
+        if ($S['lose_answer'] > 0) { $S['lose_answer']--; return $json(502, ['message' => 'Bad gateway']); }
         return $json(200, $S['no_id'] ? ['error' => false, 'message' => 'Post scheduled successfully'] : ['error' => false, 'message' => 'Post scheduled successfully', 'data' => ['post_id' => $id]]);
       case 'deletepost':
         $id = (int) ($params['post_id'] ?? 0);
+        if ($S['delete_404'] > 0) { $S['delete_404']--; return $json(404, ['error' => true, 'message' => 'Post not found']); }
         foreach (['scheduled', 'drafts'] as $list) {
           if (isset($S[$list][$id])) { unset($S[$list][$id]); return $json(200, ['error' => false, 'message' => 'Post deleted']); }
         }
@@ -250,6 +260,24 @@ function ias_t_oneup_publish(int $id): void {
   unset($S['scheduled'][$id], $row['date_time']);
   $row['created_at'] = (new DateTimeImmutable($at, ia_wp_tz()))->modify('+1 minute')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
   $S['published'][$id] = $row;
+}
+
+/** The page is renamed in OneUp: its account and every row on it carry the new name. */
+function ias_t_oneup_rename(string $name): void {
+  $S =& $GLOBALS['ias_t_oneup'];
+  foreach (['scheduled', 'published', 'drafts', 'failed'] as $list) {
+    foreach ($S[$list] as $id => $row) if (($row['social_network_username'] ?? '') === $S['fb']) $S[$list][$id]['social_network_username'] = $name;
+  }
+  $S['fb'] = $name;
+}
+
+/** A person's own post on the page, scheduled in OneUp. */
+function ias_t_oneup_human(string $at, string $text): int {
+  $S =& $GLOBALS['ias_t_oneup'];
+  $id = $S['next']++;
+  $S['scheduled'][$id] = ['post_id' => $id, 'content' => $text, 'source_url' => 'NA', 'date_time' => $at . ':00',
+    'category_name' => 'Intel', 'video_url' => 'NA', 'content_image' => 'NA', 'social_network_username' => $S['fb']];
+  return $id;
 }
 
 function ias_t_oneup_off(): void {

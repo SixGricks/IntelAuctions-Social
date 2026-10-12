@@ -37,3 +37,10 @@ A throwaway site, the way these tests were run:
 `IAS_TEST_TOOLKIT_OFF=1` loads WordPress with the toolkit filtered out of the active plugins
 for that one process; `tests/wp/01-foundation.php` uses it to check that the plugin then
 shows its notice and does nothing.
+
+No test reaches the real OneUp. `ias_t_oneup()` in `tests/fixtures/wp-fixtures.php` answers
+`pre_http_request` for `oneupapp.io/api/` with lists shaped like the real account's, and has a
+switch for each way OneUp can let the plugin down (a refusal, an answer without a post id or
+lost to a 502, a request that never arrives, a "not found" delete, a list body with no list
+in it, a draft scheduled as a real post, a renamed page). `tests/wp/07-oneup-live.php` is
+Phase 5's acceptance test; `tests/wp/08-oneup-safety.php` runs each of those failures.

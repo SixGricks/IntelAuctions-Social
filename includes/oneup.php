@@ -107,7 +107,22 @@ if (!function_exists('ias_oneup_blockers')) {
     if ($write && ias_setting('dry_run', true)) $out[] = 'dry run is on';
     if (ias_oneup_key() === '') $out[] = 'no OneUp key in wp-config';
     if ((string) ias_setting('oneup_category_id', '') === '' || (string) ias_setting('oneup_account_id', '') === '') $out[] = 'the OneUp category or Facebook account id is not set';
+    if ($write && !$out && !ias_oneup_verified()) $out[] = 'Verify OneUp has not passed for this page';
     return $out;
+  }
+}
+
+/**
+ * Has Verify OneUp passed for the page set now (every step ok, OneUp's time
+ * zone the site's)? Nothing is written to OneUp until it has — a wrong
+ * endpoint or time zone is found with a draft, not with a real post.
+ */
+if (!function_exists('ias_oneup_verified')) {
+  function ias_oneup_verified(): bool {
+    $v = get_option('ias_oneup_verify', []);
+    return is_array($v) && !empty($v['ok']) && ($v['tz_offset'] ?? null) === 0
+      && (string) ($v['category'] ?? '') === (string) ias_setting('oneup_category_id', '')
+      && (string) ($v['account'] ?? '') === (string) ias_setting('oneup_account_id', '');
   }
 }
 
@@ -178,21 +193,41 @@ if (!function_exists('ias_oneup_call')) {
       }
       return wp_remote_request($url, $args);
     };
+    // Nothing OneUp (or the network) answers may carry the key onward into a log line, a note or an email.
+    $fail = function (int $code, $data, string $error) use ($key) {
+      return ['ok' => false, 'code' => $code, 'data' => $data, 'error' => ias_oneup_redact($error, $key), 'id' => ''];
+    };
     $resp = $send($method);
     $code = is_wp_error($resp) ? 0 : (int) wp_remote_retrieve_response_code($resp);
     if (in_array($code, [405, 414], true)) { // the other way, once
       $resp = $send($method === 'GET' ? 'POST' : 'GET');
       $code = is_wp_error($resp) ? 0 : (int) wp_remote_retrieve_response_code($resp);
     }
-    if (is_wp_error($resp)) return ['ok' => false, 'code' => 0, 'data' => null, 'error' => $resp->get_error_message(), 'id' => ''];
+    if (is_wp_error($resp)) return $fail(0, null, $resp->get_error_message());
     $body = (string) wp_remote_retrieve_body($resp);
     $data = json_decode($body, true);
     $short = mb_substr(trim(wp_strip_all_tags($body)), 0, 200);
-    if ($code < 200 || $code >= 300) return ['ok' => false, 'code' => $code, 'data' => $data, 'error' => 'OneUp answered HTTP ' . $code . ($short !== '' ? ': ' . $short : ''), 'id' => ''];
-    if ($data === null && $body !== '') return ['ok' => false, 'code' => $code, 'data' => null, 'error' => 'OneUp\'s answer was not JSON: ' . $short, 'id' => ''];
+    if ($code < 200 || $code >= 300) return $fail($code, $data, 'OneUp answered HTTP ' . $code . ($short !== '' ? ': ' . $short : ''));
+    if ($data === null && $body !== '') return $fail($code, null, 'OneUp\'s answer was not JSON: ' . $short);
     $err = ias_oneup_error_in((array) $data);
-    if ($err !== '') return ['ok' => false, 'code' => $code, 'data' => $data, 'error' => 'OneUp said: ' . $err, 'id' => ''];
+    if ($err !== '') return $fail($code, $data, 'OneUp said: ' . $err);
     return ['ok' => true, 'code' => $code, 'data' => $data, 'error' => '', 'id' => ias_oneup_find_id($data)];
+  }
+}
+
+/** $text with the key taken out, however it was written (as is, or URL-encoded). */
+if (!function_exists('ias_oneup_redact')) {
+  function ias_oneup_redact(string $text, string $key = ''): string {
+    $key = $key !== '' ? $key : ias_oneup_key();
+    if ($key === '') return $text;
+    return str_replace(array_unique([$key, rawurlencode($key), urlencode($key)]), '[key]', $text);
+  }
+}
+
+/** Did a call fail in a way that leaves it unknown whether OneUp acted (no answer, or a server error)? */
+if (!function_exists('ias_oneup_uncertain')) {
+  function ias_oneup_uncertain(array $r): bool {
+    return !$r['ok'] && ($r['code'] === 0 || $r['code'] >= 500);
   }
 }
 
@@ -208,11 +243,16 @@ if (!function_exists('ias_oneup_error_in')) {
   }
 }
 
-/** The post id somewhere in a OneUp answer ('' = none): post_id first, then id. */
+/**
+ * The post id in a OneUp answer ('' = none): a `post_id` (or `postId`) at any
+ * depth, never a bare `id` — that could be anything (a category, a request),
+ * and a wrong id would later delete someone else's post. With no id, the post
+ * is found on OneUp's list by its text and time instead.
+ */
 if (!function_exists('ias_oneup_find_id')) {
   function ias_oneup_find_id($data): string {
     if (!is_array($data)) return '';
-    foreach (['post_id', 'postId', 'id'] as $k) {
+    foreach (['post_id', 'postId'] as $k) {
       if (isset($data[$k]) && (is_int($data[$k]) || (is_string($data[$k]) && preg_match('/^\d+$/', $data[$k])))) return (string) $data[$k];
     }
     foreach ($data as $v) {
@@ -234,8 +274,12 @@ if (!function_exists('ias_oneup_list')) {
     for ($i = 0; $i < $pages; $i++) {
       $r = ias_oneup_call($endpoint, ['start' => $start]);
       if (!$r['ok']) return ['ok' => false, 'rows' => $rows, 'complete' => false, 'error' => $r['error']];
-      $data = (array) $r['data'];
-      foreach (ias_oneup_rows($data) as $row) $rows[] = $row;
+      $data = $r['data'];
+      // Only an answer that really carries a list counts — an empty body, a bare [] or a "too many
+      // requests" message must never read as "OneUp has none of our posts".
+      $list = is_array($data) ? ($data['posts'] ?? $data['data'] ?? null) : null;
+      if (!is_array($list)) return ['ok' => false, 'rows' => $rows, 'complete' => false, 'error' => 'OneUp\'s answer had no list of posts' . (is_array($data) && !empty($data['message']) && is_string($data['message']) ? ': ' . ias_oneup_redact((string) $data['message']) : '') . '.'];
+      foreach ($list as $row) if (is_array($row)) $rows[] = $row;
       $next = $data['next_start'] ?? null;
       if ($next === null || $next === '' || (int) $next <= $start) return ['ok' => true, 'rows' => $rows, 'complete' => true, 'error' => ''];
       $start = (int) $next;

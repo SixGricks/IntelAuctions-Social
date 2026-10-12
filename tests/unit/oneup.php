@@ -22,8 +22,20 @@ t_eq([], ias_oneup_rows(['posts' => [], 'start' => 0, 'count' => 0, 'next_start'
 // The post id in a scheduling answer.
 t_eq('53690404', ias_oneup_find_id(['error' => false, 'data' => ['post_id' => 53690404]]), 'post_id inside data');
 t_eq('77', ias_oneup_find_id(['message' => 'ok', 'data' => [['post_id' => '77']]]), 'post_id in a list');
-t_eq('12', ias_oneup_find_id(['id' => 12]), 'a bare id');
+t_eq('', ias_oneup_find_id(['id' => 12]), 'a bare id is not taken for a post id (it could be anything\'s)');
 t_eq('', ias_oneup_find_id(['message' => 'Post scheduled successfully']), 'no id: none (the read-back finds it by its text and time)');
+t_eq('88', ias_oneup_find_id(['result' => ['postId' => 88], 'category' => ['id' => 5]]), 'postId at any depth, past a category\'s bare id');
+
+// The key never travels on in an error.
+t_eq('cURL error 28 for https://www.oneupapp.io/api/x?apiKey=[key]&start=0', ias_oneup_redact('cURL error 28 for https://www.oneupapp.io/api/x?apiKey=ab%2Bc%2F1&start=0', 'ab+c/1'), 'an error echoing the URL loses the encoded key');
+t_eq('bad key [key]', ias_oneup_redact('bad key ab+c/1', 'ab+c/1'), '…and the plain one');
+
+// Did OneUp act? No answer or a server error: unknown; a clear refusal: it did not.
+t_ok(ias_oneup_uncertain(['ok' => false, 'code' => 0]), 'a timeout is uncertain');
+t_ok(ias_oneup_uncertain(['ok' => false, 'code' => 502]), 'a 502 is uncertain');
+t_ok(!ias_oneup_uncertain(['ok' => false, 'code' => 200]), 'an error inside a 200 is a refusal');
+t_ok(!ias_oneup_uncertain(['ok' => false, 'code' => 401]), 'a 401 is a refusal');
+t_ok(!ias_oneup_uncertain(['ok' => true, 'code' => 200]), 'a success is not uncertain');
 
 // Errors inside a 200 answer.
 t_eq('Invalid API key', ias_oneup_error_in(['error' => true, 'message' => 'Invalid API key']), 'error: true with a message');

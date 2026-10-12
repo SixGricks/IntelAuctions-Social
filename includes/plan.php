@@ -157,10 +157,45 @@ if (!function_exists('ias_push_ready')) {
  */
 if (!function_exists('ias_push_run')) {
   function ias_push_run(): array {
-    $out = ['dryrun' => 0, 'deleted' => 0, 'published' => 0, 'pushed' => 0, 'failed' => 0, 'skipped' => []];
+    $out = ['dryrun' => 0, 'deleted' => 0, 'published' => 0, 'pushed' => 0, 'failed' => 0, 'skipped' => [], 'readback' => null];
     if (!ias_db_ready()) return $out;
+    // One run at a time: the hourly job, Plan now and an emailed Approve can meet.
+    if (!ias_push_lock()) { $out['skipped'][] = 'another run was pushing'; return $out; }
+    try {
+      return ias_push_run_locked($out);
+    } finally {
+      ias_push_unlock();
+    }
+  }
+}
+
+/** Take the push lock (atomic; a lock older than 10 minutes is a crashed run's and is taken over). */
+if (!function_exists('ias_push_lock')) {
+  function ias_push_lock(): bool {
+    global $wpdb;
+    $name = 'ias_push_lock';
+    $now = time();
+    wp_cache_delete($name, 'options');
+    if ($wpdb->query($wpdb->prepare("INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $name, (string) $now))) return true;
+    $held = (string) $wpdb->get_var($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name));
+    if ((int) $held > $now - 600) return false;
+    return (bool) $wpdb->query($wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", (string) $now, $name, $held));
+  }
+}
+if (!function_exists('ias_push_unlock')) {
+  function ias_push_unlock(): void {
+    global $wpdb;
+    $wpdb->delete($wpdb->options, ['option_name' => 'ias_push_lock']);
+    wp_cache_delete('ias_push_lock', 'options');
+  }
+}
+
+if (!function_exists('ias_push_run_locked')) {
+  function ias_push_run_locked(array $out): array {
     $mode = ias_push_mode();
     if (function_exists('ias_push_mode_changed')) ias_push_mode_changed($mode);
+    // What a person did in OneUp since the last run comes first: their delete or edit is never overwritten.
+    if (function_exists('ias_readback_run') && !ias_oneup_blockers(false)) $out['readback'] = ias_readback_run();
     $now = ias_now();
     $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
     $nowsql = $now->format('Y-m-d H:i:s');
@@ -199,7 +234,16 @@ if (!function_exists('ias_push_run')) {
         if ($hash === $sent['hash'] || !empty($p['locked'])) continue; // unchanged, or a person edited it in OneUp
         if ($mode === 'live') {
           $blockers = ias_push_blockers($p);
-          if ($blockers) { $out['skipped'][] = '#' . (int) $p['id'] . ': ' . implode('; ', $blockers); continue; } // paused, or its type is off
+          if ($blockers) { // paused, or its type is off: nothing new goes — and a changed post's old copy comes off rather than going out as it was
+            $out['skipped'][] = '#' . (int) $p['id'] . ': ' . implode('; ', $blockers);
+            if ($sent['mode'] === 'live' && ias_push_live_delete($p, 'it changed while ' . implode(' and ', $blockers) . ' — it goes again when they allow')) {
+              $flags = (ias_post_get((int) $p['id']) ?: $p)['flags'];
+              $flags['was_on_oneup'] = true;
+              ias_post_update((int) $p['id'], ['flags' => $flags]);
+              $out['deleted']++;
+            }
+            continue;
+          }
           if (ias_push_live_send($p, $req, $hash)) $out['pushed']++; else $out['failed']++;
           continue;
         }
@@ -252,9 +296,8 @@ add_filter('ias_job_run', function (array $result): array {
   if ($push['deleted']) $result['parts'][] = $push['deleted'] . ' taken back';
   if ($push['failed']) $result['parts'][] = $push['failed'] . ' OneUp calls failed';
   if ($push['published']) $result['parts'][] = $push['published'] . ' went out';
-  if (function_exists('ias_readback_run') && !ias_oneup_blockers(false)) {
-    $rb = ias_readback_run();
-    $result['readback'] = $rb;
+  $rb = $push['readback'] ?? null; // the push run reads back first
+  if (is_array($rb)) {
     if (!$rb['ok']) $result['parts'][] = 'read-back failed: ' . $rb['error'];
     elseif ($rb['changes']) $result['parts'][] = 'read-back: ' . implode(', ', $rb['changes']);
   }

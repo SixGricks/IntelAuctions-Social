@@ -1,6 +1,6 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.5.0.** The canonical user documentation, rendered inside
+> **Documented version: 0.5.1.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
@@ -23,7 +23,7 @@ The plugin is built in phases. Each ships with publishing off and is checked bef
 | 2. Content | Drafts for every post type, photo grading, crops, the results graphic, the fair-housing screen | 0.2.0 |
 | 3. Scheduler | The 5:00 plan, the rules, cancellations, dry-run payloads | 0.3.0 |
 | 4. Approval | The approval emails and their links, morning reminders, the Monday email | 0.4.0 |
-| 5. OneUp live | Pushing to OneUp, reading back, cancelling, Verify OneUp, corrections, the monthly summary | 0.5.0 |
+| 5. OneUp live | Pushing to OneUp, reading back, cancelling, Verify OneUp, corrections, the monthly summary | 0.5.0–0.5.1 |
 | 6. The rest | Each post type switched on in turn | — |
 
 This version is **phase 5, built and switched off**: every current listing's posts are drafted, checked and planned to the minute every morning; the roundup and Results posts are emailed to DJ and Jacob for a yes; the Monday email goes out; and the pushes to OneUp, the hourly read-back, cancelling, corrections and the monthly summary are all in place. With the switches as they ship, what would go to OneUp is written to the log as a dry run and nothing reaches Facebook. Phase 5 is done when one week of Listing posts publishes as planned — **Going live** (§7) is the checklist for starting that week.
@@ -79,7 +79,7 @@ Across the top of every screen, the **switches strip** shows the master switch, 
 - **OneUp**: whether the API key is set in wp-config, the category id and the Facebook page's account id in OneUp (with the page's name as OneUp lists it, looked up by Check connection), the link to the OneUp calendar for the Monday email, and whether the listing link goes in the first comment (untick only if OneUp cannot post first comments — the link then ends the post).
 - **Priority**: each post type's weight and the starting-bid multipliers. Priority = weight × multiplier.
 - **Limits and posting windows**: at most 3 posts a day, at least 2 when posts can be pulled in, 3 hours apart, in the windows 6:00–7:30 AM, 11:30 AM–1:00 PM and 7:00–9:00 PM, each time shifted by up to 25 minutes; the 48-hour veto window; how far ahead it plans (30 days) and pushes (21 days), and the hour the morning plan runs (5:00).
-- **Approvals and the weekly email**: who approves (dj@ and jacob@intelauctions.com), and when the weekly review email goes (Monday 7:00; any day but Sunday). Below the form: **Send the weekly email now**, **Check connection**, **Verify OneUp** with the result of its last run (§7), and when the read-back last ran and what it found.
+- **Approvals and the weekly email**: who approves (dj@ and jacob@intelauctions.com), and when the weekly review email goes (Monday 7:00; any day but Sunday). Below the form: **Send the weekly email now**, **Check connection** and **Verify OneUp** (both need the master switch on; Verify OneUp shows the result of its last run and **passed for this page** once it has, §7), and when the read-back last ran and what it found.
 - **Links back to the site**: the tracking tags on every link.
 - **Copy and pictures**: the brand font for the graphics, more fair-housing phrases to stop on, the size photos are graded at (bigger costs more), and how many drafts are written an hour.
 
@@ -210,18 +210,27 @@ After planning, every post scheduled in the next **21 days** that is ready — a
 - A moved or changed post is deleted and scheduled again (OneUp cannot change a scheduled post's time). Live posts are never edited.
 - The API key (`INTEL_ONEUP_API_KEY`) is added only when sending and never appears in the log or on screen.
 
-**Dry run** (the master switch off, or dry run on, or no key or ids): nothing is sent. Each request goes to the log as a `dryrun` entry, once when it is new and again only when it changes, with what is stopping it. Each post's view shows **What would go to OneUp** too. A Results post or roundup waiting for approval never appears there. The dry run behaves the way live pushing does, so the calendar settles as it will when it is live: a post it logged counts as sent — inside the 48 hours it stays put, and once its time passes it shows as **Published** (marked dry run) — and a sent post that stops being ready gets a logged delete.
+**Dry run** (the master switch off, or dry run on, or no key or ids, or Verify OneUp not yet passed for the page set in Settings): nothing is sent. Each request goes to the log as a `dryrun` entry, once when it is new and again only when it changes, with what is stopping it. Each post's view shows **What would go to OneUp** too. A Results post or roundup waiting for approval never appears there. The dry run behaves the way live pushing does, so the calendar settles as it will when it is live: a post it logged counts as sent — inside the 48 hours it stays put, and once its time passes it shows as **Published** (marked dry run) — and a sent post that stops being ready gets a logged delete.
 
-**Live** (the master switch on, dry run off, the key and ids set): each request goes to OneUp, for the post types switched on — Pause and a type that is off stop new posts, never a take-back. A post is **Pushed** once OneUp has it; its OneUp post id is kept, and the calendar shows it. If OneUp refuses a post, it is tried again on the next hourly runs; the third refusal in a row makes it **Failed**, waiting for a person. A cancelled listing's posts come off OneUp **at once**, before the page that cancelled them has finished. Switching from the dry run to live clears the dry run's record, so nothing counts as sent that was not; switching back to the dry run sends nothing more, and posts already on OneUp stay there until they are deleted in OneUp.
+**Live** (the master switch on, dry run off, the key and ids set, and **Verify OneUp passed for that page** — set another category or account and it must pass again): each request goes to OneUp, for the post types switched on. Pause and a type that is off stop new posts, never a take-back — and a post already on OneUp that changes while they do is **taken back** rather than left to go out with the old words; it goes again when they allow. A post is **Pushed** once OneUp has it; its OneUp post id is kept, and the calendar shows it. If OneUp refuses a post, it is tried again on the next hourly runs; the third refusal in a row makes it **Failed**, waiting for a person. A cancelled listing's posts come off OneUp **at once**, before the page that cancelled them has finished. Switching from the dry run to live clears the dry run's record, so nothing counts as sent that was not; switching back to the dry run sends nothing more, and posts already on OneUp stay there until they are deleted in OneUp — the calendar lists the ones the plan no longer wants as they are, to delete there.
+
+Nothing is ever sent twice, and nothing is taken off by guesswork:
+
+- **One run at a time.** The hourly run, Plan now and an emailed Approve can meet; the second waits for the next hour.
+- **An answer that never came back** (no answer, a server error) is not taken for a refusal: the plugin remembers the attempt, looks for the post on OneUp's list first, and keeps it if it arrived — only a post that is not there is sent again.
+- **A post is replaced or taken back only by its OneUp id.** When OneUp's answer carried no id, the post is found on OneUp's list by its text and time and the id is kept; until then it is not replaced, and a post that must come off with its id still unknown says so on the calendar — delete it in OneUp by hand if it is there.
+- **"Not found" from OneUp** to a delete is believed only when OneUp's list agrees.
+- **The key** never reaches the log, a note or an email — not even inside an error that repeats the address it was sent to.
 
 ### Reading back from OneUp
 
-Every hour while the master switch is on, the plugin reads the Facebook page's **scheduled**, **published** and **failed** posts in OneUp (only that page — the category's Google Business Profile and YouTube accounts are not Facebook and are left alone):
+Every hour while the master switch is on — and first thing in every push, so a person's change is never overwritten — the plugin reads the Facebook page's **scheduled**, **published** and **failed** posts in OneUp (only that page — the category's Google Business Profile and YouTube accounts are not Facebook and are left alone). Its own posts are known by their OneUp ids; everything else on the page is a person's:
 
-- **A post a person moved or edited in OneUp** keeps their time and words. It is locked: the plan works around it and never replaces it. Change it in OneUp from then on.
-- **A post a person deleted in OneUp** stays off the plan, as Skipped by a person, until someone presses Restore.
+- **A post a person moved or edited in OneUp** keeps their time and words. It is locked: the plan works around it and never replaces it. Change it in OneUp from then on. If its listing changes afterwards, it stops as **Needs a decision** — fix it in OneUp (or skip it here), then press Keep as written; the plugin does not rewrite it.
+- **A post a person deleted in OneUp** stays off the plan, as Skipped by a person, until someone presses Restore. It is believed only when the post is missing from OneUp's whole list on **two read-backs at least half an hour apart**. An answer that is not a list (an error, "too many requests") is a failed read, and if none of the plugin's posts are on the list at all, nothing is concluded — the log says to check the page and run Verify OneUp.
 - **A post a person scheduled for the page in OneUp themselves** shows as a **Human** post, and the plan works around it — it counts toward the day's three and the 3-hour gaps. A Human post that is deleted in OneUp before its time leaves the plan.
-- **Published** posts are confirmed (the time they went out is recorded); posts OneUp **could not publish** become Failed, with OneUp's reason.
+- **Published** posts are confirmed (the time they went out is recorded); posts OneUp **could not publish** become Failed, with OneUp's reason. A post whose time passed a day ago and that OneUp has still not confirmed gets a note, once, to check the page.
+- **A renamed page** is followed: when the plugin's own posts show up under a new page name, Settings takes it.
 
 OneUp lists scheduled posts in its account's own time, and published ones in UTC; the plugin converts both to the site's time.
 
@@ -231,16 +240,17 @@ A post that has gone out is never edited — editing resets its reach. When a fa
 
 ### Going live
 
-1. **Settings → Check connection**, copy in the category id and the Facebook page's account id, save.
-2. **Verify OneUp**: it saves a test **draft** for the page (drafts never publish), reads it back, checks that OneUp's time zone matches the site's, deletes it, and reads the scheduled, published and failed lists. Every step should say **ok**. If one fails, nothing is turned on until it is fixed (the plugin's calls to OneUp are named in one filterable list, `ias_oneup_endpoints`).
-3. Make the **Zapier/Make scenario** behind the toolkit's social webhook post to Facebook only when the payload's `channels` contains `facebook` (below).
-4. Turn on the **master switch** (the read-back starts), then turn **dry run** off and **Listing posts** on, and save. The next hourly run schedules the Listing posts outside the 48-hour window on OneUp; check them on the OneUp calendar.
-5. When the first Listing post publishes, check on Facebook that its link is in the first comment. If OneUp did not post it, untick **Put the link in the first comment**: the link then ends the post.
-6. One week of Listing posts publishing as planned finishes Phase 5. Then turn on the other types one at a time (Phase 6).
+1. Turn on the **master switch** and leave **dry run on**. The plugin may now call OneUp, but only to read: the hourly read-back starts, and nothing is written.
+2. **Settings → Check connection**, copy in the category id and the Facebook page's account id, save.
+3. **Verify OneUp**: it saves a test **draft** for the page (drafts never publish; it is set a month out), reads it back, checks that OneUp's time zone matches the site's, deletes it, and reads the scheduled, published and failed lists. Every step should say **ok**, and the button then shows **passed for this page**. Nothing is written to OneUp for real until it has — for the category and account set now; change either and it must pass again. If OneUp scheduled the draft as a real post, Verify fails and takes it off at once (if even that fails, it says to delete it in OneUp now). If a step fails, nothing goes live until it is fixed (the plugin's calls to OneUp are named in one filterable list, `ias_oneup_endpoints`).
+4. Make the **Zapier/Make scenario** behind the toolkit's social webhook post to Facebook only when the payload's `channels` contains `facebook` (below).
+5. Turn **dry run** off and **Listing posts** on, and save. The next hourly run schedules the Listing posts outside the 48-hour window on OneUp; check them on the OneUp calendar.
+6. When the first Listing post publishes, check on Facebook that its link is in the first comment. If OneUp did not post it, untick **Put the link in the first comment**: the link then ends the post.
+7. One week of Listing posts publishing as planned finishes Phase 5. Then turn on the other types one at a time (Phase 6).
 
-**Handing Facebook over from the toolkit.** The toolkit's social webhook (Settings & Data → Automation) still posts each listing to Facebook through Zapier/Make. This plugin tells the toolkit when it has taken Facebook over (the toolkit's `ia_social_facebook_managed`): only when Listing posts can really reach OneUp — the master switch on, dry run off, the key and the ids set, and Listing posts on (Pause does not change it). Until then the webhook carries Facebook as before; from then on its payload says `channels: ["gbp"]`, the toolkit's promo steps ask for the Google Business Profile post only, and promo tasks already in the queue drop their Facebook step. **Before Listing posts go live, make the Zapier/Make scenario post to Facebook only when `channels` contains `facebook`**, or Facebook gets the listing twice.
+**Handing Facebook over from the toolkit.** The toolkit's social webhook (Settings & Data → Automation) still posts each listing to Facebook through Zapier/Make. This plugin tells the toolkit when it has taken Facebook over (the toolkit's `ia_social_facebook_managed`): only when Listing posts can really reach OneUp — the master switch on, dry run off, the key and the ids set, Verify OneUp passed for that page, and Listing posts on (Pause does not change it). Until then the webhook carries Facebook as before; from then on its payload says `channels: ["gbp"]`, the toolkit's promo steps ask for the Google Business Profile post only, and promo tasks already in the queue drop their Facebook step. **Before Listing posts go live, make the Zapier/Make scenario post to Facebook only when `channels` contains `facebook`**, or Facebook gets the listing twice.
 
-**Check connection** under Settings asks OneUp for its categories and their accounts with the key from wp-config — a read-only call that changes nothing — so the category id and the Facebook account id can be copied in.
+**Check connection** under Settings asks OneUp for its categories and their accounts with the key from wp-config — a read-only call that changes nothing — so the category id and the Facebook account id can be copied in. Like every call to OneUp, it needs the master switch on.
 
 ## 8. Approval and the weekly review
 
@@ -269,8 +279,8 @@ Which post types and divisions earn their slots: for each, how many posts went o
 
 - `{prefix}ias_posts` — one row per post: its listing(s), type, status, priority, window, scheduled time, OneUp post id, content, the images it used, approvals and its history.
 - `{prefix}ias_history` — the openers, calls to action, hashtag sets, templates and images already used, for the no-repeat rules.
-- The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it); `ias_last_plan` and `ias_last_plan_summary` (the morning plan's day and counts); `ias_last_review` (the day the weekly email last went); `ias_live_since` (the day Listing posts first went to OneUp live), `ias_push_mode` (dry run or live, to notice the switch), `ias_readback_last` (the last read-back) and `ias_oneup_verify` (the last Verify OneUp and its steps). Site visits for the monthly summary are cached for six hours (`ias_visits_*` transients).
-- On each post: its approvals — the hashed links (approver, round, expiry, used), the emails sent, and who approved it; once on OneUp, its OneUp post id and what was sent (the request's fingerprint, the text and time, the facts it carried — for corrections), whether a person moved or edited it there, and any correction drafted for it.
+- The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it); `ias_last_plan` and `ias_last_plan_summary` (the morning plan's day and counts); `ias_last_review` (the day the weekly email last went); `ias_live_since` (the day Listing posts first went to OneUp live), `ias_push_mode` (dry run or live, to notice the switch), `ias_readback_last` (the last read-back), `ias_oneup_verify` (the last Verify OneUp, its steps and the page it was run for) and, while a push run is going, `ias_push_lock`. Site visits for the monthly summary are cached for six hours (`ias_visits_*` transients).
+- On each post: its approvals — the hashed links (approver, round, expiry, used), the emails sent, and who approved it; once on OneUp, its OneUp post id and what was sent (the request's fingerprint, the text and time, the facts it carried — for corrections), an attempt whose answer has not come back yet, whether a person moved or edited it there, and any correction drafted for it.
 - On each listing: `_ias_announced_at` and `_ias_promoted_at` (the days it entered Recently Announced and Upcoming), `_ias_photos_at` (the day its photos were first seen), the panel's `_ias_sale_kind`, `_ias_parcels` and `_ias_brochure_cover`, and `_ias_posts_cancelled` while Cancel posts is on.
 - On each photo: `_ias_photo` (its grade, kind and alt text) and `_ias_crops` (the three crops).
 - Pictures in `uploads/intel-social/` (`graphics/` and `crops/`).

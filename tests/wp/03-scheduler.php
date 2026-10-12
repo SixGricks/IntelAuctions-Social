@@ -144,7 +144,9 @@ ias_settings_update(['master' => true, 'dry_run' => false, 'types' => ['listing'
 t_ok(!ia_social_facebook_managed(), 'every switch on but no OneUp key: Facebook stays the toolkit webhook\'s');
 t_eq(['gbp', 'facebook'], ia_social_channels(), '…so the webhook still carries Facebook');
 add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
-t_ok(ia_social_facebook_managed(), 'with the key and the ids too, the toolkit hands Facebook over');
+t_ok(!ia_social_facebook_managed(), 'the key and the ids but Verify OneUp not passed: Facebook stays the webhook\'s');
+update_option('ias_oneup_verify', ['ok' => true, 'tz_offset' => 0, 'category' => '42', 'account' => 'fb_123'], false);
+t_ok(ia_social_facebook_managed(), 'with the key, the ids and Verify OneUp passed, the toolkit hands Facebook over');
 t_eq(['gbp'], ia_social_channels(), '…and the webhook carries Google Business Profile only');
 ias_settings_update(['paused' => true]);
 t_ok(ia_social_facebook_managed(), 'paused: Facebook stays with this plugin (a pause must not let the webhook post what the plugin posts on resume)');
@@ -156,4 +158,5 @@ add_filter('ias_live_pushing_built', '__return_false');
 t_ok(!ia_social_facebook_managed(), 'a site can keep Facebook with the webhook through ias_live_pushing_built');
 remove_all_filters('ias_live_pushing_built');
 remove_all_filters('ias_oneup_key');
+delete_option('ias_oneup_verify');
 ias_settings_update(['master' => false, 'dry_run' => true, 'types' => ['listing' => false]]);
