@@ -33,3 +33,5 @@ function esc_attr($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'
 function ia_wp_tz() { return new DateTimeZone('America/New_York'); }
 function wp_timezone() { return ia_wp_tz(); }
 function current_time($t) { return (new DateTime('now', ia_wp_tz()))->format($t === 'mysql' ? 'Y-m-d H:i:s' : 'U'); }
+function ia_ui_badge($t, $v = 'muted') { return '[' . $t . ']'; }
+function ia_open_house_hours_label($h, $short = false) { return $h . ' Hours'; }

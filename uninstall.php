@@ -22,7 +22,7 @@ foreach (['posts', 'history'] as $name) {
 
 // Options: settings, schema stamp, run state.
 foreach ([
-  'ias_settings', 'ias_db_version',
+  'ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_live_since',
   'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_first_seen_done',
 ] as $key) {
   delete_option($key);

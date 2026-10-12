@@ -39,3 +39,58 @@ if (!function_exists('ias_listing_panel_render')) {
     do_action('ias_listing_panel', $post, $posts);
   }
 }
+
+/* ---------------- What the site has no field for ---------------- */
+
+/**
+ * Three things the posts need that the listing has no field for: whether it
+ * is real estate or a liquidation / contents sale (its Results post is then a
+ * thank-you with no price), the parcels of a multi-parcel sale (the posts lead
+ * with them), and the brochure cover (the roundup collage, and the picture for
+ * a listing whose photos never arrived). Saved with the auction.
+ */
+add_action('ias_listing_panel', function ($post) {
+  if (!($post instanceof WP_Post)) return;
+  $id = (int) $post->ID;
+  $kind = (string) get_post_meta($id, '_ias_sale_kind', true);
+  $guess = ias_sale_kind($id, html_entity_decode(get_the_title($id), ENT_QUOTES, 'UTF-8'), null, false);
+  $cover = (int) get_post_meta($id, '_ias_brochure_cover', true);
+  $field_cover = ias_attachment_ids(ias_field(ias_acf_field_brochure(), $id));
+  wp_nonce_field('ias_listing_panel', 'ias_listing_nonce');
+  echo '<hr><p style="margin:8px 0 4px"><strong>For the posts</strong></p>';
+  echo '<p style="margin:4px 0"><label>Sale kind<br><select name="ias_sale_kind" style="width:100%">'
+    . '<option value="">Decide from the title (' . esc_html($guess === 'liquidation' ? 'liquidation' : 'real estate') . ')</option>'
+    . '<option value="real_estate" ' . selected($kind, 'real_estate', false) . '>Real estate</option>'
+    . '<option value="liquidation" ' . selected($kind, 'liquidation', false) . '>Liquidation / contents (no price on Results)</option>'
+    . '</select></label></p>';
+  echo '<p style="margin:4px 0"><label>Parcels <span class="description">(multi-parcel sales, one per line: name | size | starting bid)</span><br>'
+    . '<textarea name="ias_parcels" rows="3" style="width:100%" placeholder="Parcel 1 | 45 acres | $250,000">' . esc_textarea((string) get_post_meta($id, '_ias_parcels', true)) . '</textarea></label></p>';
+  echo '<p style="margin:4px 0"><label>Brochure cover <span class="description">(image or PDF id from the Media Library' . ($field_cover ? '; the brochure field has #' . (int) $field_cover[0] : '') . ')</span><br>'
+    . '<input type="number" min="0" name="ias_brochure_cover" value="' . ($cover > 0 ? $cover : '') . '" style="width:100%" placeholder="' . ($field_cover ? (int) $field_cover[0] : 'none — a branded card stands in') . '"></label></p>';
+  if ($cover > 0) {
+    $thumb = wp_get_attachment_image_src($cover, 'thumbnail');
+    if ($thumb) echo '<img src="' . esc_url((string) $thumb[0]) . '" alt="" style="max-width:80px;border:1px solid #dcdcde">';
+  }
+}, 10, 1);
+
+if (!function_exists('ias_listing_panel_save')) {
+  function ias_listing_panel_save($post_id): void {
+    $post_id = (int) $post_id;
+    if (!isset($_POST['ias_listing_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['ias_listing_nonce'])), 'ias_listing_panel')) return;
+    if ((defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) || wp_is_post_revision($post_id) || !current_user_can('manage_options')) return;
+    if (get_post_type($post_id) !== ia_schema_post_type()) return;
+
+    $kind = sanitize_key(wp_unslash($_POST['ias_sale_kind'] ?? ''));
+    if (in_array($kind, ['real_estate', 'liquidation'], true)) update_post_meta($post_id, '_ias_sale_kind', $kind);
+    else delete_post_meta($post_id, '_ias_sale_kind');
+
+    $parcels = trim(sanitize_textarea_field(wp_unslash($_POST['ias_parcels'] ?? '')));
+    if ($parcels !== '') update_post_meta($post_id, '_ias_parcels', $parcels);
+    else delete_post_meta($post_id, '_ias_parcels');
+
+    $cover = (int) ($_POST['ias_brochure_cover'] ?? 0);
+    if ($cover > 0 && get_post_type($cover) === 'attachment') update_post_meta($post_id, '_ias_brochure_cover', $cover);
+    else delete_post_meta($post_id, '_ias_brochure_cover');
+  }
+}
+add_action('save_post', 'ias_listing_panel_save', 20);

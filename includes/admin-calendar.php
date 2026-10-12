@@ -218,11 +218,3 @@ if (!function_exists('ias_post_trail_card')) {
     echo '</ul></div>';
   }
 }
-
-/** Division keys → the names the team uses. */
-if (!function_exists('ias_division_label')) {
-  function ias_division_label(string $division): string {
-    $labels = ['farm_home' => 'Farm & Home', 'investment_rec' => 'Investment & Recreation', 'intel' => 'Intel general'];
-    return $labels[$division] ?? $division;
-  }
-}

@@ -1,5 +1,42 @@
 # Intel Auctions Social changelog
 
+## 0.2.0 (2026-10-12) — Phase 2: content
+- **Every current listing gets its posts.** An hourly job (`ias_social` on the
+  toolkit's dispatcher) reads every listing's facts through the toolkit and plans
+  the posts the spec calls for, on their ideal days: the Listing post from
+  promotion (or from when photos arrive), Open House 7→5→3 days before each,
+  Auction Week 10→7→3 days before the sale (same-day sales share one), Results
+  the day after a priced sale (a Saturday sale's on Monday; liquidations get a
+  thank-you with no price; same-day sales share one), and the Friday New This
+  Week roundup of the week's announcements. The late-listing rule, Sunday shifts,
+  priorities (weight × starting-bid multiplier) and no second Listing post for a
+  listing the toolkit's webhook already posted. Unpublished or deleted listings
+  lose their posts; republished ones get them back; nothing a person skipped,
+  cancelled or edited is undone.
+- **Claude writes every post** through the toolkit's metered engine from the
+  facts alone, with five rotating templates, three division voices, a rotating
+  call to action and plugin-chosen hashtags; no opening line, call to action or
+  hashtag set repeats within 30 days. The link goes in the first comment, tagged
+  by post type and post.
+- **Photos**: graded once each by Claude (quality, kind, alt text), chosen so a
+  property never leads with a photo it has used, the Listing post leaving enough
+  for the later posts; three crops of every chosen photo. A property video file
+  becomes the Open House post.
+- **Pictures it draws**: the Results graphic (price in white over the featured
+  photo, two or three same-day sales side by side) and the New This Week collage
+  of brochure covers with branded cards for the missing ones, in the brand font
+  or the bundled Inter (OFL).
+- **Checks**: `[VERIFY]` markers, bidding stated exactly once and correctly,
+  dollar figures and phone numbers only from the listing, the fair-housing
+  screen, no emoji walls — a hit stops the post (**Needs a decision**); links
+  and stacked exclamation points are fixed.
+- **Calendar**: posts on their ideal days; each post's preview with Save text,
+  Rewrite, Skip / Restore and Keep as written; Needs a decision, Waiting for
+  photos and **Write drafts now** under the grid. The listing panel gains sale
+  kind, parcels and brochure cover; Settings gain the brand font, extra
+  fair-housing phrases, the grading size and drafts per run.
+- Requires the toolkit's 4.66.0 helpers (`ia_ai_generate()` with image blocks).
+
 ## 0.1.0 (2026-10-12) — Phase 1: foundation
 - **The plugin and its dependency on the toolkit.** It boots on `plugins_loaded`
   only when the Intel Auctions Toolkit is active at 4.66.0 or newer with every

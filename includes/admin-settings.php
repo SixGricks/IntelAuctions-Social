@@ -109,6 +109,11 @@ if (!function_exists('ias_settings_sanitize')) {
     $out['utm_source'] = sanitize_key((string) ($in['utm_source'] ?? 'facebook')) ?: 'facebook';
     $out['utm_medium'] = sanitize_key((string) ($in['utm_medium'] ?? 'social')) ?: 'social';
 
+    $out['brand_font_id'] = max(0, (int) ($in['brand_font_id'] ?? 0));
+    $out['fair_housing_extra'] = sanitize_textarea_field((string) ($in['fair_housing_extra'] ?? ''));
+    $grade = (string) ($in['grade_size'] ?? 'medium');
+    $out['grade_size'] = in_array($grade, ['thumbnail', 'medium', 'medium_large'], true) ? $grade : 'medium';
+
     /** Later phases clean their own fields. */
     $out = (array) apply_filters('ias_settings_sanitize', $out, $in, $old);
 
@@ -232,7 +237,23 @@ if (!function_exists('ias_settings_render')) {
       . '<br><span class="description">Every link also carries <code>utm_campaign=social_&lt;post type&gt;</code> and the post\'s id in <code>utm_content</code>, so Analytics can tell a Listing post\'s visits from a Results post\'s.</span></td></tr>';
     echo '</table>';
 
-    /** Later phases add their sections here (copy and pictures, …). */
+    echo '<h2>Copy and pictures</h2><table class="form-table" role="presentation">';
+    $font = (int) $s['brand_font_id'];
+    $font_file = $font > 0 ? (string) get_attached_file($font) : '';
+    echo '<tr><th scope="row"><label for="ias-font">Brand font</label></th><td><input id="ias-font" type="number" min="0" name="ias[brand_font_id]" value="' . ($font > 0 ? $font : '') . '" class="small-text"> '
+      . ($font > 0 ? ($font_file !== '' && preg_match('/\.(ttf|otf)$/i', $font_file) ? ia_ui_badge(basename($font_file), 'ok') : ia_ui_badge('not a .ttf/.otf file — using Inter', 'warn')) : ia_ui_badge('Inter (bundled)', 'muted'))
+      . '<br><span class="description">The Media Library id of a .ttf or .otf file for the Results graphic and the roundup collage. Blank uses the bundled Inter. (WordPress may need the font file types allowed to upload them.)</span></td></tr>';
+    echo '<tr><th scope="row"><label for="ias-fh">More fair-housing phrases</label></th><td><textarea id="ias-fh" name="ias[fair_housing_extra]" rows="4" class="large-text">' . esc_textarea((string) $s['fair_housing_extra']) . '</textarea>'
+      . '<br><span class="description">One per line. A draft containing one stops for a decision, like "perfect for families" or "safe neighborhood" already do.</span></td></tr>';
+    echo '<tr><th scope="row">Photo grading</th><td><select name="ias[grade_size]">';
+    foreach (['thumbnail' => 'Thumbnail (cheapest, rough)', 'medium' => 'Medium — 300px (default)', 'medium_large' => 'Medium large — 768px (about 6× the tokens)'] as $k => $label) {
+      echo '<option value="' . esc_attr($k) . '" ' . selected((string) $s['grade_size'], $k, false) . '>' . esc_html($label) . '</option>';
+    }
+    echo '</select><br><span class="description">Claude looks at each photo once, at this size, to score it and tag its kind.</span></td></tr>';
+    echo '<tr><th scope="row">Drafts per run</th><td>' . $num('ias[generate_per_run]', $s['generate_per_run'], 0, 30, 'drafts an hour at most') . '<br><span class="description">Each is one Claude call against the toolkit\'s monthly cap. 0 stops new drafts.</span></td></tr>';
+    echo '</table>';
+
+    /** Later phases add their sections here. */
     do_action('ias_settings_sections', $s);
 
     submit_button('Save settings');

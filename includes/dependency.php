@@ -23,8 +23,8 @@ if (!function_exists('ias_required_toolkit_functions')) {
       // listings, stages and facts
       'ia_schema_post_type', 'ia_has_acf', 'ia_acf_field_auction_date', 'ia_acf_field_gallery',
       'ia_acf_field_starting_bid', 'ia_acf_field_video', 'ia_acf_field_sellers', 'ia_acf_field_auction_type',
-      'ia_auction_stage', 'ia_stage_auctions', 'ia_stage_term_id', 'ia_upcoming_taxonomy',
-      'ia_open_houses', 'ia_open_house_format', 'ia_parse_datetime', 'ia_wp_tz', 'ia_parse_property_size',
+      'ia_auction_stage', 'ia_stage_auctions', 'ia_stage_term_id', 'ia_upcoming_taxonomy', 'ia_announced_term_slug',
+      'ia_open_houses', 'ia_open_house_format', 'ia_open_house_hours_label', 'ia_is_phone_bid', 'ia_parse_datetime', 'ia_wp_tz', 'ia_parse_property_size',
       'ia_get_map_address_string', 'ia_auction_town', 'ia_auction_state', 'ia_auction_group_names',
       'ia_auction_lead_id', 'ia_team_member_field', 'ia_acf_field_team_phone',
       'ia_results_figures', 'ia_results_format_price',

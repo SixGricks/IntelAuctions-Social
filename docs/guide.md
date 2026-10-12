@@ -1,6 +1,6 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.1.0.** The canonical user documentation, rendered inside
+> **Documented version: 0.2.0.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
@@ -19,13 +19,13 @@ The plugin is built in phases. Each ships with publishing off and is checked bef
 | Phase | What it adds | Version |
 |---|---|---|
 | 1. Foundation | The plugin, the dependency check, its tables, settings, the log and the Social Calendar (read-only) | 0.1.0 |
-| 2. Content | Drafts for every post type, photo grading, crops, the results graphic, the fair-housing screen | — |
+| 2. Content | Drafts for every post type, photo grading, crops, the results graphic, the fair-housing screen | 0.2.0 |
 | 3. Scheduler | The 5:00 plan, the rules, cancellations, dry-run payloads | — |
 | 4. Approval | The approval emails and their links, morning reminders, the Monday email, Facebook Event cards | — |
 | 5. OneUp live | Pushing to OneUp, reading back, cancelling, the first-comment link | — |
 | 6. The rest | Each post type switched on in turn | — |
 
-This version is **phase 1**: the screens and switches exist, nothing is planned or drafted yet.
+This version is **phase 2**: every current listing gets its posts planned on their ideal days and drafted by Claude, with their photos and graphics, and checked. Nothing is scheduled at a time yet and nothing is sent anywhere.
 
 ## 3. Installing it
 
@@ -57,7 +57,14 @@ The next 30 days at a glance, Monday to Sunday. Each post is a chip with its typ
 
 Sundays never carry a post. The hatched days are inside the 48-hour veto window, where nothing new is scheduled. Each day shows how many of its three places are taken.
 
-Click a post to open it: the preview, its window and priority, the listing(s) it covers, and its history.
+Click a post to open it: the preview as it would appear (text, pictures with their alt text and crops, the first comment), its window and priority, the listing(s) it covers, and its history. From there:
+
+- **Save text** — change the words (and the first comment). The new text is checked again like a fresh draft. Once a person has edited a post, the plugin never rewrites it behind their back: if the listing changes afterwards, the post says so and waits for you.
+- **Rewrite** — have Claude write it again (at most once an hour per post; it counts against the monthly Claude cap). **Write it now** does the same for a post with no draft yet.
+- **Skip this post** — take it off the plan, with a reason if you like. A skipped post stays skipped until you press **Restore to the plan**.
+- **Keep as written** — for a post that stopped for a decision: you have read why, and it is right as it is.
+
+Under the grid: **Needs a decision** (drafts that stopped, with why), **Drafts** (how many planned posts have no draft yet, and **Write drafts now**, which writes up to four on the spot), and **Waiting for photos** (Upcoming listings whose Listing post waits for a gallery).
 
 Across the top of every screen, the **switches strip** shows the master switch, dry run, pause and each post type, so it is always plain whether anything can reach Facebook. **Pause all pushes** on the calendar stops every push at once without deactivating the plugin; **Resume pushes** undoes it. Planning and drafting carry on while paused.
 
@@ -69,6 +76,7 @@ Across the top of every screen, the **switches strip** shows the master switch, 
 - **Limits and posting windows**: at most 3 posts a day, at least 2 when posts can be pulled in, 3 hours apart, in the windows 6:00–7:30 AM, 11:30 AM–1:00 PM and 7:00–9:00 PM, each time shifted by up to 25 minutes; the 48-hour veto window; how far ahead it plans (30 days) and pushes (21 days), and the hour the morning plan runs (5:00).
 - **Approvals and the weekly email**: who approves (dj@ and jacob@intelauctions.com), and when the weekly review email goes (Monday 7:00).
 - **Links back to the site**: the tracking tags on every link.
+- **Copy and pictures**: the brand font for the graphics, more fair-housing phrases to stop on, the size photos are graded at (bigger costs more), and how many drafts are written an hour.
 
 ### Log
 
@@ -80,7 +88,11 @@ This page.
 
 ### On each auction
 
-The edit screen of every auction has a **Social posts (Facebook)** box listing that property's posts — its own and the ones it shares (a same-day sale, the weekly roundup) — with each one's day and status, and a link to the calendar.
+The edit screen of every auction has a **Social posts (Facebook)** box listing that property's posts — its own and the ones it shares (a same-day sale, the weekly roundup) — with each one's day and status, and a link to the calendar. Below the list, three things the site has no field for, saved with the auction:
+
+- **Sale kind** — real estate, or a liquidation / contents sale (its Results post is a thank-you with no price graphic). Left alone, the title decides: "liquidation", "contents", "equipment", "tools", "personal property" and the like with no acreage mean a liquidation.
+- **Parcels** — for a multi-parcel sale, one per line: `name | size | starting bid`. The Listing post then leads with the parcel breakdown.
+- **Brochure cover** — the Media Library id of the brochure's cover (an image, or the brochure PDF itself: WordPress keeps a picture of its first page). Used in the Friday collage, and for a listing whose photos never arrived. Left blank, the auction's `brochure` field is used if it has one, else a branded card stands in.
 
 ## 5. Post types
 
@@ -97,15 +109,79 @@ From the build spec. Weight sets priority; a **guaranteed** post can slide withi
 
 Starting-bid multipliers: $500,000 and up ×1.2; $250,000–500,000 ×1.1; $100,000–250,000 ×1.0; under $100,000 or none ×0.9.
 
-## 6. What it stores
+## 6. How posts are written
+
+### Which posts each listing gets
+
+The plugin checks every hour which posts the listings call for (the table in §5) and keeps the Social Calendar in step:
+
+- A listing in **Recently Announced** gets no post of its own; it goes into that Friday's **New This Week** roundup (announced from the Friday before through Thursday). Listings already posted in full to Facebook by the toolkit's webhook before this plugin took Facebook over don't get a second Listing post — theirs shows as skipped, with the date.
+- Moving to **Upcoming** (Publish Upcoming) starts the **Listing** post's window that day — or the day photos arrive, if they come later. A listing that is already Upcoming when the plugin first sees it counts from that day. With no photos yet, the Listing post waits (under **Waiting for photos**). If the photos still aren't there when its auction week starts, the Listing post is skipped and the **Auction Week** post runs anyway, guaranteed, with the brochure cover.
+- Each **open house** gets its post 7 → 5 → 3 days before (never before the listing went Upcoming); the **sale** gets its Auction Week post 10 → 7 → 3 days before. Two or more listings selling the **same day** share one Auction Week post and one Results post.
+- **Results** come the day after the sale once it is in Past with a price (a Saturday sale's on the Monday), and wait as long as it takes for a yes. A liquidation needs no price: its post is a thank-you for the turnout. Installing the plugin does not dig up old results — only sales from a week before it arrived on.
+- A listing that is unpublished, made private, password-protected or deleted loses its posts on the next run (Phase 3 makes it immediate); republish it and they come back. A post that is no longer called for (a date or an open house changed) is cancelled. What a person decided — skipped, cancelled, edited — is never undone, and a post already approved or sent is never changed: a listing that joins its sale day afterwards gets its own post.
+
+Every post sits on its **ideal day** on the calendar (a Sunday ideal moves to Monday, or Saturday when Monday is past the window). Phase 3 gives each one its time.
+
+### The words
+
+Claude writes every post through the toolkit's Claude engine, from the listing's facts and nothing else: the address, town and county from the geocoded listing (the county is left out rather than guessed), the auction date and time and how bidding works, the starting bid and size, the open houses with their times and lengths, the sellers, the lead and their direct phone from the team record, and the sale price from the results. Every prompt forbids inventing anything — a missing fact comes back as a `[VERIFY: …]` marker, which stops the post.
+
+On top of the post type's brief go:
+
+- **one of five templates**, rotating: place first, date first, person first, question first, numbers first (never the template this property's last post used, and the least used this month first);
+- **the division's voice**: Farm & Home, Investment & Recreation, or Intel general (liquidations, equipment), from the listing's Auction Category;
+- **a call to action**, rotating: call the lead, join the email or call list, comment with a question, tag someone who'd want it, reply for the brochure (each where it fits the post type);
+- **the house style**: plainspoken and local, no stock marketing gloss, at most one emoji, never two exclamation points in a row, no links, no hashtags — and how bidding works stated once, exactly: an in-person auction or Intel Phone Bidding, never both, never online.
+
+**No opening line, call to action or hashtag set repeats within 30 days.** The plugin keeps every one it has used (`{prefix}ias_history`), hands Claude the recent ones to avoid, and asks once more if one repeats anyway; a second repeat stops the post for a decision. Hashtags are chosen by the plugin, not Claude: `#IntelAuctions` plus two of the town, the county, the post type and the division, in a combination not used in 30 days.
+
+The post is the opening line, the body, the call to action and the hashtags. **The listing link goes in the first comment**, tagged `utm_source=facebook&utm_medium=social&utm_campaign=social_<post type>&utm_content=p<post id>`; a shared post lists each property's link, the roundup links to the Recently Announced page, and a listing with a video link (YouTube, Vimeo, Facebook) gets it in the comment too. With **Listing link** unticked in Settings, the link ends the post instead.
+
+### The pictures
+
+- **Photo grading.** The first time a listing's photos are needed, Claude looks at each one once — in batches of 8, at the small grading size — and scores it 1–10 for a Facebook post, tags its kind (aerial, exterior, interior, barn or outbuilding, land, other) and writes alt text from what it can see. The grade is kept on the photo, so it is never paid for twice. The first 40 photos of a gallery are graded.
+- **Choosing.** Every post about a property leads with a photo that property hasn't used yet — nobody sees the same aerial twice. The Listing post mixes kinds, leading with the best aerial or exterior, and takes up to 10 while leaving enough for the property's later posts (3 per open house, 2 for auction week). Open House posts favour interiors and use none of the Listing post's photos (3–5; a small gallery fills out with the Listing post's rather than posting one picture). Auction Week posts lead with the strongest aerial not yet used. A shared post takes one or two of each property's. Photos scoring 3 or less are left out while better ones exist.
+- **Video.** When the listing's video is a video file (mp4, mov), the Open House post is that video. A YouTube, Vimeo or Facebook link goes in the first comment instead.
+- **Three crops.** Every chosen photo is saved as landscape 1200×628, square 1080×1080 and vertical 1080×1350 (never enlarged past the photo), under `uploads/intel-social/crops/`, ready for Instagram later.
+- **Alt text** on every picture: from grading, else the photo's own alt text, else the listing's name; the plugin's own graphics describe themselves ("Sold for $425,000: 22 Mill Road, Paradise, PA, October 31, 2026").
+
+### The pictures the plugin draws
+
+- **Results graphic** — the featured photo, a dark gradient up from the bottom, "SOLD" and the price in white, the street, and the town and date. Two or three same-day sales share one picture side by side, one price each. A liquidation never gets one: its thank-you carries a plain photo.
+- **New This Week collage** — the week's brochure covers on Intel navy under a "NEW THIS WEEK" heading; a listing with no cover yet gets a branded card (street, town, date) in its place. Up to nine; more shows "+N more".
+- The font is the **brand font** set in Settings (a .ttf or .otf in the Media Library), else the bundled **Inter** (SIL Open Font License, `assets/fonts/OFL.txt`). The pictures are 1080×1080 JPEGs in `uploads/intel-social/graphics/`.
+
+### The checks before anything goes anywhere
+
+Every draft — written by Claude or edited by a person — is checked, and stops for a decision (**Needs a decision**, with the reasons) when:
+
+- it carries a `[VERIFY]` marker;
+- a Listing, Open House or Auction Week post doesn't say how bidding works, says it wrongly, says both (buyers would think they can choose), or the listing itself doesn't say — its own Auction type field and its Auction Type category are read, and if they disagree the post stops; any post mentioning online bidding stops;
+- it gives a dollar figure that isn't on the listing (starting bid, sale price, parcel bids, or its own description) or a phone number that isn't the lead's or the office's;
+- the **fair-housing screen** finds language about who should live there rather than the property: "perfect for families", "family-friendly", "safe neighborhood", "great for retirees", "adults only", a religion, nationality or ability, pointing to a house of worship, "bachelor pad" — plus any phrases added in Settings. Describing the property (a white barn, Amish-built, a wheelchair ramp, a family room) is never flagged;
+- it has more than three emoji.
+
+Two things are fixed without asking: a web address in the text is removed (the link belongs in the first comment), and stacked exclamation points become one.
+
+### When drafts are written, and what they cost
+
+The plugin's job runs every hour on the toolkit's dispatcher (`ias_social`, listed with the toolkit's jobs): it updates the plan, then writes up to **8 drafts** (Settings), approve-first posts (Results, the roundup) first and then by day, for the next 30 days. The roundup is written on its Friday, once the week's announcements are in. Each draft is one Claude call (two if the first answer was unusable or repeated itself), each photo batch another, all counted against the toolkit's monthly Claude cap — when the cap is reached, drafting stops until next month or until the cap is raised.
+
+Nothing is paid for twice: a draft is rewritten only when the listing's facts behind it change (and nobody has edited it), at most every 6 hours, or when a person presses **Rewrite** (at most hourly). A failed call waits 6 hours before trying again.
+
+## 7. What it stores
 
 - `{prefix}ias_posts` — one row per post: its listing(s), type, status, priority, window, scheduled time, OneUp post id, content, the images it used, approvals and its history.
 - `{prefix}ias_history` — the openers, calls to action, hashtag sets, templates and images already used, for the no-repeat rules.
-- The option `ias_settings` (every setting) and `ias_db_version`.
+- The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it).
+- On each listing: `_ias_announced_at` and `_ias_promoted_at` (the days it entered Recently Announced and Upcoming), `_ias_photos_at` (the day its photos were first seen), and the panel's `_ias_sale_kind`, `_ias_parcels` and `_ias_brochure_cover`.
+- On each photo: `_ias_photo` (its grade, kind and alt text) and `_ias_crops` (the three crops).
+- Pictures in `uploads/intel-social/` (`graphics/` and `crops/`).
 - Its log entries in the toolkit's `{prefix}ia_events` table, as `ias.*` events.
 
 **Deleting the plugin removes all of it** — both tables, the options, its log entries, its per-image and per-listing data and its generated pictures. The listings themselves and anything already on Facebook are untouched. The full list is `uninstall.php`.
 
-## 7. Requirements
+## 8. Requirements
 
-PHP 7.4+, WordPress 5.3+, the Intel Auctions Toolkit 4.66.0+. It uses the toolkit's helpers by name; if a toolkit update ever removes one, the plugin stops with the notice rather than failing half way through a run.
+PHP 7.4+, WordPress 5.3+, the Intel Auctions Toolkit 4.66.0+ with its Anthropic key set (drafts and photo grading use the toolkit's Claude engine and monthly cap), and GD with FreeType for the pictures it draws (without it, Results and roundup posts go out with a plain photo). It uses the toolkit's helpers by name; if a toolkit update ever removes one, the plugin stops with the notice rather than failing half way through a run.
