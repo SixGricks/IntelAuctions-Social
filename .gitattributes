@@ -1,0 +1,8 @@
+# Kept out of the release zip (git archive / GitHub's zipball): at run time the
+# plugin needs only intel-auctions-social.php, uninstall.php, includes/, assets/
+# and docs/guide.md (shown on the Guide tab).
+tests/              export-ignore
+CLAUDE.md           export-ignore
+.gitignore          export-ignore
+.gitattributes      export-ignore
+docs/build-spec.md  export-ignore
