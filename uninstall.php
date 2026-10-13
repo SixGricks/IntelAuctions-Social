@@ -24,7 +24,7 @@ foreach (['posts', 'history'] as $name) {
 foreach ([
   'ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_live_since',
   'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review',
-  'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock',
+  'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
 ] as $key) {
   delete_option($key);
 }

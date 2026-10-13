@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Intel Auctions Social
  * Description: Turns each auction into a set of Facebook posts, plans them three a day through OneUp, and keeps a person in the loop on the posts that carry hard facts. Needs the Intel Auctions Toolkit.
- * Version: 0.5.2
+ * Version: 0.6.0
  * Author: Six Gricks Solutions (DJ)
  * Requires at least: 5.3
  * Requires PHP: 7.4
@@ -25,7 +25,7 @@ if (PHP_VERSION_ID < 70400) {
   return;
 }
 
-if (!defined('IAS_VERSION'))      define('IAS_VERSION', '0.5.2');
+if (!defined('IAS_VERSION'))      define('IAS_VERSION', '0.6.0');
 if (!defined('IAS_FILE'))         define('IAS_FILE', __FILE__);
 if (!defined('IAS_PATH'))         define('IAS_PATH', plugin_dir_path(__FILE__));
 if (!defined('IAS_URL'))          define('IAS_URL', plugin_dir_url(__FILE__));
@@ -69,6 +69,7 @@ if (!function_exists('ias_includes')) {
       'includes/sync.php',
       'includes/scheduler.php',
       'includes/oneup.php',
+      'includes/channels.php',
       'includes/plan.php',
       'includes/live.php',
       'includes/summary.php',

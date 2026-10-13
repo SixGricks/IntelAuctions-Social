@@ -73,6 +73,19 @@ if (!function_exists('ias_emoji_count')) {
 }
 
 /**
+ * Does this post still carry a [VERIFY: …] marker, in its text or its first
+ * comment? Such a post never goes anywhere: Keep as written is refused and
+ * push readiness says no, whatever else let it through. The marker is Claude
+ * saying a fact is missing; the cure is the fact, typed in or fixed on the
+ * listing.
+ */
+if (!function_exists('ias_has_verify')) {
+  function ias_has_verify(array $content): bool {
+    return (bool) preg_match('/\[VERIFY[^\]]*\]/i', (string) ($content['text'] ?? '') . "\n" . (string) ($content['first_comment'] ?? ''));
+  }
+}
+
+/**
  * Check one draft. $ctx:
  *   type        post type
  *   bidding     the bidding type of each listing in the post ('phone'|'in_person'|'')

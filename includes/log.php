@@ -50,6 +50,30 @@ if (!function_exists('ias_log')) {
   }
 }
 
+/** A stored actor (a login, or 'system') as a person reads it: their display name; the plugin for 'system'. */
+if (!function_exists('ias_actor_name')) {
+  function ias_actor_name(string $login): string {
+    if ($login === '' || $login === 'system') return 'the plugin';
+    if (strpos($login, '@') !== false) return $login; // an approver who said yes from an email
+    $user = get_user_by('login', $login);
+    return ($user && (string) $user->display_name !== '') ? (string) $user->display_name : $login;
+  }
+}
+
+/** An approver's name from their email: the WordPress user's first or display name, else the email's first part ("dj" → "DJ"). */
+if (!function_exists('ias_person_name')) {
+  function ias_person_name(string $email): string {
+    $user = get_user_by('email', $email);
+    if ($user) {
+      $first = trim((string) get_user_meta($user->ID, 'first_name', true));
+      if ($first !== '') return $first;
+      if ((string) $user->display_name !== '' && strpos((string) $user->display_name, '@') === false) return (string) $user->display_name;
+    }
+    $local = (string) strtok($email, '@');
+    return strlen($local) <= 3 ? strtoupper($local) : ucfirst($local);
+  }
+}
+
 /** The actor name for the current user ('system' outside a login). */
 if (!function_exists('ias_actor')) {
   function ias_actor(): string {

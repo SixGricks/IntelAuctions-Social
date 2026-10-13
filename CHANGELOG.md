@@ -1,5 +1,49 @@
 # Intel Auctions Social changelog
 
+## 0.6.0 (2026-10-13) — More networks, pictures by hand, a cleaner post view (every switch still off)
+From DJ's first look at a real draft and the UI review that followed:
+- **Pictures by hand.** Each post's page has a picture editor: add any
+  picture from the Media Library, drag (or ‹ ›) to reorder, × to take one out,
+  up to 10; the first leads. A person's choice holds through rewrites and
+  listing changes (`flags.media_by`); "Let the plugin choose again" hands it
+  back; an approved roundup or Results post needs a fresh yes.
+- **Never the same view twice.** Narvon Country Home's post opened with two
+  near-identical front exteriors. Every photo now gets a difference-hash
+  fingerprint (`_ias_dhash`); two shots of one view never share a post, an
+  Open House skips the Listing post's views, and the Listing post follows its
+  lead with a different kind. A partly graded gallery is chosen from its
+  graded photos only (no more SEO filenames as alt text).
+- **No "12:00 am".** A sale with a date and no time (the date field reads as
+  midnight) gives Claude no time, so it no longer holds the draft on
+  `[VERIFY: auction time, facts say 12:00 am]`.
+- **A `[VERIFY]` marker never goes out.** Keep as written cleared the hold and
+  the marked text could reach Facebook; now it is refused (and not offered),
+  and a post whose text or first comment carries a marker is never ready to
+  push (`ias_has_verify()`).
+- **More networks, provisioned.** Instagram, X and LinkedIn
+  (`includes/channels.php`): rules, a switch and OneUp account id each in
+  Settings, a renderer (Instagram: the words with "link in our bio" and square
+  crops; X: one line from the facts within 280; LinkedIn: the words and the
+  link), a preview tab each, and their requests in the dry-run log with
+  take-backs. Nothing is sent to them, even with Facebook live — each needs
+  its own Verify first. Facebook's requests are unchanged.
+- **The OneUp key in Settings** (option `ias_oneup_api_key`, not autoloaded,
+  never shown back or logged; a wp-config constant still wins). Verify OneUp
+  now records the key it passed with: another key must verify again.
+- **The post view, cleaned up** (UI review): a bar that says what the post
+  waits for with the buttons beside it; Edit and Pictures | a Facebook-style
+  preview | the details, in three, two or one columns; plain words in About
+  this post; people's names in the history and the Log; the OneUp request
+  folded; Approve the one primary button on a waiting post. The calendar puts
+  Needs a decision, Waiting for approval and Corrections above the grid when
+  there are any; Settings has a Save button near the top; the Log reads in
+  words; nothing is wider than a phone.
+- Claude's key is now set in the toolkit's Settings & Data → Services &
+  Budgets (toolkit 4.67.0); Settings links there when the toolkit can.
+- Tests: `02c-photos-and-time`, `02d-pictures`, `02e-post-view`,
+  `07b-networks`, more in `05-decisions` and `08-oneup-safety`; the test
+  site's month of fake Claude usage no longer spends the real cap.
+
 ## 0.5.2 (2026-10-13) — Without Claude, say so (every switch still off)
 From the first audit of the live site, where the toolkit has no Anthropic key:
 - **Nothing is tried without Claude.** When the toolkit has no Anthropic key,

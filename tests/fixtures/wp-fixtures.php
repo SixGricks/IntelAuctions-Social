@@ -22,8 +22,12 @@ function ias_t_reset(): void {
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock'] as $o) delete_option($o);
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key'] as $o) delete_option($o);
   update_option('ias_settings', [], true);
+  // The fake Claude's calls are metered like real ones: without this, a month of test runs spends the
+  // toolkit's real monthly cap and every later draft is refused as over budget.
+  delete_option('ia_ai_tok_in_' . current_time('Y-m'));
+  delete_option('ia_ai_tok_out_' . current_time('Y-m'));
 }
 
 function ias_t_clock(string $when): void {
@@ -60,9 +64,34 @@ function ias_t_photo(string $label, array $rgb = [90, 120, 80]): int {
   $im = imagecreatetruecolor(1600, 1067);
   imagefilledrectangle($im, 0, 0, 1600, 1067, imagecolorallocate($im, $rgb[0], $rgb[1], $rgb[2]));
   imagefilledrectangle($im, 0, 700, 1600, 1067, imagecolorallocate($im, max(0, $rgb[0] - 40), max(0, $rgb[1] - 40), max(0, $rgb[2] - 40)));
+  // A pattern of its own, seeded by the label, so no two fixture photos look like the same view
+  // to the near-duplicate check (real photos differ like this; flat colour blocks would not).
+  mt_srand(crc32($label));
+  for ($i = 0; $i < 14; $i++) {
+    $x = mt_rand(0, 1500); $y = mt_rand(0, 960); $v = mt_rand(0, 255);
+    imagefilledrectangle($im, $x, $y, $x + mt_rand(120, 520), $y + mt_rand(90, 400), imagecolorallocate($im, $v, (int) ($v * 0.8), (int) ($v * 0.6)));
+  }
+  mt_srand();
   imagestring($im, 5, 40, 40, $label, imagecolorallocate($im, 255, 255, 255));
   imagejpeg($im, $file, 85);
   imagedestroy($im);
+  $id = wp_insert_attachment(['post_mime_type' => 'image/jpeg', 'post_title' => $label, 'post_status' => 'inherit'], $file);
+  require_once ABSPATH . 'wp-admin/includes/image.php';
+  wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $file));
+  update_post_meta($id, '_iast_fixture', 1);
+  return (int) $id;
+}
+
+/** A second shot of the same view as $att: the same picture, a touch brighter and shifted a few pixels. */
+function ias_t_photo_twin(int $att, string $label): int {
+  $src = imagecreatefromjpeg((string) get_attached_file($att));
+  $im = imagecreatetruecolor(1600, 1067);
+  imagecopy($im, $src, 0, 0, 12, 8, 1588, 1059);
+  imagefilter($im, IMG_FILTER_BRIGHTNESS, 12);
+  $up = wp_upload_dir();
+  $file = trailingslashit($up['path']) . 'ias-test-' . sanitize_title($label) . '-' . wp_rand(1000, 9999) . '.jpg';
+  imagejpeg($im, $file, 85);
+  imagedestroy($im); imagedestroy($src);
   $id = wp_insert_attachment(['post_mime_type' => 'image/jpeg', 'post_title' => $label, 'post_status' => 'inherit'], $file);
   require_once ABSPATH . 'wp-admin/includes/image.php';
   wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $file));

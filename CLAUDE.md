@@ -10,6 +10,21 @@ it, and the spec stays verbatim, so they are recorded here:
 - **Facebook Events are out** (Oct 12, 2026: "don't worry about facebook events
   at all"). Removed in 0.4.3 — no event cards, no switch, no Monday-email
   section. Don't build them back from the spec's "Facebook Events" section.
+- **The keys belong in Settings** (Oct 13, 2026), not only in wp-config: the
+  OneUp key has a field under Settings → OneUp (option `ias_oneup_api_key`,
+  never echoed back or logged; the `INTEL_ONEUP_API_KEY` constant still wins),
+  and the toolkit sets the Claude key on Settings & Data → Services & Budgets
+  (4.67.0). The spec's "API key stored in wp-config" is superseded.
+- **More networks are provisioned** (Oct 13, 2026: "provision for more social
+  networks now. At least Instagram, X, and LinkedIn"). `includes/channels.php`
+  holds their rules and renderers; they are planned, previewed and dry-run
+  only. Making one live needs its own Verify and its own sent record
+  (`flags.oneup` is Facebook's) — never reuse Facebook's. X's words come from
+  the facts (`ias_x_line()`), never from Claude's prose. Facebook's renderer
+  (`ias_render_facebook()`) must not change output for the others' sake: its
+  hash is what was sent.
+- **A person chooses pictures by hand** (Oct 13, 2026) and that holds
+  (`flags.media_by`), like their edited words.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude
@@ -104,6 +119,14 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when
   its facts change it is held with `ias_stale_hold()`.
+- **A `[VERIFY]` marker never goes anywhere** (`ias_has_verify()`): not by
+  Keep as written, not by any other release of a hold — push readiness says no.
+- **The post view** (`ias_calendar_render_post()`): the bar
+  (`ias_post_view_bar`) speaks for what the post waits for and carries its
+  buttons; Edit and Pictures (`ias_post_view_main`), the preview per network
+  (`ias_post_view_preview`), the details (`ias_post_view_side`). One primary
+  button at rest. Show people by name (`ias_actor_name()`), never a login.
+  Screens print `ias_header_end()` after the header so notices land under it.
 - **Never post on Sunday, never send an approval email or reminder on Sunday.**
   Times are the site's time zone (`ia_wp_tz()`), always.
 - **Field names** resolve through the toolkit's helpers (`ia_acf_field_*`); the

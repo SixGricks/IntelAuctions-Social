@@ -19,14 +19,15 @@ if (!function_exists('ias_log_render')) {
     if (!isset($kinds[$event])) $event = '';
 
     ia_ui_header('Social Log', 'What the plugin did, newest first — kept in the toolkit\'s event log, which holds the most recent 5,000 entries across both plugins.');
+    ias_header_end();
     echo ias_switches_strip();
     /** The monthly summary (summary.php). */
     do_action('ias_log_top');
 
     echo '<form method="get" style="margin:8px 0 12px">';
     echo '<input type="hidden" name="post_type" value="' . esc_attr(ia_schema_post_type()) . '"><input type="hidden" name="page" value="' . esc_attr(IAS_PAGE_LOG) . '">';
-    echo '<label>Show <select name="event"><option value="">everything</option>';
-    foreach ($kinds as $key => $label) echo '<option value="' . esc_attr($key) . '" ' . selected($event, $key, false) . '>' . esc_html($key . ' — ' . $label) . '</option>';
+    echo '<label>Show <select name="event" style="max-width:calc(100vw - 140px)"><option value="">everything</option>';
+    foreach ($kinds as $key => $label) echo '<option value="' . esc_attr($key) . '" ' . selected($event, $key, false) . '>' . esc_html($label) . '</option>';
     echo '</select></label> <button class="button">Filter</button></form>';
 
     $rows = ias_log_recent($event, 200);
@@ -36,21 +37,23 @@ if (!function_exists('ias_log_render')) {
       return;
     }
 
-    echo '<table class="widefat striped"><thead><tr><th style="width:150px">When</th><th style="width:120px">What</th><th>Listing</th><th>Details</th><th style="width:90px">Who</th></tr></thead><tbody>';
+    echo '<div class="ias-summary-scroll"><table class="widefat striped"><thead><tr><th style="width:150px">When</th><th style="width:170px">What</th><th>Listing</th><th>Details</th><th style="width:90px">Who</th></tr></thead><tbody>';
     foreach ($rows as $row) {
       $meta = (array) $row['meta'];
       $listing = (int) $row['object_id'];
       $post = isset($meta['post']) ? (int) $meta['post'] : 0;
       echo '<tr>';
       echo '<td>' . esc_html(date_i18n('M j, g:i:s a', strtotime((string) $row['created_at']))) . '</td>';
-      echo '<td><code>' . esc_html((string) $row['short']) . '</code></td>';
+      $short = (string) $row['short'];
+      echo '<td><span title="' . esc_attr($short) . '">' . esc_html($kinds[$short] ?? $short) . '</span></td>';
+      $type = (string) ($meta['type'] ?? '');
       echo '<td>' . ($listing > 0 ? '<a href="' . esc_url((string) get_edit_post_link($listing, '')) . '">' . esc_html(html_entity_decode(get_the_title($listing), ENT_QUOTES, 'UTF-8') ?: '#' . $listing) . '</a>' : '—')
-        . ($post > 0 ? '<br><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $post])) . '">post #' . $post . '</a>' : '') . '</td>';
+        . ($post > 0 ? '<br><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $post])) . '">' . esc_html($type !== '' ? ias_post_type($type)['short'] . ' post' : 'the post') . '</a>' : '') . '</td>';
       echo '<td>' . ias_log_meta_html($row) . '</td>';
-      echo '<td>' . esc_html((string) $row['actor']) . '</td>';
+      echo '<td>' . esc_html(ias_actor_name((string) $row['actor'])) . '</td>';
       echo '</tr>';
     }
-    echo '</tbody></table></div>';
+    echo '</tbody></table></div></div>';
   }
 }
 
@@ -60,10 +63,11 @@ if (!function_exists('ias_log_meta_html')) {
     $meta = (array) $row['meta'];
     $out = '';
     if (!empty($meta['summary'])) $out .= esc_html((string) $meta['summary']);
+    if (!empty($meta['channel']) && function_exists('ias_channel')) $out = '<strong>' . esc_html((string) (ias_channel((string) $meta['channel'])['label'] ?? $meta['channel'])) . ':</strong> ' . $out;
     $rest = $meta;
-    unset($rest['summary'], $rest['post'], $rest['payload']);
+    unset($rest['summary'], $rest['post'], $rest['payload'], $rest['type'], $rest['channel']); // the post type is in the Listing column
     if ($rest) {
-      $out .= ($out !== '' ? '<br>' : '') . '<span class="description">' . esc_html(mb_substr(wp_json_encode($rest, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 0, 400)) . '</span>';
+      $out .= '<details><summary>More</summary><span class="description">' . esc_html(mb_substr(wp_json_encode($rest, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 0, 600)) . '</span></details>';
     }
     if (isset($meta['payload'])) {
       $out .= '<details><summary>Payload</summary><div class="ias-json">'

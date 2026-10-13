@@ -1,6 +1,6 @@
 # Intel Auctions Social
 
-A WordPress plugin (**v0.5.2**) for intelauctions.com, the sister of the
+A WordPress plugin (**v0.6.0**) for intelauctions.com, the sister of the
 [Intel Auctions Toolkit](https://github.com/SixGricks/IntelAuction). It turns
 each auction into a set of Facebook posts, plans them three a day through OneUp, and keeps
 a person in the loop on the posts that carry hard facts.
@@ -42,6 +42,7 @@ at install and dry run is on, so nothing can reach Facebook until DJ turns a swi
 | `includes/scheduler.php` | The scheduler: days and minutes for every post (pure) |
 | `includes/plan.php` | The morning plan, the pushes (dry run or live), cancelling at once, Cancel posts |
 | `includes/oneup.php` | The Facebook renderer, the OneUp client, the switches that gate it |
+| `includes/channels.php` | Instagram, X and LinkedIn: their rules, renderers and dry run (provisioned, not sent yet) |
 | `includes/live.php` | Phase 5: sending to OneUp, taking back, the hourly read-back, Verify OneUp, corrections |
 | `includes/summary.php` | The monthly summary (with site visits from Google Analytics through the toolkit) |
 | `includes/approval.php` | Lane A approval emails, the signed one-time links and their page, reminders, the Monday email |

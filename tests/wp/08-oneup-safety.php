@@ -97,6 +97,18 @@ t_ok(strpos($screen(IAS_PAGE_SETTINGS), 'passed for this page') === false, '…a
 ias_settings_update(['oneup_account_id' => 'fb_123']);
 t_ok(ias_oneup_verified(), 'back to the verified page: verified again');
 
+// ---- The key, saved in Settings (DJ, Oct 13) ----
+remove_all_filters('ias_oneup_key');
+update_option('ias_oneup_api_key', 'test-oneup-key', false);
+t_ok(ias_oneup_key() === 'test-oneup-key' && ias_oneup_key_source() === 'option', 'a key saved under Settings → OneUp is used (no wp-config constant needed)');
+t_ok(ias_oneup_verified(), '…and it is the key Verify OneUp passed with');
+$html = $screen(IAS_PAGE_SETTINGS);
+t_ok(strpos($html, 'name="ias_oneup_key_new"') !== false && strpos($html, 'test-oneup-key') === false, 'Settings has the key field and never prints the saved key');
+update_option('ias_oneup_api_key', 'a-different-key', false);
+t_ok(!ias_oneup_verified() && ias_push_mode() === 'dry', 'another key pasted in: nothing is written until Verify OneUp passes with it');
+update_option('ias_oneup_api_key', 'test-oneup-key', false);
+t_ok(ias_oneup_verified(), 'the verified key back: verified again');
+
 // ---- 5. One push run at a time ----
 update_option('ias_push_lock', (string) time(), false);
 $n = count($S['calls']);

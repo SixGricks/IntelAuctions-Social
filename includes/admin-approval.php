@@ -47,9 +47,9 @@ add_action('ias_post_view_side', function (array $p): void {
   echo '<div class="ias-card"><h3>Approval</h3>';
   if ($p['status'] === 'approved' || !empty($a['decision'])) {
     $d = (array) ($a['decision'] ?? []);
-    echo '<p>' . ias_status_badge('approved') . ' by <strong>' . esc_html((string) ($d['by'] ?? $p['approved_by'])) . '</strong> ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) ($d['at'] ?? $p['approved_at'])))) . (!empty($d['via']) ? ' <span class="description">(' . esc_html((string) $d['via']) . ')</span>' : '') . '</p>';
+    echo '<p>' . ias_status_badge('approved') . ' by <strong>' . esc_html(ias_actor_name((string) ($d['by'] ?? $p['approved_by']))) . '</strong> ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) ($d['at'] ?? $p['approved_at'])))) . (!empty($d['via']) ? ' <span class="description">(' . esc_html((string) $d['via']) . ')</span>' : '') . '</p>';
   } elseif ($p['status'] === 'waiting') {
-    echo '<p>' . ias_status_badge('waiting') . ' — nothing goes to OneUp until someone approves it. A reminder goes every morning except Sunday.</p>';
+    echo '<p class="description">A reminder goes every morning except Sunday until someone answers.</p>'; // the bar says it is waiting
   } else {
     echo '<p class="description">Lane A: this post waits for an emailed yes from ' . esc_html(implode(' or ', ias_approvers()) ?: 'an approver (none set in Settings)') . ' once its draft is clean.</p>';
   }
@@ -64,23 +64,19 @@ add_action('ias_post_view_side', function (array $p): void {
   echo '</div>';
 });
 
-/** Waiting for approval, under the grid. */
-add_action('ias_calendar_after_grid', function (): void {
+/** Waiting for approval, above the grid — only when something is. */
+add_action('ias_calendar_attention', function (): void {
   $waiting = ias_posts_query(['status' => 'waiting', 'limit' => 100]);
-  echo '<div class="ias-card"><h3>Waiting for approval <span class="description">(' . count($waiting) . ')</span></h3>';
-  if (!$waiting) echo '<p class="description">Nothing is waiting. Roundup and Results posts are emailed for a yes as soon as their drafts are clean.</p>';
-  else {
-    echo '<ul style="margin:0">';
-    foreach ($waiting as $p) {
-      $sent = (array) ($p['approvals']['sent'] ?? []);
-      $first = $sent ? (string) $sent[0]['at'] : '';
-      echo '<li><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '"><strong>' . esc_html(ias_post_type((string) $p['type'])['short']) . '</strong> · ' . esc_html(ias_post_subject($p)) . '</a>'
-        . ($first !== '' ? ' <span class="description">asked ' . esc_html(human_time_diff(strtotime($first), strtotime(ias_now_sql()))) . ' ago, ' . count($sent) . ' email' . (count($sent) === 1 ? '' : 's') . '</span>' : '') . '</li>';
-    }
-    echo '</ul>';
+  if (!$waiting) return;
+  echo '<div class="ias-card"><h3>Waiting for approval <span class="description">(' . count($waiting) . ')</span></h3><ul style="margin:0">';
+  foreach ($waiting as $p) {
+    $sent = (array) ($p['approvals']['sent'] ?? []);
+    $first = $sent ? (string) $sent[0]['at'] : '';
+    echo '<li><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '"><strong>' . esc_html(ias_post_type((string) $p['type'])['short']) . '</strong> · ' . esc_html(ias_post_subject($p)) . '</a>'
+      . ($first !== '' ? ' <span class="description">asked ' . esc_html(human_time_diff(strtotime($first), strtotime(ias_now_sql()))) . ' ago, ' . count($sent) . ' email' . (count($sent) === 1 ? '' : 's') . '</span>' : '') . '</li>';
   }
-  echo '</div>';
-}, 5);
+  echo '</ul></div>';
+});
 
 /* ---------------- Settings: the weekly email on demand ---------------- */
 

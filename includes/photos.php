@@ -181,6 +181,66 @@ if (!function_exists('ias_photo_alt')) {
   }
 }
 
+/**
+ * A photo's fingerprint: a 64-bit difference hash (16 hex characters) of its
+ * medium size, grey and shrunk to 9×8, cached in `_ias_dhash`. Two photos of
+ * the same view — the house front from a step to the left — differ in a few
+ * bits; different views differ in many. '' when GD or the file is missing
+ * (then nothing is compared).
+ */
+if (!function_exists('ias_photo_dhash')) {
+  function ias_photo_dhash(int $att): string {
+    $cached = get_post_meta($att, '_ias_dhash', true);
+    if (is_string($cached) && preg_match('/^[0-9a-f]{16}$/', $cached)) return $cached;
+    if (!function_exists('imagecreatefromstring') || !function_exists('imagecopyresampled')) return '';
+    $file = '';
+    $mid = image_get_intermediate_size($att, 'medium');
+    if (is_array($mid) && !empty($mid['path'])) $file = trailingslashit((string) wp_upload_dir(null, false)['basedir']) . $mid['path'];
+    if ($file === '' || !is_readable($file)) $file = (string) get_attached_file($att);
+    if ($file === '' || !is_readable($file) || filesize($file) > 25 * MB_IN_BYTES) return '';
+    $src = @imagecreatefromstring((string) file_get_contents($file));
+    if (!$src) return '';
+    $small = imagecreatetruecolor(9, 8);
+    imagecopyresampled($small, $src, 0, 0, 0, 0, 9, 8, imagesx($src), imagesy($src));
+    imagedestroy($src);
+    $bits = '';
+    for ($y = 0; $y < 8; $y++) {
+      $prev = null;
+      for ($x = 0; $x < 9; $x++) {
+        $rgb = imagecolorat($small, $x, $y);
+        $lum = 0.299 * (($rgb >> 16) & 255) + 0.587 * (($rgb >> 8) & 255) + 0.114 * ($rgb & 255);
+        if ($prev !== null) $bits .= $lum > $prev ? '1' : '0';
+        $prev = $lum;
+      }
+    }
+    imagedestroy($small);
+    $hex = '';
+    foreach (str_split($bits, 4) as $nibble) $hex .= dechex((int) bindec($nibble));
+    update_post_meta($att, '_ias_dhash', $hex);
+    return $hex;
+  }
+}
+
+/** How many of two fingerprints' 64 bits differ (64 when either is missing). */
+if (!function_exists('ias_dhash_distance')) {
+  function ias_dhash_distance(string $a, string $b): int {
+    if (strlen($a) !== 16 || strlen($b) !== 16) return 64;
+    $d = 0;
+    for ($i = 0; $i < 16; $i++) {
+      $x = hexdec($a[$i]) ^ hexdec($b[$i]);
+      for (; $x; $x >>= 1) $d += $x & 1;
+    }
+    return $d;
+  }
+}
+
+/** Two photos this close are the same view (10 of 64 bits; filterable). */
+if (!function_exists('ias_dhash_same_view')) {
+  function ias_dhash_same_view(string $a, string $b): bool {
+    return ias_dhash_distance($a, $b) <= (int) apply_filters('ias_dhash_same_view', 10);
+  }
+}
+
 /** Image ids this listing's posts have already used (all time — "nobody sees the same aerial twice"). */
 if (!function_exists('ias_listing_used_images')) {
   function ias_listing_used_images(int $listing_id, int $except_post = 0): array {
@@ -207,9 +267,24 @@ if (!function_exists('ias_pick_photos')) {
     $pool = [];
     foreach ($photos as $id => $g) {
       if (in_array((int) $id, $avoid, true)) continue;
-      $pool[(int) $id] = ['q' => (int) ($g['q'] ?? 5), 'kind' => (string) ($g['kind'] ?? 'other'), 'used' => in_array((int) $id, $used, true)];
+      $pool[(int) $id] = ['q' => (int) ($g['q'] ?? 5), 'kind' => (string) ($g['kind'] ?? 'other'), 'used' => in_array((int) $id, $used, true), 'h' => (string) ($g['h'] ?? '')];
     }
     if (!$pool) return [];
+    // The same view twice is never in one post — nor a view this post must avoid (an open house's, the listing post's).
+    $avoid_h = array_values(array_filter(array_map('strval', (array) ($opts['avoid_hashes'] ?? []))));
+    $dedupe = function (array $ids) use (&$pool, $avoid_h) {
+      $kept = [];
+      $seen = $avoid_h;
+      foreach ($ids as $id) {
+        $h = $pool[$id]['h'];
+        $dup = false;
+        if ($h !== '') foreach ($seen as $s) if (ias_dhash_same_view($h, $s)) { $dup = true; break; }
+        if ($dup) continue;
+        $kept[] = $id;
+        if ($h !== '') $seen[] = $h;
+      }
+      return $kept;
+    };
     // Weak photos only when nothing better is left.
     $good = array_filter($pool, function ($p) { return $p['q'] > 3; });
     if (count($good) >= 3) $pool = $good;
@@ -241,15 +316,18 @@ if (!function_exists('ias_pick_photos')) {
         usort($ids, function ($a, $b) use ($pool) { return [$pool[$a]['used'], -$pool[$a]['q'], $a] <=> [$pool[$b]['used'], -$pool[$b]['q'], $b]; });
         $by_kind[$k] = $ids;
       }
+      // The cycle starts on a kind other than the lead's: two front exteriors never open the post.
+      $cycle = ['exterior', 'interior', 'aerial', 'barn', 'land', 'other'];
+      $lead_kind = $pool[$lead]['kind'];
+      $cycle = array_merge(array_values(array_diff($cycle, [$lead_kind])), in_array($lead_kind, $cycle, true) ? [$lead_kind] : []);
+      foreach (array_keys($by_kind) as $k) if (!in_array($k, $cycle, true)) $cycle[] = $k;
       $order = [$lead];
-      while (count($order) < $max && array_filter($by_kind)) {
-        foreach (['exterior', 'interior', 'aerial', 'barn', 'land', 'other'] as $k) {
-          if (!empty($by_kind[$k])) $order[] = array_shift($by_kind[$k]);
-          if (count($order) >= $max) break;
-        }
+      while (array_filter($by_kind)) {
+        foreach ($cycle as $k) if (!empty($by_kind[$k])) $order[] = array_shift($by_kind[$k]);
       }
-      return $order;
+      return array_slice($dedupe($order), 0, $max);
     }
+    $order = $dedupe($order);
 
     // Fresh photos first; used ones only to fill out a short post.
     $fresh = array_values(array_filter($order, function ($id) use ($pool) { return !$pool[$id]['used']; }));
@@ -301,10 +379,15 @@ if (!function_exists('ias_photo_crops')) {
 if (!function_exists('ias_photo_grades')) {
   function ias_photo_grades(array $ids): array {
     $out = [];
+    $graded = [];
     foreach ($ids as $id) {
       $g = ias_photo_grade((int) $id);
-      $out[(int) $id] = $g ?: ['q' => 5, 'kind' => 'other'];
+      $out[(int) $id] = ($g ?: ['q' => 5, 'kind' => 'other']) + ['h' => ias_photo_dhash((int) $id)];
+      if ($g) $graded[(int) $id] = $out[(int) $id];
     }
+    // A gallery graded only in part (the first batches of a big one): choose among the graded
+    // photos, whose kind and alt text are known, as long as there are enough of them.
+    if ($graded && count($graded) < count($out) && count($graded) >= min(6, count($out))) return $graded;
     return $out;
   }
 }

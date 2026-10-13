@@ -316,7 +316,7 @@ if (!function_exists('ias_media_for_post')) {
         $fresh = count(array_diff(array_keys($grades), $used, $avoid));
         $max = max(3, min(5, $fresh - 2));
       }
-      $ids = ias_pick_photos($grades, $type, $used, $avoid, ['max' => $max]);
+      $ids = ias_pick_photos($grades, $type, $used, $avoid, ['max' => $max, 'avoid_hashes' => array_map('ias_photo_dhash', $avoid)]);
       if ($type === 'open_house' && count($ids) < 3 && $avoid) {
         // A small gallery: fill out with the listing post's photos rather than post one picture.
         $more = ias_pick_photos($grades, $type, array_unique(array_merge($used, $avoid)));
@@ -481,6 +481,118 @@ if (!function_exists('ias_first_line')) {
   }
 }
 
+/** The most pictures a post carries (Facebook's 10); each network's renderer takes its own first few. */
+if (!function_exists('ias_media_max')) {
+  function ias_media_max(): int {
+    return max(1, (int) apply_filters('ias_media_max', 10));
+  }
+}
+
+/**
+ * The pictures a person chose for this post (`flags.media_by`), with each
+ * library picture's alt text and crops read afresh — or null when the plugin
+ * chooses. A rewrite, or the listing changing, keeps a person's pictures.
+ */
+if (!function_exists('ias_media_person')) {
+  function ias_media_person(array $post, array $facts_list): ?array {
+    if (empty($post['flags']['media_by'])) return null;
+    $media = (array) ($post['content']['media'] ?? []);
+    $out = ['kind' => 'images', 'images' => [], 'video_url' => ''];
+    foreach ((array) ($media['images'] ?? []) as $img) {
+      $att = (int) ($img['id'] ?? 0);
+      if ($att <= 0) { $out['images'][] = $img; continue; } // a drawn graphic (Results, roundup, card) stays as it was
+      if (!wp_attachment_is_image($att)) continue;          // deleted from the Media Library since
+      $f = $facts_list[0] ?? [];
+      foreach ($facts_list as $one) if (in_array($att, array_map('intval', (array) $one['photos']), true)) { $f = $one; break; }
+      $out['images'][] = ias_media_image($att, $f);
+    }
+    if (!$out['images']) $out['kind'] = 'none';
+    return $out;
+  }
+}
+
+/**
+ * A person chooses a post's pictures: $keys in order, each `a<attachment id>`
+ * (any image in the Media Library) or `g<n>` (the post's own drawn graphic n,
+ * so no address can be typed in). Returns ['ok', 'error', 'count'].
+ * Approved or waiting Lane A posts need a fresh yes, as for changed words.
+ */
+if (!function_exists('ias_media_save')) {
+  function ias_media_save(int $post_id, array $keys, string $actor): array {
+    $p = ias_post_get($post_id);
+    if (!$p) return ['ok' => false, 'error' => 'No such post.', 'count' => 0];
+    $facts_list = ias_post_facts($p);
+    $current = (array) ($p['content']['media']['images'] ?? []);
+    $images = [];
+    $seen = [];
+    foreach ($keys as $key) {
+      $key = trim((string) $key);
+      if (isset($seen[$key]) || !preg_match('/^([ag])(\d+)$/', $key, $m)) continue;
+      $seen[$key] = true;
+      if ($m[1] === 'g') {
+        $g = $current[(int) $m[2]] ?? null;
+        if (is_array($g) && (int) ($g['id'] ?? 0) === 0) $images[] = $g;
+        continue;
+      }
+      $att = (int) $m[2];
+      if (!wp_attachment_is_image($att)) continue;
+      $f = $facts_list[0] ?? ['title' => get_the_title((int) $p['listing_id'])];
+      foreach ($facts_list as $one) if (in_array($att, array_map('intval', (array) $one['photos']), true)) { $f = $one; break; }
+      $images[] = ias_media_image($att, $f);
+    }
+    $max = ias_media_max();
+    if (count($images) > $max) return ['ok' => false, 'error' => 'A post carries at most ' . $max . ' pictures — remove ' . (count($images) - $max) . '.', 'count' => count($images)];
+
+    $content = (array) $p['content'];
+    $content['media'] = ['kind' => $images ? 'images' : 'none', 'images' => $images, 'video_url' => ''];
+    $flags = $p['flags'];
+    $flags['media_by'] = $actor;
+    $flags['media_at'] = ias_now_sql();
+    $status = (string) $p['status'];
+    $update = ['content' => $content, 'flags' => $flags, 'images_used' => array_values(array_filter(array_map(function ($i) { return (int) $i['id']; }, $images)))];
+    if (in_array($status, ['waiting', 'approved'], true)) { // new pictures need a fresh yes, like new words
+      if (function_exists('ias_approval_void')) ias_approval_void($post_id);
+      $update += ['status' => 'planned', 'approved_at' => null, 'approved_by' => ''];
+    }
+    ias_post_update($post_id, $update);
+    ias_history_forget_post($post_id, ['image']);
+    foreach ($images as $img) {
+      $att = (int) $img['id'];
+      if ($att <= 0) continue;
+      foreach ($facts_list as $f) if (in_array($att, array_map('intval', (array) $f['photos']), true) || $att === (int) $f['brochure']) ias_history_add('image', (string) $att, (int) $f['id'], $post_id);
+    }
+    $what = count($images) ? count($images) . ' picture' . (count($images) === 1 ? '' : 's') : 'no pictures';
+    ias_post_trail($post_id, 'Pictures chosen by hand: ' . $what, $actor);
+    ias_log('edited', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Pictures chosen by hand: ' . $what], $actor);
+    if (in_array($status, ['waiting', 'approved'], true)) do_action('ias_post_edited', $post_id, (array) ($flags['holds'] ?? []));
+    return ['ok' => true, 'error' => '', 'count' => count($images)];
+  }
+}
+
+/** Hand the choice of pictures back to the plugin: they are picked again now (the words stay). */
+if (!function_exists('ias_media_reset')) {
+  function ias_media_reset(int $post_id, string $actor): bool {
+    $p = ias_post_get($post_id);
+    if (!$p || empty($p['flags']['media_by'])) return false;
+    $flags = $p['flags'];
+    unset($flags['media_by'], $flags['media_at']);
+    $p['flags'] = $flags;
+    $facts_list = ias_post_facts($p);
+    $media = $facts_list ? ias_media_for_post($p, $facts_list) : ['kind' => 'none', 'images' => [], 'video_url' => ''];
+    $content = (array) $p['content'];
+    $content['media'] = $media;
+    $update = ['content' => $content, 'flags' => $flags, 'images_used' => array_values(array_filter(array_map(function ($i) { return (int) $i['id']; }, (array) $media['images'])))];
+    if (in_array($p['status'], ['waiting', 'approved'], true)) { // other pictures need a fresh yes
+      if (function_exists('ias_approval_void')) ias_approval_void($post_id);
+      $update += ['status' => 'planned', 'approved_at' => null, 'approved_by' => ''];
+    }
+    ias_post_update($post_id, $update);
+    ias_post_trail($post_id, 'Pictures handed back to the plugin', $actor);
+    ias_log('edited', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Pictures handed back to the plugin'], $actor);
+    return true;
+  }
+}
+
 /**
  * Why Claude cannot be asked for anything now ('' = it can): the toolkit has
  * no Anthropic key, or this month's token budget is spent. The hourly drafts
@@ -492,7 +604,7 @@ if (!function_exists('ias_first_line')) {
 if (!function_exists('ias_ai_blocker')) {
   function ias_ai_blocker(): string {
     if (function_exists('ia_ai_api_key') && ia_ai_api_key() === '') {
-      return 'The toolkit has no Anthropic API key, so no draft can be written and no photo graded. Add it under Auctions → AI Content (or as INTEL_ANTHROPIC_API_KEY in wp-config.php).';
+      return 'The toolkit has no Anthropic API key, so no draft can be written and no photo graded. Add it under ' . (function_exists('ia_ai_key_settings_url') ? 'Intel SEO → Settings & Data → Services & Budgets' : 'Auctions → AI Content') . ' (or as INTEL_ANTHROPIC_API_KEY in wp-config.php).';
     }
     if (function_exists('ia_ai_token_cap') && function_exists('ia_ai_tokens_month')) {
       $cap = (int) ia_ai_token_cap();
@@ -520,7 +632,7 @@ if (!function_exists('ias_generate_post')) {
     if (!$facts_list) return ['ok' => false, 'error' => 'The listing this post was for is gone.'];
 
     $flags = $post['flags'];
-    $media    = ias_media_for_post($post, $facts_list);
+    $media    = ias_media_person($post, $facts_list) ?? ias_media_for_post($post, $facts_list); // a person's pictures hold through a rewrite
     $template = ias_pick_template($post, $facts_list);
     $cta_kind = ias_pick_cta_kind($post, $facts_list);
     $avoid = [
