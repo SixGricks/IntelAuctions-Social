@@ -37,7 +37,11 @@ without approving."
   - The bar's Approve waits while unsaved changes are on the screen (it would
     have approved the saved words); Save and approve shows only then.
   - Save changes is greyed out until something changes, and a save with
-    nothing changed saves nothing (it used to make the words a person's edit).
+    nothing changed saves nothing (it used to make the words a person's edit)
+    — except on a post that stopped for a decision, which can be saved as it
+    is to be checked again (Codex, PR #3).
+  - Blank alt text goes back to the plugin's, even over a person's saved
+    alt text (it put the saved one back; Codex, PR #3).
   - Alt text is edited in the tile (✎ is a 24px button, 32px on touch), not a
     browser prompt; on a phone ‹ › always show and a finger can drag
     (jquery-touch-punch).

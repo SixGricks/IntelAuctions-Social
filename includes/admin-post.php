@@ -333,7 +333,7 @@ add_action('ias_post_view_main', function (array $p): void {
     $primary = !($p['lane'] === 'A' && in_array($p['status'], ['waiting', 'planned'], true)); // the bar's Approve is the one primary button there
     echo '<form method="post" id="ias-text-form">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
       . '<input type="hidden" name="ias_cal_action" value="edit"><input type="hidden" name="ias_post" value="' . (int) $p['id'] . '">'
-      . '<p><label for="ias-text"><strong>Post text</strong></label><textarea id="ias-text" name="ias_text" rows="' . $rows . '" class="large-text" data-post="' . (int) $p['id'] . '" data-nonce="' . esc_attr(wp_create_nonce('ias_post_' . (int) $p['id'])) . '" data-ajax="' . esc_url(admin_url('admin-ajax.php')) . '">' . esc_textarea($text) . '</textarea></p>';
+      . '<p><label for="ias-text"><strong>Post text</strong></label><textarea id="ias-text" name="ias_text" rows="' . $rows . '" class="large-text" data-recheck="' . ($p['status'] === 'held' || !empty($flags['stale']) ? '1' : '') . '" data-post="' . (int) $p['id'] . '" data-nonce="' . esc_attr(wp_create_nonce('ias_post_' . (int) $p['id'])) . '" data-ajax="' . esc_url(admin_url('admin-ajax.php')) . '">' . esc_textarea($text) . '</textarea></p>';
     if (!empty($c['first_comment'])) {
       echo '<p><label for="ias-comment"><strong>First comment</strong></label><textarea id="ias-comment" name="ias_comment" rows="3" class="large-text">' . esc_textarea((string) $c['first_comment']) . '</textarea></p>';
     }
@@ -543,7 +543,7 @@ jQuery(function ($) {
   }
   function state() { return { text: $text.val(), comment: $comment.length ? $comment.val() : null, pics: pics() }; }
   function sig(st) { return JSON.stringify([st.text, st.comment, $.map(st.pics, function (p) { return p.key + '\u0001' + p.alt; })]); }
-  var startState = state(), startSig = sig(startState);
+  var startState = state(), startSig = sig(startState), recheck = $text.attr('data-recheck') === '1';
   function dirty() { return sig(state()) !== startSig; }
   $('.ias-save').each(function () { $(this).data('rest', $(this).hasClass('button-primary')); });
   // The bar's Approve approves the saved post: while other words are on the screen it waits (Save and approve does both).
@@ -566,7 +566,7 @@ jQuery(function ($) {
     $('#ias-pic-add').prop('disabled', keys.length >= max);
     $('#ias-pic-full').prop('hidden', keys.length < max);
     $('.ias-unsaved').prop('hidden', !d);
-    $('.ias-save').prop('disabled', !d).toggleClass('button-primary', d); // nothing to save, nothing to press
+    $('.ias-save').prop('disabled', !d && !recheck).toggleClass('button-primary', d); // nothing to save, nothing to press — except a stopped post, which saving as it is checks again against today's listing
     $andApprove.prop('hidden', !d);
     $approve.prop('disabled', d);
     $('.ias-approve-wait').prop('hidden', !d);
@@ -619,8 +619,8 @@ jQuery(function ($) {
     var $ed = $('<div class="ias-pic-alt-ed"/>'), $ta = $('<textarea rows="4" maxlength="250"/>').attr('aria-label', 'Alt text — what a screen reader says for this picture').val($li.attr('data-alt') || '');
     var close = function (save) {
       if (save) {
-        var alt = $.trim($ta.val()).slice(0, 250) || $li.attr('data-alt0') || ''; // blank goes back to the plugin's
-        $li.attr({ 'data-alt': alt, title: alt }).find('.ias-pic-alt').text(alt);
+        var alt = $.trim($ta.val()).slice(0, 250); // blank goes back to the plugin's own alt text (sent as blank; the site puts it back)
+        $li.attr({ 'data-alt': alt, title: alt }).find('.ias-pic-alt').text(alt || 'The plugin\'s alt text, once saved');
       }
       $ed.remove(); $li.removeClass('is-editing');
       if (save) changed();

@@ -89,6 +89,11 @@ ias_post_update($id, ['flags' => $flags]);
 ias_generate_post($id, true, 'admin');
 t_eq('Aerial view of the farm and its barns.', (string) ias_post_get($id)['content']['media']['images'][0]['alt'], 'a rewrite keeps a person\'s alt text');
 $p = ias_post_get($id);
+$k0 = ias_media_keys($p)[0];
+$att0 = (int) substr($k0, 1);
+$p = $save(['ias_text' => (string) $p['content']['text'], 'ias_comment' => (string) $p['content']['first_comment'], 'ias_media' => implode(',', ias_media_keys($p)), 'ias_alt' => wp_json_encode([$k0 => ''])]);
+t_ok(!isset($p['flags']['alt'][$att0]) && (string) $p['content']['media']['images'][0]['alt'] === ias_photo_alt($att0, ias_post_facts($p)[0]), 'blank alt text takes a person\'s alt text away again: back to the plugin\'s (Codex, PR #3)');
+$p = ias_post_get($id);
 $text = (string) $p['content']['text'];
 $comment = (string) $p['content']['first_comment'];
 
@@ -155,6 +160,12 @@ t_ok(substr_count((string) $r6['html'], '<img ') === count($r6['pics']) && strpo
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $id];
 ob_start(); ias_calendar_render(); $html = (string) ob_get_clean();
 t_ok(strpos($html, 'Not saved — not on the post now') !== false, 'a reload says which of Claude\'s versions were never saved');
+t_ok(strpos($html, 'data-recheck=""') !== false, 'a planned post: nothing changed, nothing to save');
+$f0 = ias_post_get($id)['flags'];
+ias_post_update($id, ['status' => 'held', 'flags' => array_merge($f0, ['holds' => ['Fair housing: an old extra phrase']])]);
+ob_start(); ias_calendar_render(); $held_html = (string) ob_get_clean();
+t_ok(strpos($held_html, 'data-recheck="1"') !== false, 'a held post can be saved as it is, to be checked again (Codex, PR #3)');
+ias_post_update($id, ['status' => 'planned', 'flags' => $f0]);
 t_ok(strpos($html, '<details class="ias-switches-fold"><summary><span class="ias-switch off">Nothing reaches Facebook: the master switch is off.</span>') !== false, 'a post\'s page says in one line whether anything can reach Facebook, the switches folded under it');
 t_ok(strpos($html, 'Throw away the words admin edited') !== false || strpos($html, 'Throw away this draft') !== false, 'Rewrite says whose words it throws away');
 ias_post_update($id, ['lane' => 'A', 'status' => 'planned', 'approvals' => []]);
