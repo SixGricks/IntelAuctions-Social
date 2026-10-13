@@ -170,6 +170,81 @@ if (!function_exists('ias_push_run')) {
   }
 }
 
+/**
+ * Send these posts to OneUp now — a person's change does not wait for the
+ * hourly run (DJ, Oct 13, 2026: "instant update both directions"): under the
+ * same lock and the same rules, after reading OneUp's scheduled list (so a
+ * person's change there is still never overwritten). Returns the run's counts,
+ * or ['busy' => true] when another run holds the lock (the hourly run then
+ * catches it up).
+ */
+if (!function_exists('ias_push_now')) {
+  function ias_push_now(array $ids): array {
+    $out = ['dryrun' => 0, 'deleted' => 0, 'published' => 0, 'pushed' => 0, 'failed' => 0, 'skipped' => [], 'readback' => null];
+    $ids = array_values(array_filter(array_map('intval', $ids)));
+    if (!$ids || !ias_db_ready()) return $out;
+    if (!ias_push_lock()) return $out + ['busy' => true];
+    try {
+      return ias_push_run_locked($out, $ids, false);
+    } finally {
+      ias_push_unlock();
+    }
+  }
+}
+
+/** The post actions whose change goes to OneUp at once (approve sends its own run). */
+if (!function_exists('ias_push_now_actions')) {
+  function ias_push_now_actions(): array {
+    return (array) apply_filters('ias_push_now_actions', ['edit', 'media', 'media_reset', 'regenerate', 'skip', 'restore', 'release', 'move', 'unpin', 'retry', 'unlock', 'gbp_off', 'gbp_on', 'gbp_unlock']);
+  }
+}
+
+/**
+ * Send one post now and add what happened on OneUp to the page's notice:
+ * scheduled, replaced, taken off, or why not — for Facebook and Google. In
+ * the dry run it says nothing (the post's page shows what would go).
+ */
+if (!function_exists('ias_push_now_flash')) {
+  function ias_push_now_flash(int $id): void {
+    $before = ias_post_get($id);
+    if (!$before || $before['type'] === 'human') return;
+    $live = ias_push_mode() === 'live';
+    $glive = function_exists('ias_gbp_live') && ias_gbp_live();
+    if (!$live && !$glive) return;
+    $r = ias_push_now([$id]);
+    $after = ias_post_get($id) ?: $before;
+    $bits = [];
+    if (!empty($r['busy'])) {
+      $bits[] = 'Another run is sending to OneUp right now — this change follows within the hour.';
+    } else {
+      $say = function (string $who, string $was, string $is, string $when) {
+        if ($was === $is) return '';
+        if ($is === '') return $who . ': taken off OneUp.';
+        return $who . ': ' . ($was === '' ? 'scheduled' : 'replaced') . ' on OneUp' . ($when !== '' ? ' for ' . date_i18n('D M j, g:i a', strtotime($when)) : '') . '.';
+      };
+      if ($live) {
+        $was = (string) (($before['flags']['oneup']['hash'] ?? '') . ($before['flags']['oneup']['id'] ?? ''));
+        $is = (string) (($after['flags']['oneup']['hash'] ?? '') . ($after['flags']['oneup']['id'] ?? ''));
+        $bits[] = $say('Facebook', $was, $is, (string) ($after['scheduled_at'] ?? ''));
+      }
+      if ($glive) {
+        $was = (string) (($before['flags']['gbp']['hash'] ?? '') . ($before['flags']['gbp']['id'] ?? ''));
+        $is = (string) (($after['flags']['gbp']['hash'] ?? '') . ($after['flags']['gbp']['id'] ?? ''));
+        $bits[] = $say('Google', $was, $is, (string) ($after['flags']['gbp']['when'] ?? ''));
+      }
+      if (!empty($r['failed'])) {
+        $last = array_values(array_filter(ias_log_recent('push_failed', 20), function ($e) use ($id) { return (int) ($e['meta']['post'] ?? 0) === $id; }));
+        $bits[] = 'OneUp did not take it' . ($last ? ': ' . (string) $last[0]['meta']['summary'] : '') . ' — tried again on the next run.';
+      }
+    }
+    $bits = array_values(array_filter($bits));
+    if (!$bits) return;
+    $key = 'ia_flash_' . get_current_user_id();
+    $html = (string) get_transient($key);
+    ia_flash_set($html . '<div class="notice notice-' . (!empty($r['failed']) ? 'warning' : 'info') . '"><p><strong>OneUp</strong> — ' . esc_html(implode(' ', $bits)) . '</p></div>');
+  }
+}
+
 /** Take the push lock (atomic; a lock older than 10 minutes is a crashed run's and is taken over). */
 if (!function_exists('ias_push_lock')) {
   function ias_push_lock(): bool {
@@ -191,17 +266,23 @@ if (!function_exists('ias_push_unlock')) {
   }
 }
 
+/**
+ * The push run, with the lock held. $only: just these posts (a person's change,
+ * sent at once — ias_push_now()), after a read-back of OneUp's scheduled list
+ * only ($full false: the hourly run reads the published and failed lists too,
+ * and concludes what a person deleted).
+ */
 if (!function_exists('ias_push_run_locked')) {
-  function ias_push_run_locked(array $out): array {
+  function ias_push_run_locked(array $out, array $only = [], bool $full = true): array {
     $mode = ias_push_mode();
     if (function_exists('ias_push_mode_changed')) ias_push_mode_changed($mode);
     // What a person did in OneUp since the last run comes first: their delete or edit is never overwritten.
     unset($GLOBALS['ias_readback_lists']); // this run's lists only
-    if (function_exists('ias_readback_run') && !ias_oneup_blockers(false)) $out['readback'] = ias_readback_run();
+    if (function_exists('ias_readback_run') && !ias_oneup_blockers(false)) $out['readback'] = ias_readback_run($full);
     // Google's own read-back, on the same lists (gbp.php): its posts a person changed in OneUp first, too.
     if (function_exists('ias_gbp_readback')) {
       ias_gbp_mode_changed(ias_gbp_mode());
-      $g = ias_gbp_readback();
+      $g = ias_gbp_readback($full);
       if ($g) {
         if (is_array($out['readback']) && $out['readback']['ok']) { $out['readback']['changes'] = array_merge($out['readback']['changes'], $g); ias_readback_note($out['readback']); }
         else $out['readback'] = ['ok' => true, 'error' => '', 'changes' => $g];
@@ -213,90 +294,105 @@ if (!function_exists('ias_push_run_locked')) {
     $floor_b = $now->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:00');
     $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
 
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
-      if ($p['type'] === 'human') continue;
-      $flags = $p['flags'];
-      $sent = ias_post_sent($p);
-      $at = (string) ($p['scheduled_at'] ?? '');
-
-      // Its time came while it was out: it went out.
-      if ($sent['hash'] !== '' && $at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed'], true)) {
-        if ($sent['mode'] === 'dry') {
-          $flags['dry_run'] = true;
-          ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'note' => 'Its time came in the dry run: it counts as published, but nothing was sent to OneUp.']);
-          ias_post_trail((int) $p['id'], 'Its time came (dry run — nothing was sent)');
-          ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Would have been published on ' . $fmt($at) . ' — nothing was sent.']);
-        } else {
-          $flags['unconfirmed'] = true; // the read-back confirms it (or reports it failed)
-          ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'published_at' => $at, 'note' => '']);
-          ias_post_trail((int) $p['id'], 'Its time came on OneUp');
-        }
-        if (function_exists('ias_voice_record')) ias_voice_record((int) $p['id'], 'out'); // the log of final posts
-        $out['published']++;
-        continue;
-      }
-
-      $in_range = $at !== '' && $at >= $nowsql && $at <= $until;
-      $why_not = ias_push_ready($p);
-      if ($why_not === '' && $sent['hash'] === '' && empty($flags['was_on_oneup']) && $p['lane'] !== 'A' && $at !== '' && $at < $floor_b) $why_not = 'its time is inside the 48-hour veto window';
-
-      if ($in_range && $why_not === '') {
-        $req = ias_render_facebook($p);
-        $hash = md5((string) wp_json_encode($req));
-        if ($hash === $sent['hash'] || !empty($p['locked'])) continue; // unchanged, or a person edited it in OneUp
-        if ($mode === 'live') {
-          $blockers = ias_push_blockers($p);
-          if ($blockers) { // paused, or its type is off: nothing new goes — and a changed post's old copy comes off rather than going out as it was
-            $out['skipped'][] = '#' . (int) $p['id'] . ': ' . implode('; ', $blockers);
-            if ($sent['mode'] === 'live' && ias_push_live_delete($p, 'it changed while ' . implode(' and ', $blockers) . ' — it goes again when they allow')) {
-              $flags = (ias_post_get((int) $p['id']) ?: $p)['flags'];
-              $flags['was_on_oneup'] = true;
-              ias_post_update((int) $p['id'], ['flags' => $flags]);
-              $out['deleted']++;
-            }
-            continue;
-          }
-          if (ias_push_live_send($p, $req, $hash)) $out['pushed']++; else $out['failed']++;
-          continue;
-        }
-        $calls = $sent['hash'] !== '' ? [ias_render_delete($p), $req] : [$req]; // a scheduled post's time cannot be edited: delete, then schedule again
-        $flags['dry_hash'] = $hash;
-        ias_post_update((int) $p['id'], ['flags' => $flags]);
-        ias_log('dryrun', (int) $p['listing_id'], [
-          'post' => (int) $p['id'], 'type' => $p['type'],
-          'summary' => ($sent['hash'] !== '' ? 'Would replace on OneUp (changed or moved)' : 'Would schedule on OneUp') . ' for ' . $fmt($at) . ' — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
-          'payload' => count($calls) === 1 ? $calls[0] : $calls,
-        ]);
-        $out['dryrun']++;
-        continue;
-      }
-      // It went out and is no longer ready, or left the next push_days days: take it back.
-      if ($sent['hash'] !== '' || $sent['id'] !== '') {
-        if (!empty($p['locked']) && !in_array($p['status'], ['skipped', 'cancelled'], true)) continue; // a person's edit in OneUp stays unless the post is called off
-        $why = $why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days';
-        if ($sent['mode'] === 'live') {
-          if ($mode === 'live' && ias_push_live_delete($p, $why)) $out['deleted']++;
-          continue;
-        }
-        unset($flags['dry_hash']);
-        ias_post_update((int) $p['id'], ['flags' => $flags]);
-        ias_log('dryrun', (int) $p['listing_id'], [
-          'post' => (int) $p['id'], 'type' => $p['type'],
-          'summary' => 'Would delete from OneUp (' . $why . ') — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
-          'payload' => ias_render_delete($p),
-        ]);
-        $out['deleted']++;
-      }
-    }
+    $c = ['now' => $now, 'nowsql' => $nowsql, 'until' => $until, 'floor_b' => $floor_b, 'fmt' => $fmt];
+    $statuses = ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped', 'skipped', 'cancelled'];
+    $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
+      : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
+    foreach ($posts as $p) ias_push_one($p, $mode, $c, $out);
     if (function_exists('ias_gbp_run')) { // Google, sent for real once its own switches allow (gbp.php)
-      $g = ias_gbp_run();
+      $g = ias_gbp_run($only);
       foreach (['pushed', 'deleted', 'failed'] as $k) $out[$k] += $g[$k];
       $out['skipped'] = array_merge($out['skipped'], $g['skipped']);
     }
-    if (function_exists('ias_push_channels_run')) $out['dryrun'] += ias_push_channels_run(); // Instagram, X, LinkedIn — and Google until it is live: the dry run
+    if (function_exists('ias_push_channels_run')) $out['dryrun'] += ias_push_channels_run($only); // Instagram, X, LinkedIn — and Google until it is live: the dry run
     return $out;
   }
 }
+
+/**
+ * One post's push (the hourly run's loop, and ias_push_now() for a person's
+ * change): see ias_push_run(). $c: now, nowsql, until, floor_b, fmt.
+ */
+if (!function_exists('ias_push_one')) {
+  function ias_push_one(array $p, string $mode, array $c, array &$out): void {
+    ['now' => $now, 'nowsql' => $nowsql, 'until' => $until, 'floor_b' => $floor_b, 'fmt' => $fmt] = $c;
+    if ($p['type'] === 'human') return;
+    $flags = $p['flags'];
+    $sent = ias_post_sent($p);
+    $at = (string) ($p['scheduled_at'] ?? '');
+
+    // Its time came while it was out: it went out.
+    if ($sent['hash'] !== '' && $at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed'], true)) {
+      if ($sent['mode'] === 'dry') {
+        $flags['dry_run'] = true;
+        ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'note' => 'Its time came in the dry run: it counts as published, but nothing was sent to OneUp.']);
+        ias_post_trail((int) $p['id'], 'Its time came (dry run — nothing was sent)');
+        ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Would have been published on ' . $fmt($at) . ' — nothing was sent.']);
+      } else {
+        $flags['unconfirmed'] = true; // the read-back confirms it (or reports it failed)
+        ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'published_at' => $at, 'note' => '']);
+        ias_post_trail((int) $p['id'], 'Its time came on OneUp');
+      }
+      if (function_exists('ias_voice_record')) ias_voice_record((int) $p['id'], 'out'); // the log of final posts
+      $out['published']++;
+      return;
+    }
+
+    $in_range = $at !== '' && $at >= $nowsql && $at <= $until;
+    $why_not = ias_push_ready($p);
+    // A person who moved it there (Move on its page) has already said yes: the veto window is theirs.
+    if ($why_not === '' && $sent['hash'] === '' && empty($flags['was_on_oneup']) && empty($flags['pinned_by']) && $p['lane'] !== 'A' && $at !== '' && $at < $floor_b) $why_not = 'its time is inside the 48-hour veto window';
+
+    if ($in_range && $why_not === '') {
+      $req = ias_render_facebook($p);
+      $hash = md5((string) wp_json_encode($req));
+      if ($hash === $sent['hash'] || !empty($p['locked'])) return; // unchanged, or a person edited it in OneUp
+      if ($mode === 'live') {
+        $blockers = ias_push_blockers($p);
+        if ($blockers) { // paused, or its type is off: nothing new goes — and a changed post's old copy comes off rather than going out as it was
+          $out['skipped'][] = '#' . (int) $p['id'] . ': ' . implode('; ', $blockers);
+          if ($sent['mode'] === 'live' && ias_push_live_delete($p, 'it changed while ' . implode(' and ', $blockers) . ' — it goes again when they allow')) {
+            $flags = (ias_post_get((int) $p['id']) ?: $p)['flags'];
+            $flags['was_on_oneup'] = true;
+            ias_post_update((int) $p['id'], ['flags' => $flags]);
+            $out['deleted']++;
+          }
+          return;
+        }
+        if (ias_push_live_send($p, $req, $hash)) $out['pushed']++; else $out['failed']++;
+        return;
+      }
+      $calls = $sent['hash'] !== '' ? [ias_render_delete($p), $req] : [$req]; // a scheduled post's time cannot be edited: delete, then schedule again
+      $flags['dry_hash'] = $hash;
+      ias_post_update((int) $p['id'], ['flags' => $flags]);
+      ias_log('dryrun', (int) $p['listing_id'], [
+        'post' => (int) $p['id'], 'type' => $p['type'],
+        'summary' => ($sent['hash'] !== '' ? 'Would replace on OneUp (changed or moved)' : 'Would schedule on OneUp') . ' for ' . $fmt($at) . ' — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
+        'payload' => count($calls) === 1 ? $calls[0] : $calls,
+      ]);
+      $out['dryrun']++;
+      return;
+    }
+    // It went out and is no longer ready, or left the next push_days days: take it back.
+    if ($sent['hash'] !== '' || $sent['id'] !== '') {
+      if (!empty($p['locked']) && !in_array($p['status'], ['skipped', 'cancelled'], true)) return; // a person's edit in OneUp stays unless the post is called off
+      $why = $why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days';
+      if ($sent['mode'] === 'live') {
+        if ($mode === 'live' && ias_push_live_delete($p, $why)) $out['deleted']++;
+        return;
+      }
+      unset($flags['dry_hash']);
+      ias_post_update((int) $p['id'], ['flags' => $flags]);
+      ias_log('dryrun', (int) $p['listing_id'], [
+        'post' => (int) $p['id'], 'type' => $p['type'],
+        'summary' => 'Would delete from OneUp (' . $why . ') — not sent: ' . implode('; ', ias_push_blockers($p)) . '.',
+        'payload' => ias_render_delete($p),
+      ]);
+      $out['deleted']++;
+    }
+  }
+}
+
 
 /* ---------------- The hourly job's later steps ---------------- */
 

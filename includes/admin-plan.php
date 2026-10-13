@@ -85,7 +85,7 @@ add_action('ias_post_view_side', function (array $p): void {
     $o = (array) $p['flags']['oneup'];
     echo '<div class="ias-card"><h3>On OneUp</h3><p>' . ($p['status'] === 'published' ? 'Went out' : 'Scheduled') . ($sent['id'] !== '' ? ' as post <code>#' . esc_html($sent['id']) . '</code>' : '') . ' for ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) ($o['when'] ?? $p['scheduled_at'])))) . '.'
       . (!empty($p['flags']['unconfirmed']) ? ' <span class="description">(waiting for the read-back to confirm it)</span>' : '') . '</p>';
-    if (!empty($p['locked'])) echo '<p><strong>' . esc_html(ucfirst((string) ($p['flags']['edited_in_oneup'] ?? 'edited'))) . ' in OneUp by a person</strong> — the plugin keeps it as they made it and never replaces it.</p>';
+    if (!empty($p['locked'])) echo '<p><strong>' . esc_html(ucfirst((string) ($p['flags']['edited_in_oneup'] ?? 'edited'))) . ' in OneUp by a person</strong> — the plugin keeps it as they made it, until someone presses <strong>Edit it here again</strong> (above).</p>';
     if (!empty($p['flags']['correction']['text']) && empty($p['flags']['correction']['done'])) {
       echo '<p><strong>A fact changed after it went out.</strong> Post this as a comment on it (a published post is never edited — that resets its reach):</p><div class="ias-preview" style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</div>';
     }
@@ -93,7 +93,7 @@ add_action('ias_post_view_side', function (array $p): void {
     if ($p['status'] === 'published') return;
   }
   if ($p['status'] === 'failed') {
-    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Retry it in OneUp, or skip it here.</p></div>';
+    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Press <strong>Try again</strong> (above) to send a fresh copy, or skip it.</p></div>';
     return;
   }
   echo '<div class="ias-card"><h3>' . ($sent['mode'] === 'live' ? 'What went to OneUp' : 'What would go to OneUp') . '</h3>';

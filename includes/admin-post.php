@@ -253,7 +253,8 @@ add_action('ias_post_view_bar', function (array $p): void {
     $lines .= '</ul><p>' . ($verify
       ? 'Put the right fact in place of the marked words and press <strong>Save changes</strong> — or fix the listing, and the post is rewritten on the next hourly run.'
       : 'Fix it and press <strong>Save changes</strong>, press <strong>Rewrite</strong> — or, if it is right as it is, <strong>Keep as written</strong>.') . '</p>';
-    $buttons = $rewrite . ($text !== '' && !$verify ? $form('release', 'Keep as written', 'button', '', 'Keep this draft exactly as it is, despite the reasons it stopped?') : '');
+    $buttons = $rewrite . ($text !== '' && !$verify ? $form('release', 'Keep as written', 'button', '', 'Keep this draft exactly as it is, despite the reasons it stopped?') : '')
+      . (!empty($p['locked']) ? $form('unlock', 'Edit it here again', 'button') : ''); // changed in OneUp: taken back here, then fixed and saved
   } elseif ($p['status'] === 'waiting') {
     $sent = (array) ($p['approvals']['sent'] ?? []);
     $first = $sent ? (array) $sent[0] : [];
@@ -276,6 +277,11 @@ add_action('ias_post_view_bar', function (array $p): void {
   } elseif ($p['status'] === 'failed') {
     $level = 'error';
     $lines = '<p><strong>Failed.</strong> ' . esc_html((string) $p['note']) . '</p>';
+    $buttons = $form('retry', 'Try again', 'button button-primary');
+  } elseif (!empty($p['locked']) && in_array($p['status'], ['planned', 'approved', 'pushed', 'held'], true)) {
+    $level = 'info';
+    $lines = '<p><strong>' . esc_html(ucfirst((string) ($flags['edited_in_oneup'] ?? 'changed'))) . ' in OneUp by a person.</strong> The plugin kept their version and leaves it alone. To change it here instead, press <strong>Edit it here again</strong>: their version becomes this post\'s, and what you save from then on goes to OneUp at once.</p>';
+    $buttons = $form('unlock', 'Edit it here again', 'button');
   } elseif ($p['lane'] === 'A' && $p['status'] === 'planned' && $text !== '' && !ias_post_needs_decision($p)) {
     $level = 'info';
     $lines = '<p><strong>Approve first.</strong> This post carries hard facts, so it waits for a yes — it is emailed for one as soon as its draft is clean, or approve it here.</p>';

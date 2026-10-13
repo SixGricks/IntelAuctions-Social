@@ -32,6 +32,10 @@ if (!function_exists('ias_calendar_handle_post')) {
     /** Later phases add their own calendar actions here. */
     do_action('ias_calendar_action', $action);
 
+    // A person's change goes to OneUp now, not on the next hourly run (DJ, Oct 13, 2026).
+    $pid = isset($_POST['ias_post']) ? (int) $_POST['ias_post'] : 0;
+    if ($pid > 0 && function_exists('ias_push_now') && in_array($action, ias_push_now_actions(), true)) ias_push_now_flash($pid);
+
     $to = isset($_POST['ias_back']) ? esc_url_raw(wp_unslash($_POST['ias_back'])) : '';
     wp_safe_redirect($to !== '' ? $to : $back);
     exit;
@@ -211,6 +215,7 @@ if (!function_exists('ias_calendar_render_post')) {
     ia_ui_header($def['short'] . ' post · ' . ias_post_subject($p), implode(' · ', $bits), $back);
     ias_header_end();
     echo ias_switches_strip(true);
+    if (function_exists('ias_pulse_pill')) echo ias_pulse_pill(); // when OneUp was last heard from (instant.php)
     /** The bar across the top: what this post is waiting for, and the buttons that settle it. */
     do_action('ias_post_view_bar', $p);
 
@@ -250,7 +255,7 @@ if (!function_exists('ias_post_facts_card')) {
     echo '<div class="ias-card"><h3>About this post</h3><table class="ias-kv">';
     if (!empty($p['flags']['dry_run'])) echo '<tr><th>Sent</th><td>' . ias_status_badge('published') . ' <span class="description">in the dry run — nothing was sent to OneUp</span></td></tr>';
     if ($p['lane'] === 'A') $approval = 'Needed — emailed to ' . (implode(' and ', array_map('ias_person_name', ias_approvers())) ?: 'the approvers');
-    elseif ($p['lane'] === 'B') $approval = 'Not needed — ' . (int) ias_setting('lead_hours', 48) . ' hours to veto it in OneUp';
+    elseif ($p['lane'] === 'B') $approval = 'Not needed — ' . (int) ias_setting('lead_hours', 48) . ' hours to skip, move or change it here first';
     else $approval = '';
     if ($approval !== '') echo '<tr><th>Approval</th><td>' . esc_html($approval) . '</td></tr>';
     $start = $day($p['window_start']); $ideal = $day($p['window_ideal']); $end = $day($p['window_end']);
@@ -258,7 +263,9 @@ if (!function_exists('ias_post_facts_card')) {
     elseif ($end === '') $can = 'From ' . ($start ?: $ideal) . ($ideal !== '' ? ' (best ' . $ideal . ')' : '') . ($p['lane'] === 'A' ? ', once approved' : '');
     else $can = ($start ?: $ideal) . ' – ' . $end . ($ideal !== '' ? ' (best ' . $ideal . ')' : '');
     echo '<tr><th>Can go</th><td>' . esc_html($can) . '</td></tr>';
-    echo '<tr><th>Goes out</th><td>' . esc_html($p['scheduled_at'] ? date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) : 'Not scheduled yet') . '</td></tr>';
+    echo '<tr><th>Goes out</th><td>' . esc_html($p['scheduled_at'] ? date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) : 'Not scheduled yet')
+      . (!empty($p['flags']['pinned_by']) ? ' <span class="description">— moved there by ' . esc_html(ias_actor_name((string) $p['flags']['pinned_by'])) . '; the plan keeps it</span>' : '')
+      . (function_exists('ias_move_form') ? ias_move_form($p) : '') . '</td></tr>';
     echo '<tr><th>Priority</th><td><span title="' . esc_attr('Weight ' . (int) $p['weight'] . ' × the starting-bid multiplier') . '">' . esc_html(number_format((float) $p['score'], 0)) . '</span> · ' . esc_html($p['guaranteed'] ? 'guaranteed a place' : 'can be dropped') . '</td></tr>';
     if ($p['oneup_post_id'] !== '') echo '<tr><th>OneUp id</th><td><code>' . esc_html((string) $p['oneup_post_id']) . '</code></td></tr>';
     $links = [];

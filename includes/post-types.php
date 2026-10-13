@@ -112,7 +112,7 @@ if (!function_exists('ias_back_on_plan_status')) {
 /** The reason a draft stops when its listing changed and only a person may rewrite it. */
 if (!function_exists('ias_stale_hold')) {
   function ias_stale_hold(bool $edited, bool $in_oneup = false): string {
-    if ($in_oneup) return 'The listing changed after a person edited this post in OneUp — fix it there (or skip it here), then press Keep as written.';
+    if ($in_oneup) return 'The listing changed after a person edited this post in OneUp — press Edit it here again, check the words against the listing and save them (or skip it).';
     return $edited
       ? 'The listing changed after a person edited this post — check the words against the listing, then save them (or press Rewrite).'
       : 'The listing changed after this draft was written — check it against the listing, or press Rewrite.';

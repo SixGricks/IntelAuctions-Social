@@ -340,7 +340,7 @@ add_action('ias_post_cancelled', function ($post_id) {
  * a person deleted stay deleted. Returns the changes, in words.
  */
 if (!function_exists('ias_gbp_readback')) {
-  function ias_gbp_readback(): array {
+  function ias_gbp_readback(bool $full = true): array {
     $changes = [];
     if (ias_gbp_blockers_read()) return $changes;
     $now = ias_now_sql();
@@ -362,8 +362,9 @@ if (!function_exists('ias_gbp_readback')) {
       if (!$lists) ias_log('readback', 0, ['channel' => 'gbp', 'summary' => 'Google: read-back from OneUp failed: ' . $sched['error']]);
       return $changes;
     }
-    $pub = $lists['published'] ?? ias_oneup_list('published', 4);
-    $fail = $lists['failed'] ?? ias_oneup_list('failed', 2);
+    $none = ['ok' => false, 'rows' => [], 'complete' => false, 'error' => ''];
+    $pub = $lists['published'] ?? ($full ? ias_oneup_list('published', 4) : $none);
+    $fail = $lists['failed'] ?? ($full ? ias_oneup_list('failed', 2) : $none);
     foreach ($noid as $p) {
       $trying = empty($p['flags']['gbp']);
       $o = $trying ? (array) $p['flags']['gbp_sending'] : (array) $p['flags']['gbp'];
@@ -427,12 +428,13 @@ if (!function_exists('ias_gbp_readback')) {
       $p = $ours[$oid];
       if (($p['flags']['gbp_off'] ?? '') === 'failed') continue;
       $why = (string) ($row['failure_reason'] ?? $row['reason'] ?? $row['error'] ?? $row['message'] ?? 'no reason given');
-      ias_gbp_switch_off($p, 'failed', 'OneUp could not publish it on Google: ' . $why . ' — fix it in OneUp (retry there) or leave it; the Facebook post is not affected.', false);
+      ias_gbp_switch_off($p, 'failed', 'OneUp could not publish it on Google: ' . $why . ' — Send it to Google again, or leave it; the Facebook post is not affected.', false);
       $count['failed']++;
     }
 
-    // Google copies that vanished before their time: a person deleted them in OneUp. Facebook's rules.
-    if ($sched['complete']) {
+    // Google copies that vanished before their time: a person deleted them in OneUp. Facebook's rules
+    // (a full read-back only).
+    if ($full && $sched['complete']) {
       $grace = ias_now()->modify('-10 minutes')->format('Y-m-d H:i:s');
       $expected = array_filter($ours, function ($p) use ($now, $grace) {
         $g = (array) ($p['flags']['gbp'] ?? []);
@@ -474,51 +476,62 @@ if (!function_exists('ias_gbp_readback')) {
  * ['pushed', 'deleted', 'failed', 'skipped' => […]].
  */
 if (!function_exists('ias_gbp_run')) {
-  function ias_gbp_run(): array {
+  function ias_gbp_run(array $only = []): array {
     $out = ['pushed' => 0, 'deleted' => 0, 'failed' => 0, 'skipped' => []];
     if (!ias_gbp_live()) return $out;
     $now = ias_now();
-    $nowsql = $now->format('Y-m-d H:i:s');
-    $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
-    $floor = $now->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:00');
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
-      if ($p['type'] === 'human') continue;
-      $flags = $p['flags'];
-      $g = (array) ($flags['gbp'] ?? []);
-      $at = (string) ($p['scheduled_at'] ?? '');
-      if ($p['status'] === 'published' || ($at !== '' && $at <= $nowsql)) continue; // its time came: it stays as it went
-
-      $in_range = $at !== '' && $at <= $until;
-      $why_not = ias_gbp_ready($p);
-      if ($why_not === '' && empty($g) && empty($flags['gbp_was']) && $p['lane'] !== 'A' && $at < $floor) $why_not = 'its time is inside the ' . (int) ias_setting('lead_hours', 48) . '-hour veto window';
-
-      if ($in_range && $why_not === '') {
-        $req = ias_render_gbp($p);
-        $hash = md5((string) wp_json_encode($req));
-        if ($hash === ($g['hash'] ?? '') || !empty($flags['gbp_locked'])) continue;
-        $blockers = [];
-        if (ias_setting('paused', false)) $blockers[] = 'pushes are paused';
-        if (!ias_gbp_type_on((string) $p['type'])) $blockers[] = ias_post_type((string) $p['type'])['label'] . ' posts are off';
-        if ($blockers) {
-          $out['skipped'][] = 'Google #' . (int) $p['id'] . ': ' . implode('; ', $blockers);
-          if ($g && ias_gbp_delete($p, 'it changed while ' . implode(' and ', $blockers) . ' — it goes again when they allow')) {
-            $f = (ias_post_get((int) $p['id']) ?: $p)['flags'];
-            $f['gbp_was'] = true;
-            ias_post_update((int) $p['id'], ['flags' => $f]);
-            $out['deleted']++;
-          }
-          continue;
-        }
-        if (ias_gbp_send($p, $req, $hash)) $out['pushed']++; else $out['failed']++;
-        continue;
-      }
-      if ($g) {
-        if (!empty($flags['gbp_locked']) && !in_array($p['status'], ['skipped', 'cancelled'], true) && empty($flags['gbp_off'])) continue; // a person's edit in OneUp stays unless the post is called off
-        $why = $why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days';
-        if (ias_gbp_delete($p, $why)) $out['deleted']++;
-      }
-    }
+    $c = [
+      'nowsql' => $now->format('Y-m-d H:i:s'),
+      'until'  => $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s'),
+      'floor'  => $now->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:00'),
+    ];
+    $statuses = ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'dropped', 'skipped', 'cancelled'];
+    $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
+      : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
+    foreach ($posts as $p) ias_gbp_one($p, $c, $out);
     return $out;
+  }
+}
+
+/** One post's Google push (ias_gbp_run()'s loop; ias_push_now() for a person's change). */
+if (!function_exists('ias_gbp_one')) {
+  function ias_gbp_one(array $p, array $c, array &$out): void {
+    if ($p['type'] === 'human') return;
+    ['nowsql' => $nowsql, 'until' => $until, 'floor' => $floor] = $c;
+    $flags = $p['flags'];
+    $g = (array) ($flags['gbp'] ?? []);
+    $at = (string) ($p['scheduled_at'] ?? '');
+    if ($p['status'] === 'published' || ($at !== '' && $at <= $nowsql)) return; // its time came: it stays as it went
+
+    $in_range = $at !== '' && $at <= $until;
+    $why_not = ias_gbp_ready($p);
+    if ($why_not === '' && empty($g) && empty($flags['gbp_was']) && empty($flags['pinned_by']) && $p['lane'] !== 'A' && $at < $floor) $why_not = 'its time is inside the ' . (int) ias_setting('lead_hours', 48) . '-hour veto window';
+
+    if ($in_range && $why_not === '') {
+      $req = ias_render_gbp($p);
+      $hash = md5((string) wp_json_encode($req));
+      if ($hash === ($g['hash'] ?? '') || !empty($flags['gbp_locked'])) return;
+      $blockers = [];
+      if (ias_setting('paused', false)) $blockers[] = 'pushes are paused';
+      if (!ias_gbp_type_on((string) $p['type'])) $blockers[] = ias_post_type((string) $p['type'])['label'] . ' posts are off';
+      if ($blockers) {
+        $out['skipped'][] = 'Google #' . (int) $p['id'] . ': ' . implode('; ', $blockers);
+        if ($g && ias_gbp_delete($p, 'it changed while ' . implode(' and ', $blockers) . ' — it goes again when they allow')) {
+          $f = (ias_post_get((int) $p['id']) ?: $p)['flags'];
+          $f['gbp_was'] = true;
+          ias_post_update((int) $p['id'], ['flags' => $f]);
+          $out['deleted']++;
+        }
+        return;
+      }
+      if (ias_gbp_send($p, $req, $hash)) $out['pushed']++; else $out['failed']++;
+      return;
+    }
+    if ($g) {
+      if (!empty($flags['gbp_locked']) && !in_array($p['status'], ['skipped', 'cancelled'], true) && empty($flags['gbp_off'])) return; // a person's edit in OneUp stays unless the post is called off
+      $why = $why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days';
+      if (ias_gbp_delete($p, $why)) $out['deleted']++;
+    }
   }
 }
 
@@ -548,7 +561,7 @@ if (!function_exists('ias_gbp_post_line')) {
       $when = !empty($g['when']) ? date_i18n('D M j, g:i a', strtotime((string) $g['when'])) : '';
       $bits[] = !empty($g['published']) ? '<strong>Published on Google</strong> ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $g['published']))) . '.'
         : '<strong>On OneUp for Google</strong>' . ($when !== '' ? ' for ' . esc_html($when) : '') . (!empty($g['id']) ? ' (post #' . esc_html((string) $g['id']) . ')' : '') . '.';
-      if (!empty($f['gbp_locked'])) $bits[] = 'A person ' . esc_html((string) $f['gbp_locked']) . ' it in OneUp — kept as they made it.';
+      if (!empty($f['gbp_locked'])) $bits[] = 'A person ' . esc_html((string) $f['gbp_locked']) . ' it in OneUp — kept as they made it, until you send this version instead.';
     }
     if ($off !== '') {
       $bits[] = '<strong>Google is off for this post:</strong> ' . esc_html($off === 'failed' ? 'Google could not take it' . (!empty($f['gbp_error']) ? ' (' . (string) $f['gbp_error'] . ')' : '') : 'a person took it off') . '. The Facebook post is not affected.';
@@ -562,7 +575,8 @@ if (!function_exists('ias_gbp_post_line')) {
     $bits[] = 'Made from the Facebook words, without hashtags or phone numbers.';
     $button = '';
     if ($p['type'] !== 'human' && !in_array($p['status'], ['published', 'cancelled'], true)) {
-      $button = $off !== '' ? ias_post_action_form($p, 'gbp_on', 'Send it to Google again', 'button')
+      if (!empty($f['gbp_locked']) && $off === '') $button .= ias_post_action_form($p, 'gbp_unlock', 'Send this version to Google instead', 'button', '', 'Replace the version changed in OneUp with this one on Google?');
+      $button .= $off !== '' ? ias_post_action_form($p, 'gbp_on', 'Send it to Google again', 'button')
         : ias_post_action_form($p, 'gbp_off', 'Keep this one off Google', 'button-link', '', $g ? 'Take this post off Google? The Facebook post stays as it is.' : '');
     }
     return '<p class="description ias-gbp-line">' . implode(' ', $bits) . '</p>' . $button;

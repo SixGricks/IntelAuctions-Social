@@ -319,7 +319,7 @@ if (!function_exists('ias_channel_problems')) {
  * posts as they are then.
  */
 if (!function_exists('ias_push_channels_run')) {
-  function ias_push_channels_run(): int {
+  function ias_push_channels_run(array $only = []): int {
     $live = function_exists('ias_gbp_live') && ias_gbp_live();
     $chs = array_values(array_diff(ias_channels_extra_on(), $live ? ['gbp'] : [])); // live Google is gbp.php's
     $logged = 0;
@@ -328,7 +328,10 @@ if (!function_exists('ias_push_channels_run')) {
     $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
     $floor = $now->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:00');
     $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
+    $statuses = ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'];
+    $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
+      : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
+    foreach ($posts as $p) {
       if ($p['type'] === 'human') continue;
       $flags = (array) $p['flags'];
       $had = (array) ($flags['dry_ch'] ?? []);

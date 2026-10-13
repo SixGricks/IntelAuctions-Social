@@ -66,6 +66,17 @@ it, and the spec stays verbatim, so they are recorded here:
   `ia_social_gbp_managed` so the toolkit's own Google post stands down; the
   two must never both post Google. Google's words come from Facebook's
   (`ias_channel_text()`: no hashtags, no phone numbers), never a Claude call.
+- **Nobody needs to touch OneUp, and it is instant both ways** (Oct 13, 2026).
+  This overrides the spec's "edit, move or delete them there": everything is
+  done on the Social Calendar. A person's change is sent in the same request
+  (`ias_push_now()` after the action, the actions in `ias_push_now_actions()`)
+  — under the push lock, after a light read-back that must never conclude a
+  delete. OneUp has no webhooks: an open calendar asks every minute
+  (`ias_oneup_pulse()`, shared, throttled) and the hourly run reads back the
+  rest. Move pins a time (`flags.pinned`, honoured by `ias_engine_posts()`,
+  and the person's yes past the veto window); Try again and Edit it here
+  again replace "fix it in OneUp". Never write a note, button or email that
+  sends someone into OneUp.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

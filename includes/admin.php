@@ -242,6 +242,12 @@ if (!function_exists('ias_admin_styles')) {
       .ias-filters{line-height:2}
       .ias-gbp-cta{padding:8px 12px 12px}.ias-gbp-cta a{display:inline-block;border:1px solid #1a73e8;color:#1a73e8;border-radius:18px;padding:5px 16px;font-weight:600;text-decoration:none;font-size:13px}
       .ias-gbp-line .ias-act{display:inline-block;margin:4px 6px 0 0}
+      .ias-pulse{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:-6px 0 12px;font-size:13px;color:#50575e}
+      .ias-pulse-dot{width:9px;height:9px;border-radius:50%;background:#c3c4c7;flex:none}
+      .ias-pulse.is-ok .ias-pulse-dot{background:#00a32a}.ias-pulse.is-error .ias-pulse-dot{background:#d63638}.ias-pulse.is-new .ias-pulse-dot{background:#dba617}
+      .ias-pulse.is-error{color:#8a2424}.ias-pulse.is-new{color:#1d2327;font-weight:600}
+      .ias-pulse [hidden]{display:none!important}
+      .ias-move{margin-top:6px}.ias-move summary{cursor:pointer;color:#2271b1}.ias-move form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
       .ias-post [hidden],.ias-bar [hidden]{display:none!important} /* the .button display of WordPress beats the hidden attribute */
       .ias-switches-fold{margin:10px 0 16px}.ias-switches-fold summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
       .ias-switches-fold summary::-webkit-details-marker{display:none}.ias-switches-fold summary .ias-switch{font-size:13px}

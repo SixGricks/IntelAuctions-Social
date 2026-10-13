@@ -128,7 +128,8 @@ ias_job_run();
 $review = array_values(array_filter($mail(), function ($x) { return strpos((string) $x['subject'], 'Facebook this week') === 0; }));
 t_eq(2, count($review), 'the Monday email goes to both approvers');
 $body = (string) ($review[0]['message'] ?? '');
-foreach (['This week', 'Waiting for approval', 'New since last week', 'Dropped this week', 'Open the OneUp calendar'] as $part) {
+t_ok(strpos($body, 'Open the OneUp calendar') === false, 'the Monday email sends nobody into OneUp (0.10.0)');
+foreach (['This week', 'Waiting for approval', 'New since last week', 'Dropped this week', 'Open the Social Calendar'] as $part) {
   t_ok(strpos($body, $part) !== false, "the Monday email has: {$part}");
 }
 t_ok(stripos($body, 'Facebook Event') === false, 'the Monday email has no Facebook Events section');

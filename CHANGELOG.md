@@ -1,5 +1,34 @@
 # Intel Auctions Social changelog
 
+## 0.10.0 (2026-10-13) — Nobody needs OneUp: instant both ways
+DJ: "can we make sure that Jacob and the intel team never needs to touch
+OneUp? I would love a clear 2 way communication between oneup and the plugin.
+Instant update both directions."
+- **To OneUp at once.** Save changes, Rewrite, Skip, Restore, Keep as
+  written, Move, Try again, Edit it here again and Google's buttons send that
+  post to OneUp in the same click (`ias_push_now()`), for Facebook and Google,
+  under the hourly run's rules and lock, after reading OneUp's scheduled list
+  (a light read that never concludes a delete). The page says what happened
+  on OneUp. The push loops are one function per post now (`ias_push_one()`,
+  `ias_gbp_one()`), shared by the hourly run.
+- **From OneUp while anyone looks.** OneUp has no webhooks, so an open
+  calendar or post asks it every minute (`ias_oneup_pulse()`, one full
+  read-back for everyone looking, `ias_pulse`), with **Check now**; news
+  shows at once on the calendar and as **Show the changes** on a post. The
+  hourly run still reads back when nobody looks.
+- **Never into OneUp.** **Move…** on a post (a day and a time; it holds —
+  `flags.pinned` — and goes even inside the veto window: the person said
+  yes; never Sunday), **Let the plan choose the time**, **Try again** on a
+  failed post (a fresh copy; the failed one's id kept apart), **Edit it here
+  again** on a post someone changed in OneUp (their version becomes the
+  post's, nothing re-sent), **Send this version to Google instead** for a
+  Google copy changed there. No screen, note or email tells anyone to do
+  something in OneUp: the Monday email's OneUp button and Settings' OneUp
+  calendar link are gone, and the veto window reads "skip, move or change it
+  here".
+- Tests: a single test file run on its own no longer leaves the next full
+  run's install-defaults check failing.
+
 ## 0.9.0 (2026-10-13) — Google Business Profile; accounts chosen from lists; the calendar
 DJ, on Social Settings after Check connection: "why if you can call and return
 this am i entering the data rather then just having the system call, respond,

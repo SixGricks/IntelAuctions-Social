@@ -379,15 +379,18 @@ if (!function_exists('ias_human_upsert')) {
  * the other rows on the page, by its name. Returns ['ok', 'error', 'changes'].
  */
 if (!function_exists('ias_readback_run')) {
-  function ias_readback_run(): array {
+  function ias_readback_run(bool $full = true): array {
     $out = ['ok' => false, 'error' => '', 'changes' => []];
     $block = ias_oneup_blockers(false);
     if ($block) { $out['error'] = implode('; ', $block); return $out; }
     $account = ias_oneup_account_name();
     $sched = ias_oneup_scheduled(true);
     if (!$sched['ok']) { $out['error'] = $sched['error']; return ias_readback_note($out); }
-    $pub = ias_oneup_list('published', 4);
-    $fail = ias_oneup_list('failed', 2);
+    // A person's change sent at once ($full false) reads the scheduled list only: what a person moved or
+    // edited there. Published, failed and deleted are the hourly run's (and the open calendar's) to conclude.
+    $none = ['ok' => false, 'rows' => [], 'complete' => false, 'error' => ''];
+    $pub = $full ? ias_oneup_list('published', 4) : $none;
+    $fail = $full ? ias_oneup_list('failed', 2) : $none;
     $GLOBALS['ias_readback_lists'] = ['published' => $pub, 'failed' => $fail]; // Google's read-back, next, reads the same lists
     $now = ias_now_sql();
     $count = ['moved' => 0, 'edited' => 0, 'deleted' => 0, 'published' => 0, 'failed' => 0];
@@ -440,7 +443,7 @@ if (!function_exists('ias_readback_run')) {
       $flags['oneup']['when'] = substr($at, 0, 16);
       $flags['oneup']['text'] = $text;
       $flags['edited_in_oneup'] = trim(($moved ? 'moved' : '') . ($moved && $edited ? ' and ' : '') . ($edited ? 'edited' : ''));
-      $fields = ['flags' => $flags, 'locked' => 1, 'note' => ($moved ? 'Moved' : 'Edited') . ' in OneUp by a person — the plugin leaves it as they made it.'];
+      $fields = ['flags' => $flags, 'locked' => 1, 'note' => ($moved ? 'Moved' : 'Edited') . ' in OneUp by a person — the plugin leaves it as they made it (Edit it here again changes that).'];
       if ($moved) $fields['scheduled_at'] = $at;
       ias_post_update((int) $p['id'], $fields);
       $what = ($moved ? 'moved it to ' . date_i18n('D M j, g:i a', strtotime($at)) : '') . ($moved && $edited ? ' and ' : '') . ($edited ? 'edited its text' : '');
@@ -482,7 +485,7 @@ if (!function_exists('ias_readback_run')) {
       if (!isset($ours[$oid]) || in_array($ours[$oid]['status'], ['failed', 'cancelled', 'skipped'], true)) continue;
       $p = $ours[$oid];
       $why = (string) ($row['failure_reason'] ?? $row['reason'] ?? $row['error'] ?? $row['message'] ?? 'no reason given');
-      ias_post_update((int) $p['id'], ['status' => 'failed', 'note' => 'OneUp could not publish it: ' . $why . ' — fix it in OneUp (retry there) or skip it here.']);
+      ias_post_update((int) $p['id'], ['status' => 'failed', 'note' => 'OneUp could not publish it: ' . $why . ' — press Try again, or skip it.']);
       ias_post_trail((int) $p['id'], 'Failed on OneUp: ' . $why);
       ias_log('push_failed', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'OneUp could not publish it: ' . $why]);
       $count['failed']++;
@@ -496,8 +499,9 @@ if (!function_exists('ias_readback_run')) {
     }
 
     // Ours that vanished before their time: a person deleted them in OneUp. Only from a whole, real
-    // list; only after two read-backs at least 30 minutes apart; never when none of them can be seen.
-    if ($sched['complete']) {
+    // list; only after two read-backs at least 30 minutes apart; never when none of them can be seen —
+    // and only on a full read-back, which has the published and failed lists to tell them apart.
+    if ($full && $sched['complete']) {
       $grace = ias_now()->modify('-10 minutes')->format('Y-m-d H:i:s');
       $expected = array_filter($ours, function ($p) use ($now, $grace) {
         return in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed'], true) && (string) $p['scheduled_at'] > $now && (string) ($p['pushed_at'] ?? '') <= $grace;
@@ -531,7 +535,7 @@ if (!function_exists('ias_readback_run')) {
 
     // Gone out by our clock a day ago and still not confirmed: tell a person once.
     $day_ago = ias_now()->modify('-24 hours')->format('Y-m-d H:i:s');
-    foreach (ias_posts_query(['status' => 'published', 'limit' => 500]) as $p) {
+    foreach ($full ? ias_posts_query(['status' => 'published', 'limit' => 500]) : [] as $p) {
       if (empty($p['flags']['unconfirmed']) || !empty($p['flags']['unconfirmed_noted']) || (string) $p['published_at'] > $day_ago) continue;
       $flags = $p['flags'];
       $flags['unconfirmed_noted'] = $now;
@@ -550,8 +554,13 @@ if (!function_exists('ias_readback_run')) {
 /** Remember the last read-back (Settings and the calendar show it). */
 if (!function_exists('ias_readback_note')) {
   function ias_readback_note(array $out): array {
-    update_option('ias_readback_last', ['at' => ias_now_sql(), 'ok' => $out['ok'], 'error' => $out['error'], 'changes' => $out['changes']], false);
-    if (!$out['ok'] && $out['error'] !== '') ias_log('readback', 0, ['summary' => 'Read-back from OneUp failed: ' . $out['error']]);
+    $prev = get_option('ias_readback_last', []);
+    $prev = is_array($prev) ? $prev : [];
+    // The same failure again within the hour (an open calendar asks every minute) is logged once.
+    $again = !$out['ok'] && empty($prev['ok']) && (string) ($prev['error'] ?? '') === (string) $out['error'] && !empty($prev['logged']) && (string) $prev['logged'] > ias_now()->modify('-1 hour')->format('Y-m-d H:i:s');
+    $logged = !$out['ok'] && $out['error'] !== '' && !$again ? ias_now_sql() : (string) ($prev['logged'] ?? '');
+    update_option('ias_readback_last', ['at' => ias_now_sql(), 'ok' => $out['ok'], 'error' => $out['error'], 'changes' => $out['changes'], 'logged' => $out['ok'] ? '' : $logged], false);
+    if (!$out['ok'] && $out['error'] !== '' && !$again) ias_log('readback', 0, ['summary' => 'Read-back from OneUp failed: ' . $out['error']]);
     return $out;
   }
 }

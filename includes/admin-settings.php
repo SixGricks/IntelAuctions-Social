@@ -131,7 +131,7 @@ if (!function_exists('ias_settings_sanitize')) {
         if ($id !== '' && ias_oneup_directory_account($id) && !ias_oneup_directory_account($id, $out['oneup_category_id'])) $problems[] = 'The ' . $label . ' chosen is not in the chosen OneUp category — choose them again after picking the category.';
       }
     }
-    $out['oneup_calendar_url'] = esc_url_raw((string) ($in['oneup_calendar_url'] ?? ''));
+    if (isset($in['oneup_calendar_url'])) $out['oneup_calendar_url'] = esc_url_raw((string) $in['oneup_calendar_url']); // no longer on the screen (0.10.0): nobody needs OneUp
     $out['utm_source'] = sanitize_key((string) ($in['utm_source'] ?? 'facebook')) ?: 'facebook';
     $out['utm_medium'] = sanitize_key((string) ($in['utm_medium'] ?? 'social')) ?: 'social';
 
@@ -331,7 +331,6 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row"><label for="ias-acct">Facebook page</label></th><td><select id="ias-acct" name="ias[oneup_account_id]" class="ias-pick ias-acct-pick">' . $pick['ias-acct'] . '</select>'
       . ((string) $s['oneup_account_name'] !== '' && !ias_oneup_directory_account((string) $s['oneup_account_id']) ? ' ' . ia_ui_badge((string) $s['oneup_account_name'], 'ok') : '') // the list names it already
       . '<br><span class="description">A different page (or category) means pressing <strong>Verify OneUp</strong> again before anything is sent.</span></td></tr>';
-    echo '<tr><th scope="row"><label for="ias-calurl">Calendar link</label></th><td><input id="ias-calurl" type="url" name="ias[oneup_calendar_url]" value="' . esc_attr((string) $s['oneup_calendar_url']) . '" class="regular-text"><br><span class="description">Where the Monday email\'s "Open the OneUp calendar" button goes.</span></td></tr>';
     echo '<tr><th scope="row">Listing link</th><td>' . $check('ias[link_in_comment]', !empty($s['link_in_comment']), 'Put the link in the first comment', 'Facebook shows posts with a link in them to fewer people. Untick only if OneUp cannot post first comments: the link then goes at the end of the post.') . '</td></tr>';
     echo '</table>';
 
@@ -391,7 +390,7 @@ if (!function_exists('ias_settings_render')) {
       echo '<div style="margin-bottom:4px"><input type="time" name="ias[slots][' . $i . '][0]" value="' . esc_attr((string) $row[0]) . '"> – <input type="time" name="ias[slots][' . $i . '][1]" value="' . esc_attr((string) $row[1]) . '"></div>';
     }
     echo '<span class="description">Each post time shifts by up to ' . $num('ias[jitter_minutes]', $s['jitter_minutes'], 0, 59, 'minutes') . ' so nothing lands on the hour.</span></td></tr>';
-    echo '<tr><th scope="row">Veto window</th><td>' . $num('ias[lead_hours]', $s['lead_hours'], 0, 168, 'hours') . '<br><span class="description">Nothing new is scheduled closer than this, so either of you can edit, move or delete it in OneUp first. Approved roundup and Results posts are not held to it — the approval was the yes.</span></td></tr>';
+    echo '<tr><th scope="row">Veto window</th><td>' . $num('ias[lead_hours]', $s['lead_hours'], 0, 168, 'hours') . '<br><span class="description">Nothing new is scheduled closer than this, so either of you can skip, move or change it on the calendar first. Approved roundup and Results posts are not held to it — the approval was the yes — and neither is a post a person moved there themselves.</span></td></tr>';
     echo '<tr><th scope="row">Planning</th><td>Re-plan the next ' . $num('ias[plan_days]', $s['plan_days'], 7, 60, 'days') . ' every morning from ' . $num('ias[plan_hour]', $s['plan_hour'], 0, 23, ':00') . ', and push the next ' . $num('ias[push_days]', $s['push_days'], 1, 60, 'days') . ' to OneUp.</td></tr>';
     echo '</table>';
 

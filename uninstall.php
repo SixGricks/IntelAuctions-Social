@@ -28,6 +28,7 @@ foreach ([
   'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
   'ias_oneup_directory', // Look up accounts: OneUp's categories and accounts (ids and names, never the key)
   'ias_gbp_verify', 'ias_gbp_mode', // Google Business Profile: its Verify, and whether it was last sent for real
+  'ias_pulse', // the last time an open calendar asked OneUp what changed, and what it found
   'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', // Brand voice: the house rules, Claude's unsaved suggestion, when it last read the log, the day the log was last pruned
 ] as $key) {
   delete_option($key);

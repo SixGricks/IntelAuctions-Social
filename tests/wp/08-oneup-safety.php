@@ -247,7 +247,7 @@ $n = count($S['calls']);
 ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();
 $bp = $lp($b);
 t_eq('held', $bp['status'], 'its listing changed: it stops for a person');
-t_ok(strpos((string) $bp['note'], 'fix it there') !== false, '…who is told to fix it in OneUp (or skip it here)');
+t_ok(strpos((string) $bp['note'], 'Edit it here again') !== false, '…who is told to take it back here (Edit it here again), never sent into OneUp');
 t_ok($bp['generated_at'] === $before['generated_at'] && $bp['content']['text'] === $before['content']['text'], '…and Claude is not asked to rewrite it');
 t_eq([], $writes($n), '…nor is it replaced or taken off OneUp');
 
