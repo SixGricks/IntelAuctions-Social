@@ -280,6 +280,7 @@ if (!function_exists('ias_chat_answer')) {
       'comment' => isset($m['comment']) && is_string($m['comment']) ? $m['comment'] : null,
       'pics'    => $tiles,
       'changed' => (array) ($m['changed'] ?? ($row['proposal'] !== '' ? ['the text'] : [])),
+      'diff'    => array_filter(['text' => (string) ($m['diff_text'] ?? ''), 'comment' => (string) ($m['diff_comment'] ?? '')]),
       'holds'   => (array) ($m['holds'] ?? []),
       'fixes'   => (array) ($m['fixes'] ?? []),
       'rule'    => ($m['rule'] ?? '') !== '' ? (string) $m['rule'] : null,
@@ -295,7 +296,8 @@ if (!function_exists('ias_chat_repeat')) {
     if (count($rows) < 2 || $rows[0]['who'] !== 'claude' || $rows[1]['who'] !== 'person') return null;
     if ($rows[1]['message'] !== $message || (string) ($rows[1]['meta']['was'] ?? '') !== $fingerprint) return null;
     if (strtotime((string) $rows[0]['created_at']) < strtotime(ias_now_sql()) - 120) return null;
-    return ['ok' => true, 'repeat' => true, 'used' => ias_chat_turns_used($post_id), 'max' => (int) ias_setting('chat_turns', 30), 'id' => $rows[0]['id']] + ias_chat_answer($rows[0], $pictures, $screen_alt);
+    $answer = ias_chat_answer($rows[0], $pictures, $screen_alt);
+    return ['ok' => true, 'repeat' => true, 'used' => ias_chat_turns_used($post_id), 'max' => (int) ias_setting('chat_turns', 30), 'id' => $rows[0]['id'], 'html' => ias_chat_change_html($answer)] + $answer;
   }
 }
 
@@ -390,6 +392,9 @@ if (!function_exists('ias_chat_send')) {
 
       ias_chat_add($post_id, 'person', $actor, $message, '', ['was' => $fingerprint]); // a fingerprint, not a second copy of the post
       $meta = ['holds' => $holds, 'fixes' => $fixes, 'rule' => $rule, 'changed' => $changed];
+      // What changed, word by word, to show in the answer itself: the field it changed is usually scrolled out of sight.
+      if ($text !== '') $meta['diff_text'] = ias_word_diff_html(ias_word_diff($screen['text'], $text));
+      if ($comment !== null) $meta['diff_comment'] = ias_word_diff_html(ias_word_diff((string) $screen['comment'], $comment));
       if ($comment !== null) $meta['comment'] = $comment;
       if ($keys !== null) $meta['pictures'] = $keys;
       if ($alt) { $meta['alt'] = $alt; $meta['media_was'] = $after; }
@@ -397,7 +402,8 @@ if (!function_exists('ias_chat_send')) {
       ias_log('chat', (int) $p['listing_id'], ['post' => $post_id, 'type' => $p['type'],
         'summary' => 'Talked it over: "' . mb_substr($message, 0, 140) . '" — ' . ($changed ? 'Claude changed ' . implode(', ', $changed) . ' (not saved)' : 'Claude answered')], $actor);
       $row = ['message' => $reply, 'proposal' => $text, 'meta' => $meta];
-      return ['ok' => true, 'used' => $used + 1, 'max' => $max, 'id' => $id] + ias_chat_answer($row, $pictures, $screen['alt']);
+      $answer = ias_chat_answer($row, $pictures, $screen['alt']);
+      return ['ok' => true, 'used' => $used + 1, 'max' => $max, 'id' => $id, 'html' => ias_chat_change_html($answer)] + $answer;
     } finally {
       ias_chat_unlock($post_id);
     }
@@ -479,19 +485,48 @@ add_action('wp_ajax_ias_voice_rule', function (): void {
 
 /* ---------------- The panel ---------------- */
 
-/** One message in the panel (the same markup the script builds). $answer: ias_chat_answer() for Claude's. */
+/**
+ * What an answer changed, shown in the answer itself (the field it changed is
+ * usually scrolled out of sight): the words taken out and put in, the new
+ * pictures as thumbnails, Show me, and Use this version. Its note — Saved, On
+ * the post above, Not on the post now — is kept true by the script as the
+ * post changes; drawn here, it compares the answer with the saved post.
+ */
+if (!function_exists('ias_chat_change_html')) {
+  function ias_chat_change_html(array $a, ?array $saved = null): string {
+    if (empty($a['changed'])) return '';
+    $state = ['text' => $a['text'], 'comment' => $a['comment'], 'pics' => $a['pics']];
+    $html = '<div class="ias-msg-change"><div class="ias-msg-what">Changed ' . esc_html(ias_chat_list((array) $a['changed'])) . '</div>';
+    foreach (['text' => 'Text', 'comment' => 'First comment'] as $k => $label) {
+      if (!empty($a['diff'][$k])) $html .= '<div class="ias-msg-diff"><span class="ias-msg-diff-h">' . esc_html($label) . '</span>' . $a['diff'][$k] . '</div>'; // built by ias_word_diff_html(), every word escaped
+    }
+    if (is_array($a['pics']) && in_array('the pictures', (array) $a['changed'], true)) {
+      $html .= '<div class="ias-msg-pics" aria-label="The pictures, in order">';
+      foreach (array_slice($a['pics'], 0, 10) as $i => $t) $html .= '<img src="' . esc_url((string) $t['thumb']) . '" alt="' . esc_attr(($i === 0 ? 'Lead: ' : '') . (string) $t['alt']) . '" title="' . esc_attr((string) $t['alt']) . '">';
+      $html .= '</div>';
+    }
+    $field = $a['text'] !== null ? 'text' : ($a['comment'] !== null ? 'comment' : 'pics');
+    $note = 'Not saved';
+    if ($saved !== null) {
+      $same = ($a['text'] === null || trim((string) $a['text']) === trim((string) $saved['text']))
+        && ($a['comment'] === null || trim((string) $a['comment']) === trim((string) $saved['comment']))
+        && ($a['pics'] === null || array_map(function ($t) { return $t['key'] . "\1" . $t['alt']; }, $a['pics']) === array_map(function ($t) { return $t['key'] . "\1" . $t['alt']; }, $saved['pics']));
+      $note = $same ? 'Saved' : 'Not saved — not on the post now';
+    }
+    $html .= '<div class="ias-msg-acts"><span class="ias-msg-note">' . esc_html($note) . '</span> <button type="button" class="button-link ias-show" data-field="' . esc_attr($field) . '">Show me</button> <button type="button" class="button-link ias-use" data-state="' . esc_attr((string) wp_json_encode($state)) . '">Use this version</button></div></div>';
+    if (!empty($a['holds'])) $html .= '<div class="ias-msg-warn">Saved like this, it would stop for a decision: ' . esc_html(implode(' ', (array) $a['holds'])) . '</div>';
+    return $html;
+  }
+}
+
+/** One message in the panel (the same markup the script builds). $answer: ias_chat_answer() for Claude's; $saved: the post as saved (text, comment, pics). */
 if (!function_exists('ias_chat_bubble')) {
-  function ias_chat_bubble(array $row, bool $last_change, ?array $answer = null): string {
+  function ias_chat_bubble(array $row, ?array $answer = null, ?array $saved = null): string {
     if ($row['who'] === 'person') {
       return '<div class="ias-msg me"><b>' . esc_html(ias_actor_name((string) $row['actor'])) . '</b><div class="ias-msg-t">' . esc_html($row['message']) . '</div></div>';
     }
-    $a = $answer ?? ['changed' => $row['proposal'] !== '' ? ['the text'] : [], 'text' => $row['proposal'] !== '' ? $row['proposal'] : null, 'comment' => null, 'pics' => null, 'holds' => (array) ($row['meta']['holds'] ?? []), 'rule' => $row['meta']['rule'] ?? null];
-    $out = '<div class="ias-msg ai"><b>Claude</b><div class="ias-msg-t">' . esc_html($row['message']) . '</div>';
-    if ($a['changed']) {
-      $state = wp_json_encode(['text' => $a['text'], 'comment' => $a['comment'], 'pics' => $a['pics']]);
-      $out .= '<div class="ias-msg-acts"><span class="ias-msg-note">Changed ' . esc_html(ias_chat_list((array) $a['changed'])) . ($last_change ? '' : ' (an earlier version)') . '</span> <button type="button" class="button-link ias-use" data-state="' . esc_attr((string) $state) . '">Use this version</button></div>';
-      if (!empty($a['holds'])) $out .= '<div class="ias-msg-warn">Saved like this, it would stop for a decision: ' . esc_html(implode(' ', (array) $a['holds'])) . '</div>';
-    }
+    $a = $answer ?? ['changed' => $row['proposal'] !== '' ? ['the text'] : [], 'text' => $row['proposal'] !== '' ? $row['proposal'] : null, 'comment' => null, 'pics' => null, 'diff' => [], 'holds' => (array) ($row['meta']['holds'] ?? []), 'rule' => $row['meta']['rule'] ?? null];
+    $out = '<div class="ias-msg ai"><b>Claude</b><div class="ias-msg-t">' . esc_html($row['message']) . '</div>' . ias_chat_change_html($a, $saved);
     $rule = (string) ($a['rule'] ?? '');
     if ($rule !== '' && !in_array(mb_strtolower($rule), array_map('mb_strtolower', ias_voice_notes()), true)) {
       $out .= '<div class="ias-msg-rule">Remember for every post? <em>' . esc_html($rule) . '</em> <button type="button" class="button button-small ias-rule-add" data-rule="' . esc_attr($rule) . '">Add to the house voice</button></div>';
@@ -518,8 +553,7 @@ add_action('ias_post_view_after_edit', function (array $p): void {
   $rows = ias_chat_rows((int) $p['id'], true, 40);
   $facts_list = ias_post_facts($p);
   $pictures = $facts_list ? ias_chat_pictures($p, $facts_list, ias_chat_screen($p, [])) : [];
-  $last_change = 0;
-  foreach ($rows as $r) if ($r['who'] === 'claude' && ($r['proposal'] !== '' || !empty($r['meta']['changed']))) $last_change = $r['id'];
+  $saved = ['text' => (string) ($p['content']['text'] ?? ''), 'comment' => (string) ($p['content']['first_comment'] ?? ''), 'pics' => function_exists('ias_pic_items') ? ias_pic_items((array) ($p['content']['media']['images'] ?? [])) : []];
   $me = ias_actor_name(ias_actor());
   $off = $why !== '' || $used >= $max;
   $has_comment = !empty($p['content']['first_comment']);
@@ -528,7 +562,7 @@ add_action('ias_post_view_after_edit', function (array $p): void {
   echo '<h2>Talk it over <span class="description">with Claude</span></h2>';
   echo '<div class="ias-chat-log" id="ias-chat-log" aria-live="polite">';
   echo '<p class="description ias-chat-empty"' . ($rows ? ' hidden' : '') . '>Say what you don\'t like and Claude changes the post above for you to check and save — the text' . ($has_comment ? ', the first comment' : '') . ', which pictures go with it and in what order, and their alt text. "Shorter", "less salesy", "lead with the aerial", "say View full listing in the comment". It keeps to the listing\'s facts and the house voice.</p>';
-  foreach ($rows as $r) echo ias_chat_bubble($r, $r['id'] === $last_change, $r['who'] === 'claude' ? ias_chat_answer($r, $pictures, []) : null);
+  foreach ($rows as $r) echo ias_chat_bubble($r, $r['who'] === 'claude' ? ias_chat_answer($r, $pictures, []) : null, $saved);
   echo '</div>';
   if ($why !== '') {
     echo '<p class="description">' . esc_html($why) . '</p>';
@@ -580,7 +614,7 @@ jQuery(function ($) {
 
   if (!$chat.length) return;
   var $log = $('#ias-chat-log'), $in = $('#ias-chat-in'), $send = $('#ias-chat-send'), $undo = $('#ias-chat-undo');
-  var undo = [], busy = false;
+  var undo = [], busy = false, FIELDS = { text: 'the text', comment: 'the first comment', pics: 'the pictures' };
 
   function scroll() { $log.scrollTop($log[0].scrollHeight); }
   function bubble(cls, who, words) {
@@ -590,13 +624,49 @@ jQuery(function ($) {
     $log.append($b); scroll();
     return $b;
   }
-  function list(items) { return items.length > 1 ? items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1] : (items[0] || ''); }
-  // Put a version on the screen (any of text, comment, pics), keeping the rest; Undo brings back what was there.
+  function picsSig(p) { return $.map(p || [], function (t) { return t.key + '\u0001' + t.alt; }).join('\u0002'); }
+  function same(f, a, b) { return f === 'pics' ? picsSig(a) === picsSig(b) : $.trim(a || '') === $.trim(b || ''); }
+  function fieldsOf(st) { return $.grep(['text', 'comment', 'pics'], function (f) { return st[f] !== null && st[f] !== undefined; }); }
+
+  // Put a version on the screen. Undo puts back only what this changed, and asks before it would throw away typing done since.
   function apply(st) {
-    undo.push(ed.state());
+    var now = ed.state(), entry = { before: {}, after: {} };
+    $.each(fieldsOf(st), function (i, f) { entry.before[f] = now[f]; entry.after[f] = st[f]; });
+    if ($.isEmptyObject(entry.after)) return;
+    undo.push(entry);
     ed.restore(st, true);
     $undo.prop('hidden', false);
   }
+  $undo.on('click', function () {
+    if (!undo.length) return;
+    var entry = undo[undo.length - 1], now = ed.state(), since = [];
+    $.each(entry.after, function (f) { if (!same(f, now[f], entry.after[f])) since.push(FIELDS[f]); });
+    if (since.length && !window.confirm('You changed ' + since.join(' and ') + ' after Claude did. Undo puts back what was there before Claude\'s change and throws that away too. Undo anyway?')) return;
+    undo.pop();
+    ed.restore(entry.before, true);
+    $undo.prop('hidden', !undo.length);
+  });
+
+  // Each answer says where its version stands: Saved, On the post above (not saved yet), or Not on the post now.
+  function relabel() {
+    var now = ed.state(), saved = ed.saved();
+    $log.find('.ias-msg-change').each(function () {
+      var st; try { st = JSON.parse($(this).find('.ias-use').attr('data-state')); } catch (e) { return; }
+      var fs = fieldsOf(st), onScreen = true, isSaved = true;
+      $.each(fs, function (i, f) { if (!same(f, now[f], st[f])) onScreen = false; if (!same(f, saved[f], st[f])) isSaved = false; });
+      $(this).toggleClass('is-on', onScreen).toggleClass('is-off', !onScreen);
+      $(this).find('.ias-msg-note').text(onScreen ? (isSaved ? 'Saved' : 'On the post above — not saved yet') : (isSaved ? 'Saved, but changed since on the screen' : 'Not on the post now'));
+      $(this).find('.ias-use').prop('hidden', onScreen);
+    });
+  }
+  $(document).on('ias:changed', relabel);
+  $log.on('click', '.ias-show', function () {
+    var f = $(this).attr('data-field'), $el = f === 'pics' ? $('#ias-pictures') : $(f === 'comment' ? '#ias-comment' : '#ias-text');
+    if (!$el.length) return;
+    $el[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    var $flash = f === 'pics' ? $('#ias-pics') : $el;
+    $flash.removeClass('ias-flash'); setTimeout(function () { $flash.addClass('ias-flash'); setTimeout(function () { $flash.removeClass('ias-flash'); }, 1300); }, 350);
+  });
   function lock(on) { busy = on; $send.prop('disabled', on); $chat.find('.ias-chat-chip').prop('disabled', on); }
 
   function send(msg) {
@@ -619,12 +689,8 @@ jQuery(function ($) {
     }
     var d = r.data, $b = bubble('ai', 'Claude', d.reply);
     if (d.changed && d.changed.length) {
-      var st = { text: d.text, comment: d.comment, pics: d.pics };
-      apply(st);
-      $log.find('.ias-msg-note').each(function () { var t = $(this).text().replace(/ — not saved yet$/, ''); if (!/earlier version/.test(t)) $(this).text(t + ' (an earlier version)'); });
-      $b.append($('<div class="ias-msg-acts"/>').append($('<span class="ias-msg-note"/>').text('Changed ' + list(d.changed) + ' — not saved yet')).append(' ')
-        .append($('<button type="button" class="button-link ias-use"/>').attr('data-state', JSON.stringify(st)).text('Use this version')));
-      if (d.holds && d.holds.length) $b.append($('<div class="ias-msg-warn"/>').text('Saved like this, it would stop for a decision: ' + d.holds.join(' ')));
+      $b.append(d.html); // built on the site: every word escaped there
+      apply({ text: d.text, comment: d.comment, pics: d.pics });
     }
     if (d.rule) {
       $b.append($('<div class="ias-msg-rule"/>').append('Remember for every post? ').append($('<em/>').text(d.rule)).append(' ')
@@ -632,6 +698,7 @@ jQuery(function ($) {
     }
     $('#ias-chat-used').text(d.used + ' of ' + d.max + ' answers used');
     if (d.used >= d.max) { $in.prop('disabled', true); $send.prop('disabled', true); $chat.find('.ias-chat-chip').prop('disabled', true); }
+    relabel();
     scroll();
   }
 
@@ -639,11 +706,6 @@ jQuery(function ($) {
   $in.on('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send($in.val()); } });
   $chat.on('click', '.ias-chat-chip', function () { send($(this).text()); });
   $log.on('click', '.ias-use', function () { try { apply(JSON.parse($(this).attr('data-state'))); } catch (e) {} });
-  $undo.on('click', function () {
-    if (!undo.length) return;
-    ed.restore(undo.pop(), true);
-    $undo.prop('hidden', !undo.length);
-  });
   $log.on('click', '.ias-rule-add', function () {
     var $btn = $(this).prop('disabled', true);
     $.post(ajax, { action: 'ias_voice_rule', post: post, _ajax_nonce: nonce, rule: $btn.attr('data-rule') })
@@ -660,6 +722,7 @@ jQuery(function ($) {
       $('#ias-chat-new').prop('hidden', true);
     });
   });
+  relabel();
   scroll();
 });
 JS

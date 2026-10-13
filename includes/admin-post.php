@@ -62,7 +62,12 @@ add_action('ias_calendar_action', function (string $action): void {
       foreach ((array) ($saved_c['media']['images'] ?? []) as $img) if ((int) ($img['id'] ?? 0) > 0) $cur_alt['a' . (int) $img['id']] = (string) ($img['alt'] ?? '');
       $alts = array_filter($alts, function ($v, $k) use ($cur_alt) { return !isset($cur_alt[$k]) || trim((string) $v) !== $cur_alt[$k]; }, ARRAY_FILTER_USE_BOTH);
       $words_changed = $text !== trim((string) ($saved_c['text'] ?? '')) || ($comment !== null && $comment !== trim((string) ($saved_c['first_comment'] ?? '')));
-      // Saving words that did not change still counts as reading them against today's listing; pictures alone leave the words as they were.
+      // Nothing changed: nothing to save — unless the post stopped (held, or the listing changed under a person's edit), where saving
+      // the same words still counts as reading them against today's listing. Pictures alone leave the words as they were.
+      if (!$words_changed && !$media_changed && !$alts && $p['status'] !== 'held' && empty($p['flags']['stale']) && empty($_POST['ias_and_approve'])) {
+        $flash('Nothing was changed, so nothing was saved.', 'info');
+        return;
+      }
       $words = $words_changed || (!$media_changed && !$alts);
       $did = [];
 
@@ -110,7 +115,8 @@ add_action('ias_calendar_action', function (string $action): void {
       }
       if ($words || ($media_changed && in_array($was, ['waiting', 'approved'], true))) do_action('ias_post_edited', $id, $holds); // once, after everything: an approve-first post goes out for a fresh yes with all of it
       $lane_a = $p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting'], true) && !$holds;
-      $flash(esc_html('Saved ' . ias_chat_list($did) . '.') . ($holds ? ' ' . esc_html('It still needs a decision: ' . implode(' ', $holds)) : '') . ($lane_a ? ' ' . esc_html('It is not approved — saving never approves; it goes for a yes as usual.') : ''), $holds ? 'warning' : 'success');
+      $stop = !$holds ? '' : ($was === 'held' ? ' It still needs a decision — the reasons are in the bar above.' : ' What you saved stops it for a decision — the reasons are in the bar above.');
+      $flash(esc_html('Saved ' . ias_chat_list($did) . '.' . $stop) . ($lane_a ? ' ' . esc_html('It is not approved — saving never approves; it goes for a yes as usual.') : ''), $holds ? 'warning' : 'success');
       return;
 
     case 'media':
@@ -208,6 +214,14 @@ if (!function_exists('ias_mark_verify')) {
   }
 }
 
+/** The question before Rewrite: whose words it throws away. */
+if (!function_exists('ias_rewrite_confirm')) {
+  function ias_rewrite_confirm(array $p): string {
+    $by = (string) ($p['flags']['edited_by'] ?? '');
+    return ($by !== '' ? 'Throw away the words ' . ias_actor_name($by) . ' edited' : 'Throw away this draft') . ' and have Claude write a new one? Pictures chosen by hand stay. (Counts against the monthly Claude cap.)';
+  }
+}
+
 /** "Skip this post…", folded: the reason and the button open on a click. */
 if (!function_exists('ias_skip_details')) {
   function ias_skip_details(array $p): string {
@@ -228,7 +242,7 @@ add_action('ias_post_view_bar', function (array $p): void {
   $text = (string) ($c['text'] ?? '');
   $form = function (string $action, string $label, string $class = 'button', string $extra = '', string $confirm = '') use ($p) { return ias_post_action_form($p, $action, $label, $class, $extra, $confirm); };
   $editable = ias_post_editable($p);
-  $rewrite = $editable && $p['status'] !== 'skipped' && $text !== '' ? $form('regenerate', 'Rewrite', 'button', '', 'Throw away this draft and have Claude write a new one? (Counts against the monthly Claude cap.)') : '';
+  $rewrite = $editable && $p['status'] !== 'skipped' && $text !== '' ? $form('regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '';
   $level = ''; $lines = ''; $buttons = '';
 
   if ($p['status'] === 'held' && !empty($flags['holds'])) {
@@ -296,7 +310,8 @@ if (!function_exists('ias_pic_tile')) {
       . '<span class="ias-pic-n">' . ($i === 0 ? '1 · Lead' : $i + 1) . '</span>'
       . '<button type="button" class="ias-pic-x" title="Take out of this post" aria-label="Take picture ' . ($i + 1) . ' out of this post">&times;</button>'
       . '<span class="ias-pic-move"><button type="button" class="ias-pic-l" aria-label="Move earlier">&lsaquo;</button><button type="button" class="ias-pic-r" aria-label="Move later">&rsaquo;</button></span>'
-      . '<span class="ias-pic-alt">' . esc_html($it['alt']) . ($own ? ' <button type="button" class="button-link ias-pic-alt-edit" aria-label="Change the alt text of picture ' . ($i + 1) . '">✎</button>' : '') . '</span></li>';
+      . ($own ? '<button type="button" class="ias-pic-alt-edit" title="Change the alt text" aria-label="Change the alt text of picture ' . ($i + 1) . '">✎</button>' : '')
+      . '<span class="ias-pic-alt">' . esc_html($it['alt']) . '</span></li>';
   }
 }
 
@@ -328,7 +343,7 @@ add_action('ias_post_view_main', function (array $p): void {
     echo '<div class="ias-foot"><div class="ias-actions"><button form="ias-text-form" class="button ias-save' . ($primary ? ' button-primary' : '') . '" data-ia-busy="Saving…">Save changes</button>'
       . ($p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting', 'held'], true) ? ' <button form="ias-text-form" class="button" name="ias_and_approve" value="1">Save and approve</button>' : '')
       . ' <span class="ias-unsaved" hidden>Not saved yet</span></div>'
-      . ($bar_owns ? '' : '<div class="ias-actions">' . ($p['status'] !== 'skipped' ? ias_post_action_form($p, 'regenerate', 'Rewrite', 'button', '', 'Throw away this draft and have Claude write a new one? (Counts against the monthly Claude cap.)') : '') . ias_skip_details($p) . '</div>') . '</div>';
+      . ($bar_owns ? '' : '<div class="ias-actions">' . ($p['status'] !== 'skipped' ? ias_post_action_form($p, 'regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '') . ias_skip_details($p) . '</div>') . '</div>';
   } else {
     $why = !empty($p['locked']) ? 'A person moved or edited this post in OneUp, so it is changed there now — the plugin leaves their version as it is.'
       : (in_array(ias_post_shown_status($p), ['pushed', 'published'], true) ? 'This post has gone to OneUp. Live posts are never edited — editing resets their reach — so a correction is posted as a comment.' : 'This post cannot be edited now.');
@@ -499,6 +514,7 @@ add_action('admin_enqueue_scripts', function (): void {
   if (($_GET['page'] ?? '') !== IAS_PAGE_CALENDAR || empty($_GET['post']) || !current_user_can('manage_options')) return;
   wp_enqueue_media();
   wp_enqueue_script('jquery-ui-sortable');
+  wp_enqueue_script('jquery-touch-punch'); // a finger drags a picture too
   wp_add_inline_script('jquery-ui-sortable', <<<'JS'
 jQuery(function ($) {
   // The preview's network tabs (delegated: the preview is redrawn as the post changes).
@@ -519,18 +535,21 @@ jQuery(function ($) {
       .append($('<img/>').attr({ src: t.thumb, alt: '', draggable: 'false' }))
       .append('<span class="ias-pic-n"></span><button type="button" class="ias-pic-x" title="Take out of this post">&times;</button>'
         + '<span class="ias-pic-move"><button type="button" class="ias-pic-l" aria-label="Move earlier">&lsaquo;</button><button type="button" class="ias-pic-r" aria-label="Move later">&rsaquo;</button></span>');
-    var $alt = $('<span class="ias-pic-alt"/>').text(t.alt || '');
-    if (/^a/.test(t.key) && $form.length) $alt.append(' ').append($('<button type="button" class="button-link ias-pic-alt-edit"/>').text('✎'));
-    return $li.append($alt);
+    if (/^a/.test(t.key) && $form.length) $li.append($('<button type="button" class="ias-pic-alt-edit" title="Change the alt text"/>').text('✎'));
+    return $li.append($('<span class="ias-pic-alt"/>').text(t.alt || ''));
   }
   function pics() {
     return $list.children('li').map(function () { var $li = $(this); return { key: $li.attr('data-key'), thumb: $li.attr('data-thumb') || $li.find('img').attr('src'), alt: $li.attr('data-alt') || '', alt0: $li.attr('data-alt0') || '' }; }).get();
   }
   function state() { return { text: $text.val(), comment: $comment.length ? $comment.val() : null, pics: pics() }; }
   function sig(st) { return JSON.stringify([st.text, st.comment, $.map(st.pics, function (p) { return p.key + '\u0001' + p.alt; })]); }
-  var startSig = sig(state());
+  var startState = state(), startSig = sig(startState);
   function dirty() { return sig(state()) !== startSig; }
   $('.ias-save').each(function () { $(this).data('rest', $(this).hasClass('button-primary')); });
+  // The bar's Approve approves the saved post: while other words are on the screen it waits (Save and approve does both).
+  var $approve = $('.ias-bar input[name="ias_cal_action"][value="approve"]').closest('form').find('button');
+  $approve.after($('<span class="description ias-approve-wait" hidden/>').text('Save your changes first — or use Save and approve.'));
+  var $andApprove = $('button[name="ias_and_approve"]');
 
   // Everything that follows a change: the numbers on the tiles, the order to save, Not saved yet, and the preview (chat.php).
   function changed(now) {
@@ -547,7 +566,10 @@ jQuery(function ($) {
     $('#ias-pic-add').prop('disabled', keys.length >= max);
     $('#ias-pic-full').prop('hidden', keys.length < max);
     $('.ias-unsaved').prop('hidden', !d);
-    $('.ias-save').each(function () { $(this).toggleClass('button-primary', d || !!$(this).data('rest')); });
+    $('.ias-save').prop('disabled', !d).toggleClass('button-primary', d); // nothing to save, nothing to press
+    $andApprove.prop('hidden', !d);
+    $approve.prop('disabled', d);
+    $('.ias-approve-wait').prop('hidden', !d);
     $('#ias-pic-save').prop('disabled', !d).toggleClass('button-primary', d); // a post with no words yet saves its pictures alone
     $(document).trigger('ias:changed', [d, !!now]);
   }
@@ -555,9 +577,13 @@ jQuery(function ($) {
   // The screen, for Talk it over: read it, put a version on it, and what to send with a request.
   window.iasPost = {
     state: state,
+    saved: function () { return startState; },
     dirty: dirty,
     restore: function (st, now) {
-      if (st.text !== null && st.text !== undefined) { $text.val(st.text).addClass('ias-flash'); setTimeout(function () { $text.removeClass('ias-flash'); }, 1200); }
+      if (st.text !== null && st.text !== undefined) {
+        $text.val(st.text).attr('rows', Math.min(30, Math.max(8, st.text.split('\n').length + Math.ceil(st.text.length / 80))));
+        $text.addClass('ias-flash'); setTimeout(function () { $text.removeClass('ias-flash'); }, 1200);
+      }
       if ($comment.length && st.comment !== null && st.comment !== undefined) { $comment.val(st.comment).addClass('ias-flash'); setTimeout(function () { $comment.removeClass('ias-flash'); }, 1200); }
       if (st.pics) { $list.empty(); $.each(st.pics, function (i, t) { $list.append(tile(t)); }); $list.addClass('ias-flash'); setTimeout(function () { $list.removeClass('ias-flash'); }, 1200); }
       changed(now);
@@ -585,13 +611,27 @@ jQuery(function ($) {
   $list.on('click', '.ias-pic-x', function () { $(this).closest('li').remove(); changed(); });
   $list.on('click', '.ias-pic-l', function () { var $li = $(this).closest('li'); $li.prev().before($li); changed(); $li.find('.ias-pic-l').trigger('focus'); });
   $list.on('click', '.ias-pic-r', function () { var $li = $(this).closest('li'); $li.next().after($li); changed(); $li.find('.ias-pic-r').trigger('focus'); });
+  // Alt text, edited in the tile itself (the full text shows there, which a phone's tooltip cannot).
   $list.on('click', '.ias-pic-alt-edit', function () {
-    var $li = $(this).closest('li'), now = $li.attr('data-alt') || '';
-    var alt = window.prompt('Alt text — what a screen reader says for this picture (blank goes back to the plugin\'s):', now);
-    if (alt === null) return;
-    alt = $.trim(alt).slice(0, 250);
-    $li.attr({ 'data-alt': alt, title: alt }).find('.ias-pic-alt').contents().first().replaceWith(document.createTextNode(alt ? alt + ' ' : '(the plugin\'s) '));
-    changed();
+    var $li = $(this).closest('li');
+    if ($li.hasClass('is-editing')) return;
+    $li.addClass('is-editing');
+    var $ed = $('<div class="ias-pic-alt-ed"/>'), $ta = $('<textarea rows="4" maxlength="250"/>').attr('aria-label', 'Alt text — what a screen reader says for this picture').val($li.attr('data-alt') || '');
+    var close = function (save) {
+      if (save) {
+        var alt = $.trim($ta.val()).slice(0, 250) || $li.attr('data-alt0') || ''; // blank goes back to the plugin's
+        $li.attr({ 'data-alt': alt, title: alt }).find('.ias-pic-alt').text(alt);
+      }
+      $ed.remove(); $li.removeClass('is-editing');
+      if (save) changed();
+      $li.find('.ias-pic-alt-edit').trigger('focus');
+    };
+    $ed.append($ta).append($('<div class="ias-pic-alt-btns"/>')
+      .append($('<button type="button" class="button button-small"/>').text('Done').on('click', function () { close(true); })).append(' ')
+      .append($('<button type="button" class="button-link"/>').text('Cancel').on('click', function () { close(false); })));
+    $ta.on('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); close(true); } if (e.key === 'Escape') { e.preventDefault(); close(false); } });
+    $li.append($ed);
+    $ta.trigger('focus');
   });
   $('#ias-pic-add').on('click', function (e) {
     e.preventDefault();

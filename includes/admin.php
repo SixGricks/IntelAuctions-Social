@@ -131,12 +131,12 @@ if (!function_exists('ias_admin_styles')) {
       .ias-post{display:grid;gap:0 20px;max-width:1880px;grid-template-columns:minmax(0,1fr);grid-template-areas:"preview" "edit" "side"}
       .ias-post-edit{grid-area:edit;min-width:0}.ias-post-preview{grid-area:preview;min-width:0}.ias-post-side{grid-area:side;min-width:0}
       @media (min-width:1280px){.ias-post{grid-template-columns:minmax(0,1fr) 480px;grid-template-rows:auto 1fr;grid-template-areas:"edit preview" "edit side"}.ias-post-side{align-self:start}}
-      @media (min-width:1800px){.ias-post{grid-template-columns:minmax(0,1fr) 500px 360px;grid-template-rows:auto;grid-template-areas:"edit preview side"}}
+      @media (min-width:1800px){.ias-post{grid-template-columns:minmax(0,1fr) 500px 360px;grid-template-rows:auto;grid-template-areas:"edit preview side"}.ias-post-preview{position:sticky;top:40px;align-self:start;max-height:calc(100vh - 56px);overflow-y:auto}}
       @media (min-width:2600px){.ias-post,.ias-bar.notice,.ias-attn{max-width:2200px}.ias-post{grid-template-columns:minmax(0,1fr) 560px 420px}}
       .ias-post .ias-card{margin:0 0 16px}
       .ias-bar.notice{margin:0 0 16px;max-width:1880px;box-sizing:border-box;padding:10px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
       .ias-bar .ias-bar-text{flex:1 1 420px}.ias-bar .ias-bar-text p,.ias-bar ul{margin:.15em 0}
-      .ias-reasons{list-style:disc;margin-left:20px}
+      .ias-reasons,.ias-bar ul.ias-reasons{list-style:disc;margin-left:20px}
       .ias-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
       .ias-actions form,form.ias-act{display:inline-flex;gap:6px;align-items:center;margin:0}
       .ias-skip summary{cursor:pointer;color:#b32d2e;text-decoration:underline;list-style:none;padding:4px 2px}
@@ -183,13 +183,22 @@ if (!function_exists('ias_admin_styles')) {
       .ias-pic-x:hover,.ias-pic-x:focus{background:#b32d2e;color:#fff;border-color:#b32d2e}
       .ias-pic-move{position:absolute;left:4px;right:4px;top:calc(50% - 10px);display:flex;justify-content:space-between;opacity:0}
       .ias-pic:hover .ias-pic-move,.ias-pic-move:focus-within{opacity:1}
+      @media (hover:none){.ias-pic-move{opacity:1}.ias-pic-move button,.ias-pic-x,.ias-pic-alt-edit{width:32px;height:32px;line-height:28px}}
+      .ias-pic-alt-edit{position:absolute;top:36px;right:7px;width:24px;height:24px;border-radius:50%;border:1px solid #dcdcde;background:#fff;color:#2271b1;cursor:pointer;font-size:13px;line-height:20px;padding:0}
+      .ias-pic-alt-edit:hover,.ias-pic-alt-edit:focus{background:#2271b1;color:#fff;border-color:#2271b1}
+      @media (hover:none){.ias-pic-alt-edit{top:44px}}
+      .ias-pic.is-editing .ias-pic-alt{display:none}
+      .ias-pic-alt-ed textarea{width:100%;font-size:12px;line-height:1.35;margin-top:4px}
+      .ias-pic-alt-btns{display:flex;gap:6px;align-items:center;margin-top:3px}
+      .ias-pics.ias-flash{animation:iasflash-o 1.2s ease-out}
+      @keyframes iasflash-o{from{outline:3px solid #dba617;outline-offset:2px}to{outline:3px solid transparent;outline-offset:2px}}
       .ias-pic-move button{border:0;background:rgba(0,0,0,.6);color:#fff;width:24px;height:24px;border-radius:50%;cursor:pointer;padding:0;font-size:16px;line-height:22px}
       .ias-pic-alt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:11px;color:#50575e;line-height:1.3;margin-top:4px}
       .ias-pic-hole{border:2px dashed #2271b1;border-radius:6px;background:#f0f6fc;min-height:140px}
       .ias-pic-dirty{color:#996800}
       .ias-summary-scroll{overflow-x:auto}
       /* Talk it over: the chat under the words. */
-      .ias-chat-log{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px 2px 8px}
+      .ias-chat-log{max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px 2px 8px}
       .ias-msg{max-width:88%;border-radius:12px;padding:7px 11px;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
       .ias-msg b{display:block;font-size:11px;color:#50575e;font-weight:600;margin-bottom:1px}
       .ias-msg-t{white-space:pre-wrap}
@@ -198,6 +207,15 @@ if (!function_exists('ias_admin_styles')) {
       .ias-msg.is-wait .ias-msg-t{color:#50575e;font-style:italic}
       .ias-msg.err{align-self:flex-start;background:#fcf0f1;color:#8a2424}
       .ias-msg-acts{margin-top:4px;font-size:12px}.ias-msg-note{color:#50575e}
+      .ias-msg-change{margin-top:6px;border-top:1px solid #dcdcde;padding-top:6px}
+      .ias-msg-what{font-size:12px;font-weight:600;color:#1d2327}
+      .ias-msg-diff{background:#fff;border:1px solid #dcdcde;border-radius:6px;padding:6px 8px;margin:4px 0;font-size:12px;line-height:1.45;max-height:150px;overflow-y:auto;overflow-wrap:break-word}
+      .ias-msg-diff-h{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#646970;margin-bottom:2px}
+      .ias-msg-diff del{background:#fcf0f1;color:#8a2424}.ias-msg-diff ins{background:#edfaef;color:#00631a;text-decoration:underline}
+      .ias-msg-pics{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}.ias-msg-pics img{width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #dcdcde}
+      .ias-msg-pics img:first-child{outline:2px solid #2271b1;outline-offset:-2px}
+      .ias-msg-change.is-off .ias-msg-diff,.ias-msg-change.is-off .ias-msg-pics{opacity:.55}
+      .ias-msg-change.is-on .ias-msg-note{color:#996800;font-weight:600}
       .ias-msg-warn{margin-top:4px;font-size:12px;color:#8a2424}
       .ias-msg-rule{margin-top:6px;font-size:12px;border-top:1px solid #dcdcde;padding-top:6px}
       .ias-chat-quick{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
@@ -209,7 +227,7 @@ if (!function_exists('ias_admin_styles')) {
       @keyframes iasflash{from{background:#fcf9e8;box-shadow:0 0 0 2px #dba617}to{background:#fff;box-shadow:none}}
       .ias-post-preview.is-updating .ias-fb{opacity:.6;transition:opacity .2s}
       /* Brand voice. */
-      .ias-diff{white-space:normal;overflow-wrap:anywhere;background:#f6f7f7;border:1px solid #dcdcde;border-radius:6px;padding:10px;margin:8px 0;font-size:13px;line-height:1.5;max-width:720px}
+      .ias-diff{white-space:normal;overflow-wrap:break-word;background:#f6f7f7;border:1px solid #dcdcde;border-radius:6px;padding:10px;margin:8px 0;font-size:13px;line-height:1.5;max-width:720px}
       .ias-diff del,.ias-rule-diff del{background:#fcf0f1;color:#8a2424}.ias-diff ins,.ias-rule-diff ins{background:#edfaef;color:#00631a;text-decoration:underline}
       .ias-rule-diff{list-style:none;margin:8px 0;padding:0}.ias-rule-diff li{margin:0 0 4px}
       .ias-voice-table td{vertical-align:top}.ias-voice-table details summary{cursor:pointer;color:#2271b1}
@@ -217,6 +235,11 @@ if (!function_exists('ias_admin_styles')) {
       .ias-asks{list-style:disc;margin:0 0 0 20px}
       .ias-suggest{border-color:#72aee6;background:#f0f6fc}
       .ias-filters{line-height:2}
+      .ias-post [hidden],.ias-bar [hidden]{display:none!important} /* the .button display of WordPress beats the hidden attribute */
+      .ias-switches-fold{margin:10px 0 16px}.ias-switches-fold summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+      .ias-switches-fold summary::-webkit-details-marker{display:none}.ias-switches-fold summary .ias-switch{font-size:13px}
+      .ias-switches-more{color:#2271b1;text-decoration:underline;font-size:12px}.ias-switches-fold[open] .ias-switches{margin-top:8px}
+      @media (max-width:782px){.ias-voice-table thead{display:none}.ias-voice-table,.ias-voice-table tbody,.ias-voice-table tr,.ias-voice-table td{display:block;width:auto!important}.ias-voice-table tr{border-bottom:1px solid #dcdcde;padding:6px 0}.ias-voice-table td{padding:4px 8px}}
       @media (max-width:600px){.ias-pics{grid-template-columns:repeat(3,minmax(0,1fr))}.ias-cal{grid-template-columns:minmax(0,1fr)}.ias-day{min-height:0}.ias-day.sun{display:none}}
       @media (max-width:1100px){.ias-cols{grid-template-columns:minmax(0,1fr)}.ias-cal{grid-template-columns:repeat(2,minmax(0,1fr))}.ias-cal-head{display:none}.ias-day.blank{display:none}}
     </style>';
@@ -225,10 +248,12 @@ if (!function_exists('ias_admin_styles')) {
 
 /**
  * The switches as a strip of chips — on every screen of this plugin, so
- * nobody wonders whether anything can reach Facebook.
+ * nobody wonders whether anything can reach Facebook. $compact (a post's
+ * page): one line saying what that means, the chips folded under it, so the
+ * post's own bar is on the first screen of a phone.
  */
 if (!function_exists('ias_switches_strip')) {
-  function ias_switches_strip(): string {
+  function ias_switches_strip(bool $compact = false): string {
     $s = ias_settings();
     $out = '<div class="ias-switches">';
     $chip = function (string $label, string $state, string $class) {
@@ -246,6 +271,14 @@ if (!function_exists('ias_switches_strip')) {
       foreach (ias_channels_extra_on() as $ch) $out .= $chip((string) ias_channel($ch)['label'], 'Dry run only — not sent yet', 'on');
     }
     $out .= '</div>';
+    if ($compact) {
+      $on = array_values(array_filter(array_keys(ias_post_types()), function ($t) { return $t !== 'human' && ias_type_on($t); }));
+      if (empty($s['master'])) $line = ['off', 'Nothing reaches Facebook: the master switch is off.'];
+      elseif (!empty($s['paused'])) $line = ['alert', 'Paused: nothing new goes to OneUp.'];
+      elseif (!empty($s['dry_run'])) $line = ['on', 'Dry run: what would go to OneUp is written to the log; nothing is sent.'];
+      else $line = ['on', 'Live: ' . ($on ? implode(', ', array_map(function ($t) { return ias_post_type($t)['short']; }, $on)) . ' posts go to Facebook.' : 'no post type is switched on, so nothing is sent.')];
+      $out = '<details class="ias-switches-fold"><summary><span class="ias-switch ' . esc_attr($line[0]) . '">' . esc_html($line[1]) . '</span> <span class="ias-switches-more">All the switches</span></summary>' . $out . '</details>';
+    }
     $why = function_exists('ias_ai_blocker') ? ias_ai_blocker() : '';
     if ($why !== '') $out .= '<div class="notice notice-warning inline"><p><strong>Drafts are stopped.</strong> ' . esc_html($why) . ' Planning goes on; a post gets its words once Claude can be asked again.</p></div>';
     return $out;

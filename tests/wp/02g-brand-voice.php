@@ -166,6 +166,7 @@ $_GET = ['page' => IAS_PAGE_VOICE];
 ob_start(); ias_voice_render(); $html = (string) ob_get_clean();
 t_ok(strpos($html, 'House rules') !== false && strpos($html, 'The log of final posts') !== false && strpos($html, 'Claude\'s suggestion') !== false, 'Brand voice has the rules, the log and Claude\'s suggestion');
 t_ok(strpos($html, '<ins>+ Never use the word nestled.</ins>') !== false, '…the suggestion shows what it would add');
+t_ok(strpos($html, '>Use these rules</button>') !== false && strpos($html, 'Adds 2 rules.') !== false, '…and says how many rules it adds');
 t_ok(strpos($html, 'Edited by admin') !== false && strpos($html, 'Approved as written by DJ') !== false && strpos($html, 'As Claude wrote it') !== false, '…whose words each post is, by name');
 t_ok(strpos($html, '<del>') !== false && strpos($html, '<ins>Forty') !== false, '…and what the person changed, word by word');
 $_GET = ['page' => IAS_PAGE_VOICE, 'show' => 'written'];

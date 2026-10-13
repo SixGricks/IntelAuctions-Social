@@ -22,7 +22,7 @@ if (!function_exists('ias_voice_handle_post')) {
     $back = isset($_POST['ias_back']) ? esc_url_raw(wp_unslash($_POST['ias_back'])) : '';
     $flash = function (string $html, string $level = 'success') { ia_flash_set('<div class="notice notice-' . $level . '"><p>' . $html . '</p></div>'); };
     $refused = function (array $r) {
-      return $r ? ' Left out: ' . esc_html(implode('; ', array_map(function ($x) { return '"' . $x[0] . '" (' . $x[1] . ')'; }, $r))) . '.' : '';
+      return $r ? ' Left out: ' . esc_html(implode('; ', array_map(function ($x) { return '"' . $x[0] . '": ' . $x[1]; }, $r))) . '.' : '';
     };
 
     switch ($action) {
@@ -61,6 +61,16 @@ if (!function_exists('ias_voice_handle_post')) {
 add_action('admin_init', 'ias_voice_handle_post');
 
 /* ---------------- Render ---------------- */
+
+/** "Adds 1 rule and takes out 3 of your 4." */
+if (!function_exists('ias_voice_change_count')) {
+  function ias_voice_change_count(int $added, int $gone, int $have): string {
+    $bits = [];
+    if ($added) $bits[] = 'adds ' . $added . ' rule' . ($added === 1 ? '' : 's');
+    if ($gone) $bits[] = 'takes out ' . $gone . ' of your ' . $have;
+    return $bits ? ucfirst(implode(' and ', $bits)) . '.' : 'Only rewords your rules.';
+  }
+}
 
 /** Who a row's words belong to, in words. */
 if (!function_exists('ias_voice_who')) {
@@ -110,10 +120,10 @@ if (!function_exists('ias_voice_render')) {
       } else {
         echo '<p class="description">The same rules you have now.</p>';
       }
-      if (!empty($sugg['refused'])) echo '<p class="description">Left out of the suggestion: ' . esc_html(implode('; ', array_map(function ($x) { return '"' . $x[0] . '" (' . $x[1] . ')'; }, (array) $sugg['refused']))) . '.</p>';
+      if (!empty($sugg['refused'])) echo '<p class="description">Left out of the suggestion: ' . esc_html(implode('; ', array_map(function ($x) { return '"' . $x[0] . '": ' . $x[1]; }, (array) $sugg['refused']))) . '.</p>';
       echo '<form method="post">' . $nonce . $back . '<input type="hidden" name="ias_voice_action" value="use_suggestion">'
         . '<p><label for="ias-sugg"><strong>The suggested rules</strong> — change them as you like before you save</label><textarea id="ias-sugg" name="ias_rules" rows="' . max(4, min(16, count($sugg['rules']) + 1)) . '" class="large-text">' . esc_textarea(implode("\n", $sugg['rules'])) . '</textarea></p>'
-        . '<div class="ias-foot"><div class="ias-actions"><button class="button button-primary">Use these rules</button></div></div></form>'
+        . '<div class="ias-foot"><div class="ias-actions"><button class="button button-primary">' . esc_html($gone ? 'Replace my rules with these' : 'Use these rules') . '</button> <span class="description">' . esc_html(ias_voice_change_count(count($added), count($gone), count($rules))) . '</span></div></div></form>'
         . '<form method="post" class="ias-act">' . $nonce . $back . '<input type="hidden" name="ias_voice_action" value="discard_suggestion"><button class="button-link">Discard the suggestion</button></form></div>';
     }
 
@@ -163,7 +173,7 @@ if (!function_exists('ias_voice_render')) {
         };
         $teaches = $r['learn'] && $r['clean'] && ($r['touched'] || $r['star']);
         echo ($teaches ? ia_ui_badge('Teaches', 'ok') : ia_ui_badge($r['learn'] ? 'Logged' : 'Not learned from', 'muted')) . '<br>'
-          . $toggle('star', !$r['star'], $r['star'] ? '★ Starred — take the star off' : '☆ Star as a good example')
+          . ($r['clean'] || $r['star'] ? $toggle('star', !$r['star'], $r['star'] ? '★ Starred — take the star off' : '☆ Star as a good example') : '') // a post that stopped for a decision is never an example
           . $toggle('learn', !$r['learn'], $r['learn'] ? 'Don\'t learn from this' : 'Learn from this again');
         echo '</td></tr>';
       }
@@ -191,7 +201,8 @@ if (!function_exists('ias_voice_render')) {
     if (!empty($learned['at'])) echo '<p class="description">Last read ' . esc_html(date_i18n('M j, g:i a', strtotime((string) $learned['at']))) . '; ' . (int) $new . ' new since.</p>';
     else echo '<p class="description">' . (int) $new . ' post' . ($new === 1 ? '' : 's') . ' to read.</p>';
     echo '<form method="post">' . $nonce . $back . '<input type="hidden" name="ias_voice_action" value="learn"><button class="button" data-ia-busy="Reading…"' . ($why !== '' || !($counts['teaching'] ?? 0) ? ' disabled' : '') . '>Suggest updates from the log</button></form>';
-    echo '<p class="description">' . ($why !== '' ? esc_html($why) : 'One Claude call, counted against the monthly cap.') . '</p></div>';
+    $cannot = $why !== '' ? $why : (!($counts['teaching'] ?? 0) ? 'Nothing to read yet: no post in the log was written, approved or starred by a person. Edit or approve a post, or star one below.' : '');
+    echo '<p class="description">' . esc_html($cannot !== '' ? $cannot : 'One Claude call, counted against the monthly cap.') . '</p></div>';
     echo '</div></div></div>';
   }
 }

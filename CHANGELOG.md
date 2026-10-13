@@ -26,6 +26,30 @@ without approving."
 - **First comment lead-ins in Settings** (`comment_leads`). Results now says
   "View the full listing:" — DJ: never "how it sold". Posts already written
   keep their comment until edited or rewritten.
+- **After a second UI/UX review** (every finding fixed or noted):
+  - Claude's answer shows what it changed where DJ is looking — a word diff of
+    the text or comment, thumbnails of new pictures — with **Show me**, and a
+    note per answer kept true as the post changes (On the post above — not
+    saved yet / Saved / Not on the post now). Was: the change happened off
+    screen, and the notes went stale after Undo or a reload.
+  - Undo puts back only what that answer changed and asks before it would
+    throw away typing done since (it used to restore the whole screen).
+  - The bar's Approve waits while unsaved changes are on the screen (it would
+    have approved the saved words); Save and approve shows only then.
+  - Save changes is greyed out until something changes, and a save with
+    nothing changed saves nothing (it used to make the words a person's edit).
+  - Alt text is edited in the tile (✎ is a 24px button, 32px on touch), not a
+    browser prompt; on a phone ‹ › always show and a finger can drag
+    (jquery-touch-punch).
+  - A post's page folds the switches under one line, so the decision bar is
+    on a phone's first screen; the Brand voice log stacks into cards on a
+    phone; the Guide's tables scroll inside themselves.
+  - The Approval card says "DJ or Jacob", not "Lane A" and email addresses;
+    Rewrite says whose words it throws away; "Use these rules" says how many
+    rules it adds and takes out (and is "Replace my rules with these" when it
+    takes any out), and a greyed-out Suggest updates says why; no star on a
+    post that can never be an example; the message after a save that stops a
+    post points to the bar instead of repeating it.
 
 ## 0.7.0 (2026-10-13) — Talk it over, and the brand voice (every switch still off)
 DJ, after reading more previews: "a little AI chatbot I can discuss the post

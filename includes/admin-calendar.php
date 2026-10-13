@@ -176,7 +176,7 @@ if (!function_exists('ias_calendar_render_post')) {
     }
     ia_ui_header($def['short'] . ' post · ' . ias_post_subject($p), implode(' · ', $bits), $back);
     ias_header_end();
-    echo ias_switches_strip();
+    echo ias_switches_strip(true);
     /** The bar across the top: what this post is waiting for, and the buttons that settle it. */
     do_action('ias_post_view_bar', $p);
 
