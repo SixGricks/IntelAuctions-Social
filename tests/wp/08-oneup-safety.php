@@ -35,7 +35,7 @@ $mk = function (string $title, string $town, string $county, string $sale) use (
 };
 $lp = function (int $listing) { return ias_post_by_slot('listing:' . $listing); };
 $writes = function (int $from) {
-  return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletepost'], true); }));
+  return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletescheduledpost'], true); }));
 };
 $copies = function (string $text) use (&$S) {
   return array_values(array_filter($S['scheduled'], function ($r) use ($text) { return ias_norm_text((string) $r['content']) === ias_norm_text($text); }));
@@ -83,6 +83,30 @@ $S['draft_real'] = false;
 $S['lose_answer'] = 1;
 $v = ias_oneup_verify('admin');
 t_ok(!$v['ok'] && $S['drafts'] === [], 'a test draft whose answer was lost is found among the drafts and deleted');
+// The live site's run (Oct 13, 2026): the delete went to an address OneUp does not have ("deletepost") and
+// came back as its 404 web page. The test draft stays (it never publishes) and the next Verify deletes it by its id.
+add_filter('ias_oneup_endpoints', $guess = function ($e) { $e['delete'] = ['GET', 'deletepost']; return $e; });
+$v = ias_oneup_verify('admin');
+remove_filter('ias_oneup_endpoints', $guess);
+$del = array_values(array_filter($v['steps'], function ($st) { return strpos((string) $st['label'], 'Delete it') === 0; }))[0] ?? [];
+t_ok(!$v['ok'] && ($del['ok'] ?? null) === false && strpos((string) $del['detail'], 'HTTP 404') !== false, 'a delete OneUp has no address for fails Verify, with OneUp\'s answer');
+t_ok(strpos((string) $del['detail'], 'the next Verify deletes it') !== false && strpos((string) $del['detail'], 'by hand') === false, '…and says the next Verify deletes the test draft — nobody is sent into OneUp');
+t_eq(1, count($S['drafts']), '…the test draft is left meanwhile (a draft never publishes)');
+$left_id = (string) key($S['drafts']);
+t_eq([$left_id], (array) get_option('ias_oneup_verify_leftovers'), '…its id kept');
+t_ok(!ias_oneup_gone(['ok' => false, 'code' => 404, 'data' => null, 'error' => 'OneUp answered HTTP 404: Page Not Found']), 'OneUp\'s 404 web page is never taken for "the post is gone"');
+t_ok(ias_oneup_gone(['ok' => false, 'code' => 404, 'data' => ['error' => true, 'message' => 'Post not found'], 'error' => 'OneUp answered HTTP 404: Post not found']), '…while its answer that a post is not found still is (when its list agrees)');
+delete_option('ias_oneup_verify_leftovers'); // as 0.10.1 left it: no list, only that run's own steps
+$n = count($S['calls']);
+$v = ias_oneup_verify('admin');
+$early = array_values(array_filter($v['steps'], function ($st) { return $st['label'] === 'Earlier test drafts'; }))[0] ?? [];
+t_ok(($early['ok'] ?? null) === true && strpos((string) $early['detail'], 'Deleted #' . $left_id) === 0, 'the next Verify deletes the earlier test draft by its id, read from that run\'s own steps');
+t_eq([], $S['drafts'], '…no test draft is left in OneUp');
+t_eq([], (array) get_option('ias_oneup_verify_leftovers', []), '…nor on the list');
+$dels = ias_t_oneup_calls($n, 'deletescheduledpost');
+t_ok($dels && $dels[0]['method'] === 'POST' && (string) $dels[0]['params']['post_id'] === $left_id, '…through OneUp\'s documented delete: POST deletescheduledpost with the post_id');
+t_ok($v['ok'], '…and Verify passes');
+
 $v = ias_oneup_verify('admin');
 t_ok($v['ok'] && ias_oneup_verified(), 'Verify OneUp passes');
 t_ok(strpos($screen(IAS_PAGE_SETTINGS), 'passed for this page') !== false, '…and Settings says it passed for this page');

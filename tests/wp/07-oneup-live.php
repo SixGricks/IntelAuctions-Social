@@ -33,7 +33,7 @@ $mk = function (string $title, string $town, string $county, string $sale) use (
 };
 $lp = function (int $listing) { return ias_post_by_slot('listing:' . $listing); };
 $writes = function (int $from) {
-  return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletepost'], true); }));
+  return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletescheduledpost'], true); }));
 };
 $act = function (string $action, array $post) {
   $_POST = ['ias_cal_action' => $action] + array_map('strval', $post);
@@ -138,7 +138,7 @@ ias_plan_run();
 ias_push_run();
 $bp = $lp($b);
 t_ok(substr((string) $bp['scheduled_at'], 0, 10) !== $day, 'a human post in OneUp moves the schedule around it (' . $day . ' → ' . substr((string) $bp['scheduled_at'], 0, 10) . ')');
-t_ok(count(ias_t_oneup_calls($n, 'deletepost')) === 1 && count(ias_t_oneup_calls($n, 'scheduleimagepost')) === 1, '…and the moved post is re-scheduled on OneUp');
+t_ok(count(ias_t_oneup_calls($n, 'deletescheduledpost')) === 1 && count(ias_t_oneup_calls($n, 'scheduleimagepost')) === 1, '…and the moved post is re-scheduled on OneUp');
 
 // ---- 8. A person deletes our post in OneUp: believed on a second read-back, half an hour later ----
 ias_t_clock('2026-11-02 05:50');

@@ -38,7 +38,7 @@ $mk = function (string $title, string $sale) use ($T, $lead) {
 $lp = function (int $listing) { return ias_post_by_slot('listing:' . $listing); };
 $writes = function (int $from, string $acct = '') {
   return array_values(array_filter(ias_t_oneup_calls($from), function ($c) use ($acct) {
-    return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletepost'], true)
+    return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletescheduledpost'], true)
       && ($acct === '' || (string) ($c['params']['social_network_id'] ?? '') === $acct);
   }));
 };
@@ -209,7 +209,7 @@ $n = count($S['calls']);
 ias_push_run();
 $p = $lp($a);
 $g = $gb($p);
-$dels = ias_t_oneup_calls($n, 'deletepost');
+$dels = ias_t_oneup_calls($n, 'deletescheduledpost');
 t_ok(in_array($old, array_map(function ($c) { return (string) $c['params']['post_id']; }, $dels), true), 'an edited post\'s Google copy is taken off by its id');
 t_ok((string) $g['id'] !== $old && isset($S['scheduled'][(int) $g['id']]) && !isset($S['scheduled'][(int) $old]), '…and scheduled again');
 t_ok(strpos((string) $S['scheduled'][(int) $g['id']]['content'], '717') === false && strpos((string) $S['scheduled'][(int) $g['id']]['content'], 'in-person auction') !== false, '…with the new words, its phone number left out');
@@ -255,7 +255,7 @@ $n = count($S['calls']);
 ias_push_run();
 $p = $lp($a);
 t_eq('person', (string) ($p['flags']['gbp_off'] ?? ''), 'missing again 30 minutes later: deleted by a person — Google stays off for this post');
-t_eq([], array_values(array_filter($writes($n, $GBP), function ($c) { return $c['path'] !== 'deletepost'; })), '…and it is not sent again');
+t_eq([], array_values(array_filter($writes($n, $GBP), function ($c) { return $c['path'] !== 'deletescheduledpost'; })), '…and it is not sent again');
 t_ok(ias_post_sent($p)['mode'] === 'live' && empty($p['flags']['skipped_by']), '…while the Facebook post goes on as planned');
 $act('gbp_on', ['ias_post' => $p['id']]);
 $n = count($S['calls']);

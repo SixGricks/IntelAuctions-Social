@@ -123,7 +123,39 @@ if (!function_exists('ias_oneup_confirm_absent')) {
 /** Did OneUp's answer to a delete say the post is not there? (Believed only once its list confirms it.) */
 if (!function_exists('ias_oneup_gone')) {
   function ias_oneup_gone(array $r): bool {
+    if (ias_oneup_no_route($r)) return false; // OneUp has no such address: that says nothing about the post
     return $r['code'] === 404 || (bool) preg_match('/post\s+not\s*found|no\s+such\s+post|already\s+deleted|does\s+not\s+exist/i', (string) $r['error']);
+  }
+}
+
+/** Did OneUp answer with its "Page Not Found" web page — no such API address — rather than an answer about a post? */
+if (!function_exists('ias_oneup_no_route')) {
+  function ias_oneup_no_route(array $r): bool {
+    return !$r['ok'] && $r['code'] === 404 && !is_array($r['data']);
+  }
+}
+
+/**
+ * Test drafts an earlier Verify could not delete, by their OneUp post ids
+ * (`ias_oneup_verify_leftovers`), with the ones a run before this list
+ * existed left behind: read from that run's own steps (its draft was found
+ * "as post #…, a draft" and its delete failed). Only the plugin's own test
+ * drafts are ever on it.
+ */
+if (!function_exists('ias_oneup_verify_leftovers')) {
+  function ias_oneup_verify_leftovers(): array {
+    $ids = array_map('strval', (array) get_option('ias_oneup_verify_leftovers', []));
+    foreach (['ias_oneup_verify', 'ias_gbp_verify'] as $opt) {
+      $v = get_option($opt, []);
+      if (!is_array($v) || empty($v['steps'])) continue;
+      $failed = false; $id = '';
+      foreach ((array) $v['steps'] as $st) {
+        if (strpos((string) $st['label'], 'Delete it') === 0 && $st['ok'] !== true) $failed = true;
+        if (strpos((string) $st['label'], 'Read the draft back') === 0 && preg_match('/#(\d+), a draft\./', (string) $st['detail'], $m)) $id = $m[1];
+      }
+      if ($failed && $id !== '') $ids[] = $id;
+    }
+    return array_values(array_unique(array_filter($ids)));
   }
 }
 
@@ -619,6 +651,24 @@ if (!function_exists('ias_oneup_verify')) {
       ias_settings_update(['oneup_account_name' => $name]);
     }
 
+    // Test drafts an earlier Verify could not delete go first, by their ids — nobody deletes them in OneUp by hand.
+    $left = ias_oneup_verify_leftovers();
+    if ($left) {
+      $errors = [];
+      foreach ($left as $lid) {
+        $d = ias_oneup_call('delete', ['post_id' => $lid]);
+        if (!$d['ok'] && !ias_oneup_gone($d)) $errors[$lid] = $d['error'];
+      }
+      $now_drafts = ias_oneup_list('drafts', 5);
+      $still_ids = [];
+      foreach ($now_drafts['rows'] as $row) if (in_array((string) ($row['post_id'] ?? ''), $left, true)) $still_ids[] = (string) $row['post_id'];
+      $kept = $now_drafts['ok'] ? $still_ids : $left;
+      update_option('ias_oneup_verify_leftovers', array_values($kept), false);
+      $gone = array_values(array_diff($left, $kept));
+      $step('Earlier test drafts', $kept ? false : true, ($gone ? 'Deleted #' . implode(' and #', $gone) . ', left by an earlier Verify.' : '')
+        . ($kept ? ' Still in OneUp: #' . implode(', #', $kept) . ($errors ? ' (' . implode('; ', array_unique($errors)) . ')' : '') . ' — tried again by the next Verify.' : ''));
+    }
+
     // 2. A draft (for Google, an "update" — the kind of post it will be sent).
     $when = ias_now()->modify('+30 days')->setTime(9, 17)->format('Y-m-d H:i');
     $text = 'Intel Auctions Social connection test ' . wp_generate_password(6, false) . ' — a draft: it never publishes, and the plugin deletes it straight away.';
@@ -674,9 +724,12 @@ if (!function_exists('ias_oneup_verify')) {
       $again = ias_oneup_list('drafts', 5);
       $still = !$again['ok'];
       foreach ($again['rows'] as $row) if ((string) ($row['post_id'] ?? '') === $draft_id) $still = true;
-      $step('Delete it (deletepost)', $d['ok'] && !$still, $d['ok'] ? ($still ? 'OneUp answered, but the draft is still there (or the list could not be read).' : 'Deleted.') : $d['error'] . ' — delete the test draft in OneUp by hand.');
+      $path = (string) (ias_oneup_endpoints()['delete'][1] ?? 'delete');
+      if (!$d['ok'] || $still) update_option('ias_oneup_verify_leftovers', array_values(array_unique(array_merge(array_map('strval', (array) get_option('ias_oneup_verify_leftovers', [])), [$draft_id]))), false);
+      $step('Delete it (' . $path . ')', $d['ok'] && !$still, ($d['ok'] ? ($still ? 'OneUp answered, but the draft is still there (or the list could not be read).' : 'Deleted.') : $d['error'])
+        . ($d['ok'] && !$still ? '' : ' The test draft (#' . $draft_id . ') never publishes; the next Verify deletes it.'));
     } else {
-      $step('Delete it (deletepost)', false, 'No post id to delete with — delete the test draft in OneUp by hand.');
+      $step('Delete it (' . (string) (ias_oneup_endpoints()['delete'][1] ?? 'delete') . ')', false, 'OneUp gave the test draft no id to delete it by — it never publishes; delete it in OneUp if it is in the way.');
     }
 
     // 5. The lists the read-back uses.

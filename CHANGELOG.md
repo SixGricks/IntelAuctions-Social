@@ -1,5 +1,21 @@
 # Intel Auctions Social changelog
 
+## 0.10.2 (2026-10-13) — OneUp's documented delete; no test draft left behind
+With the account sent as a list, the live site's Verify OneUp and Verify for
+Google saved their drafts, read them back and matched the time zone — then
+failed to delete them: "OneUp answered HTTP 404: Page Not Found". The delete
+went to `deletepost`, a guessed name OneUp does not have. It now goes to
+OneUp's documented `deletescheduledpost` (POST, `post_id`).
+- OneUp's 404 web page (no such address) is never taken for "the post is
+  gone" (`ias_oneup_no_route()`); its own "not found" answer still is, when its
+  list agrees.
+- A test draft Verify cannot delete is not left for a person to delete in
+  OneUp: its id is kept (`ias_oneup_verify_leftovers`) and the next Verify
+  deletes it first ("Earlier test drafts"). The two drafts the 0.10.1 runs
+  left (#53747135, #53747143) are read from those runs' own steps and deleted
+  the same way, by their ids.
+- The test fake answers the old name with OneUp's 404 page.
+
 ## 0.10.1 (2026-10-13) — the account goes to OneUp as a list
 The live account refused Verify OneUp and Verify for Google at "Save a
 draft": "OneUp said: Social Network ID must be an array." Every scheduling

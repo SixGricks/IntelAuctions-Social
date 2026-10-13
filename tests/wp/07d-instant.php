@@ -32,7 +32,7 @@ $mk = function (string $title, string $sale) use ($T, $lead) {
 };
 $lp = function (int $listing) { return ias_post_by_slot('listing:' . $listing); };
 $writes = function (int $from) {
-  return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletepost'], true); }));
+  return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletescheduledpost'], true); }));
 };
 $reads = function (int $from, string $path) { return count(ias_t_oneup_calls($from, $path)); };
 $act = function (string $action, array $post) {
