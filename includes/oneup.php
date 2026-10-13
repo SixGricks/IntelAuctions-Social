@@ -9,7 +9,8 @@
  *
  * OneUp's API (https://www.oneupapp.io/api/…, the key as `apiKey`): a post
  * is scheduled with scheduletextpost / scheduleimagepost / schedulevideopost
- * (category_id, social_network_id, scheduled_date_time "YYYY-MM-DD HH:MM",
+ * (category_id, social_network_id — a list, even of one account: see
+ * ias_oneup_wire_params() — scheduled_date_time "YYYY-MM-DD HH:MM",
  * content, image_url — several joined with "~~" — or video_url, and
  * first_comment). A scheduled post's time cannot be edited, so a moved or
  * changed post is deleted and scheduled again. Lists (scheduled, published,
@@ -183,7 +184,7 @@ if (!function_exists('ias_oneup_call')) {
     $key = ias_oneup_key();
     if ($key === '') return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'No OneUp key: add it under Settings → OneUp (or INTEL_ONEUP_API_KEY in wp-config.php).', 'id' => ''];
     [$method, $path] = $eps[$endpoint];
-    $send = function (string $method) use ($path, $params, $key) {
+    $send = function (string $method, array $params) use ($path, $key) {
       $url = IAS_ONEUP_BASE . $path;
       $args = ['timeout' => 30, 'method' => $method];
       if ($method === 'GET') {
@@ -198,21 +199,58 @@ if (!function_exists('ias_oneup_call')) {
     $fail = function (int $code, $data, string $error) use ($key) {
       return ['ok' => false, 'code' => $code, 'data' => $data, 'error' => ias_oneup_redact($error, $key), 'id' => ''];
     };
-    $resp = $send($method);
-    $code = is_wp_error($resp) ? 0 : (int) wp_remote_retrieve_response_code($resp);
-    if (in_array($code, [405, 414], true)) { // the other way, once
-      $resp = $send($method === 'GET' ? 'POST' : 'GET');
+    $once = function (array $params) use ($send, $fail, $method) {
+      $resp = $send($method, $params);
       $code = is_wp_error($resp) ? 0 : (int) wp_remote_retrieve_response_code($resp);
+      if (in_array($code, [405, 414], true)) { // the other way, once
+        $resp = $send($method === 'GET' ? 'POST' : 'GET', $params);
+        $code = is_wp_error($resp) ? 0 : (int) wp_remote_retrieve_response_code($resp);
+      }
+      if (is_wp_error($resp)) return $fail(0, null, $resp->get_error_message());
+      $body = (string) wp_remote_retrieve_body($resp);
+      $data = json_decode($body, true);
+      $short = mb_substr(trim(wp_strip_all_tags($body)), 0, 200);
+      if ($code < 200 || $code >= 300) return $fail($code, $data, 'OneUp answered HTTP ' . $code . ($short !== '' ? ': ' . $short : ''));
+      if ($data === null && $body !== '') return $fail($code, null, 'OneUp\'s answer was not JSON: ' . $short);
+      $err = ias_oneup_error_in((array) $data);
+      if ($err !== '') return $fail($code, $data, 'OneUp said: ' . $err);
+      return ['ok' => true, 'code' => $code, 'data' => $data, 'error' => '', 'id' => ias_oneup_find_id($data)];
+    };
+    if (!isset($params['social_network_id'])) return $once($params);
+
+    // OneUp takes the account as a list, even of one ("Social Network ID must be an array"). It is written
+    // the way its documentation shows — a JSON list — and, should OneUp refuse that with the same words,
+    // once more as social_network_id[0]; the way that worked is kept (`ias_oneup_id_form`) and tried first.
+    // A refusal like that is a clear no — nothing was created — so the second try can never make a second post.
+    $forms = get_option('ias_oneup_id_form', '') === 'brackets' ? ['brackets', 'json'] : ['json', 'brackets'];
+    $r = $once(ias_oneup_wire_params($params, $forms[0]));
+    if (!$r['ok'] && !ias_oneup_uncertain($r) && preg_match('/must be an? (array|list)/i', (string) $r['error'])) {
+      $r2 = $once(ias_oneup_wire_params($params, $forms[1]));
+      if ($r2['ok']) update_option('ias_oneup_id_form', $forms[1], false);
+      return $r2;
     }
-    if (is_wp_error($resp)) return $fail(0, null, $resp->get_error_message());
-    $body = (string) wp_remote_retrieve_body($resp);
-    $data = json_decode($body, true);
-    $short = mb_substr(trim(wp_strip_all_tags($body)), 0, 200);
-    if ($code < 200 || $code >= 300) return $fail($code, $data, 'OneUp answered HTTP ' . $code . ($short !== '' ? ': ' . $short : ''));
-    if ($data === null && $body !== '') return $fail($code, null, 'OneUp\'s answer was not JSON: ' . $short);
-    $err = ias_oneup_error_in((array) $data);
-    if ($err !== '') return $fail($code, $data, 'OneUp said: ' . $err);
-    return ['ok' => true, 'code' => $code, 'data' => $data, 'error' => '', 'id' => ias_oneup_find_id($data)];
+    if ($r['ok'] && get_option('ias_oneup_id_form', '') !== $forms[0]) update_option('ias_oneup_id_form', $forms[0], false);
+    return $r;
+  }
+}
+
+/**
+ * The parameters as they go over the wire: a single account id becomes a
+ * one-item list — `["1336677789520495"]` ($form 'json') or
+ * `social_network_id[0]=…` ('brackets'). "ALL" and a list already given stay
+ * as they are. Everything else is untouched (and what is recorded and hashed
+ * as sent is the request before this, so the form never makes a post look
+ * changed). Pure.
+ */
+if (!function_exists('ias_oneup_wire_params')) {
+  function ias_oneup_wire_params(array $params, string $form): array {
+    if (!array_key_exists('social_network_id', $params) || is_array($params['social_network_id'])) return $params;
+    $id = trim((string) $params['social_network_id']);
+    if ($id === '' || strtoupper($id) === 'ALL' || substr($id, 0, 1) === '[') return $params;
+    unset($params['social_network_id']);
+    if ($form === 'brackets') $params['social_network_id[0]'] = $id;
+    else $params['social_network_id'] = (string) wp_json_encode([$id], JSON_UNESCAPED_SLASHES);
+    return $params;
   }
 }
 

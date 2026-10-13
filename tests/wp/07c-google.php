@@ -284,7 +284,8 @@ $act('edit', ['ias_post' => $cp['id'], 'ias_text' => "3 Charlie Court sells Nove
 add_filter('pre_http_request', $refuse = function ($pre, $args, $url) use ($GBP) {
   if (strpos((string) $url, 'oneupapp.io/api/schedule') === false) return $pre;
   parse_str((string) (wp_parse_url((string) $url)['query'] ?? ''), $q);
-  if (($q['social_network_id'] ?? '') === $GBP) $GLOBALS['ias_t_oneup']['fail_next'] = 1;
+  $sn = json_decode((string) ($q['social_network_id'] ?? ''), true); // the account goes as a one-item list
+  if ((is_array($sn) ? (string) ($sn[0] ?? '') : '') === $GBP) $GLOBALS['ias_t_oneup']['fail_next'] = 1;
   return $pre;
 }, 5, 3);
 ias_push_run(); ias_push_run(); ias_push_run();

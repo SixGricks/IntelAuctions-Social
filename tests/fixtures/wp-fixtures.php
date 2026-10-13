@@ -25,7 +25,7 @@ function ias_t_reset(): void {
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned'] as $o) delete_option($o);
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned'] as $o) delete_option($o);
   $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
   update_option('ias_settings', [], true);
   // The fake Claude's calls are metered like real ones: without this, a month of test runs spends the
@@ -251,10 +251,11 @@ function ias_t_oneup(): void {
   // without a post id), tz_shift (hours the account is off the site), lose_answer (schedule the next N
   // posts but answer 502), net_error (the next N posts never arrive; the error echoes the URL, key and
   // all), delete_404 (the next N deletes answer "not found" without deleting), broken (paths that answer
-  // 200 with no list in it), draft_real (drafts are scheduled as real posts), fb (the page's name).
+  // 200 with no list in it), draft_real (drafts are scheduled as real posts), fb (the page's name), id_form
+  // ('any': the account as a JSON list or social_network_id[…]; 'brackets': only the latter). A plain id is refused.
   $GLOBALS['ias_t_oneup'] = ['scheduled' => [], 'published' => [], 'drafts' => [], 'failed' => [], 'next' => 900001, 'calls' => [],
     'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true, 'lose_answer' => 0, 'net_error' => 0, 'delete_404' => 0,
-    'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)'];
+    'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)', 'id_form' => 'any'];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -263,7 +264,11 @@ function ias_t_oneup(): void {
     parse_str((string) ($parts['query'] ?? ''), $q);
     $path = basename((string) $parts['path']);
     $params = array_merge($q, is_array($args['body'] ?? null) ? $args['body'] : []);
-    $S['calls'][] = ['path' => $path, 'method' => (string) ($args['method'] ?? 'GET'), 'params' => $params];
+    // The account as it came over the wire (`raw_sn`); the calls list keeps the one id, for the tests to read.
+    $raw_sn = $params['social_network_id'] ?? null;
+    if (is_string($raw_sn)) { $d = json_decode($raw_sn, true); if (is_array($d) && $d) $params['social_network_id'] = (string) array_values($d)[0]; }
+    elseif (is_array($raw_sn) && $raw_sn) $params['social_network_id'] = (string) array_values($raw_sn)[0];
+    $S['calls'][] = ['path' => $path, 'method' => (string) ($args['method'] ?? 'GET'), 'params' => $params, 'raw_sn' => $raw_sn];
     $json = function (int $code, $data) {
       return ['headers' => [], 'body' => (string) json_encode($data), 'response' => ['code' => $code, 'message' => 'OK'], 'cookies' => [], 'filename' => null];
     };
@@ -288,6 +293,11 @@ function ias_t_oneup(): void {
           ['category_id' => 42, 'social_network_name' => $fb, 'social_network_id' => 'fb_123', 'social_network_type' => 'Facebook'],
         ]]);
       case 'scheduletextpost': case 'scheduleimagepost': case 'schedulevideopost':
+        // Like the real account (Oct 13, 2026): the account must be a list. A JSON list is read as one, unless
+        // the switch says this OneUp takes only social_network_id[…] (then the JSON text is refused the same way).
+        $sn = $raw_sn;
+        if (is_string($sn) && $S['id_form'] !== 'brackets') { $d = json_decode($sn, true); if (is_array($d)) $sn = $d; }
+        if (!is_array($sn) || !$sn) return $json(200, ['error' => true, 'message' => 'Social Network ID must be an array.']);
         if ($S['net_error'] > 0) { $S['net_error']--; return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds for ' . $url); }
         if ($S['fail_next'] > 0) { $S['fail_next']--; return $json(200, ['error' => true, 'message' => 'The Facebook token has expired']); }
         $id = $S['next']++;
