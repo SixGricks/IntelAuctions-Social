@@ -49,3 +49,23 @@ t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'Fair ho
 // Several same-day sales of different kinds: each must be named.
 $r = ias_check_draft("Two sales Nov 18: the farm is an in-person auction; the lot is Intel Phone Bidding.", array_merge($ctx, ['type' => 'auction_week', 'bidding' => ['in_person', 'phone']]));
 t_eq([], $r['holds'], 'a shared post naming both kinds passes');
+
+// A denied mention is no mention (DJ, Oct 13, 2026: a phone-bid post saying "no onsite auction" was held — too aggressive).
+$r = ias_check_draft("Intel Phone Bidding — no onsite auction. Starting bid $250,000.", $ctx);
+t_eq([], $r['holds'], '"no onsite auction" on a phone-bid post: not held');
+t_eq([], ias_check_draft("This is Intel Phone Bidding, not an in-person sale.", $ctx)['holds'], '"not an in-person sale": not held');
+t_eq([], ias_check_draft("Bid by phone through Intel Phone Bidding. There won't be live bidding on site.", $ctx)['holds'], '"won\'t be live bidding": not held');
+t_eq([], ias_check_draft("Intel Phone Bidding. No in-person or online bidding.", $ctx)['holds'], '"no in-person or online bidding" denies both');
+$r = ias_check_draft("Intel Phone Bidding, and an onsite auction too.", $ctx);
+t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'choose') !== false; }), 'an onsite auction stated as fact on a phone-bid post: still held');
+$r = ias_check_draft("No phone bids here. This is an in-person auction.", array_merge($ctx, ['bidding' => ['in_person']]));
+t_eq([], $r['holds'], 'an in-person post denying phone bids: not held');
+$r = ias_check_draft("Phone bidding is not available.", $ctx);
+t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'does not say') !== false; }), 'a sentence that only denies says nothing: a phone-bid post still has to say it is phone bidding');
+t_ok(ias_negated_at('There is no onsite auction', strpos('There is no onsite auction', 'onsite')), 'ias_negated_at: "no" before it');
+t_ok(!ias_negated_at('No crowds. Onsite auction at 10.', strpos('No crowds. Onsite auction at 10.', 'Onsite')), '…but not across a sentence');
+
+// The emoji-led shape may carry more emoji; every other one stays at three.
+$emo = "📍 Narvon\n📅 Nov 18\n⏰ 10:00 am\n💲 Starting bid $250,000\n📞 717-555-0101\n🏡 Intel Phone Bidding";
+t_eq([], ias_check_draft($emo, array_merge($ctx, ['emoji_max' => 8]))['holds'], 'an emoji-led post with one emoji a line passes');
+t_ok((bool) array_filter(ias_check_draft($emo, $ctx)['holds'], function ($h) { return strpos($h, 'emoji') !== false; }), '…the same in any other shape is held');

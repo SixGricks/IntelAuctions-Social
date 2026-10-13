@@ -216,6 +216,10 @@ function ias_t_claude(): void {
         $lines[] = $line . '.';
       }
       $phone = $list[0]['lead_phone'] ?? ($list[0]['office_phone'] ?? '717-917-5844');
+      // The shape asked for (0.11.0): bullets get "• " lines, the emoji-led shape one emoji a line.
+      if (strpos($content, 'SHAPE: One short lead-in sentence') !== false) $lines = array_map(function ($l) { return '• ' . $l; }, $lines);
+      if (strpos($content, 'SHAPE: Emoji-led') !== false) $lines = array_merge(array_map(function ($l) { return '📍 ' . $l; }, $lines), ['📅 Sale day is on the listing', '🏡 Come see it', '🌾 Good ground', '🚜 Equipment too']);
+      $GLOBALS['ias_t_claude_shapes'][] = preg_match('/SHAPE: (\S+)/', $content, $sm) ? $sm[1] : '';
       $text = json_encode([
         'opener' => ucfirst(strtolower($type)) . ' note number ' . $n . ' from the sale barn.',
         'body'   => implode("\n", $lines),

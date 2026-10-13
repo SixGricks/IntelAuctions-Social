@@ -37,6 +37,101 @@ if (!function_exists('ias_templates')) {
   }
 }
 
+/**
+ * The openings a Results post rotates through (DJ, Oct 13, 2026: "We need more
+ * variety in the Results posts. They read almost identical."). A sale with
+ * no price to report (a liquidation) skips the one that leads with it.
+ */
+if (!function_exists('ias_templates_results')) {
+  function ias_templates_results(): array {
+    return (array) apply_filters('ias_templates_results', [
+      'r_result'   => ['Result first',      'Open with the result itself in one plain line: the property and the sale price, exactly as the facts give them.'],
+      'r_thanks'   => ['Thanks first',      'Open by thanking the sellers (by name only as the facts give them) for trusting us with their sale — then the result.'],
+      'r_place'    => ['Place first',       'Open with one plain line about the place itself, from the facts only — then the result.'],
+      'r_day'      => ['Sale day first',    'Open with the sale day: the date and where it happened — then the result.'],
+      'r_neighbor' => ['To the neighbors',  'Open with a plain line to the local community, naming the town or county from the facts — then the result.'],
+    ]);
+  }
+}
+
+/** The openings a post of this type rotates through. */
+if (!function_exists('ias_templates_for')) {
+  function ias_templates_for(string $type): array {
+    return $type === 'results' ? ias_templates_results() : ias_templates();
+  }
+}
+
+/** A template's label, whichever set it is in ('List' for the roundup's). */
+if (!function_exists('ias_template_label')) {
+  function ias_template_label(string $key): string {
+    $all = ias_templates() + ias_templates_results();
+    return (string) ($all[$key][0] ?? ($key === 'list' ? 'List' : $key));
+  }
+}
+
+/**
+ * The shapes a post can take (DJ, Oct 13, 2026: "I just want the structure to
+ * change sometimes … I am fine with 1 out of every 5 posts being emoji heavy
+ * … sometimes paragraphs and sometimes bullets"): key => [label, brief,
+ * weight, post types]. The weight is each shape's share of a type's posts:
+ * the emoji-led shape comes round about one post in five.
+ */
+if (!function_exists('ias_shapes')) {
+  function ias_shapes(): array {
+    return (array) apply_filters('ias_shapes', [
+      'paragraphs' => ['Paragraphs', 'Two or three short paragraphs of plain sentences. No bullet points.', 2.0, ['listing', 'open_house', 'auction_week', 'results']],
+      'bullets'    => ['Bullets', 'One short lead-in sentence, then the key facts as 3 to 5 short lines, each starting with "• " (a bullet and a space), then nothing more before the call to action. Each bullet is a fact, not praise.', 1.5, ['listing', 'open_house', 'auction_week', 'results']],
+      'short'      => ['Short', 'Short and to the point: everything before the call to action in two or three sentences at most — fewer words than the post type asks for is right here.', 0.6, ['auction_week', 'results']],
+      'emoji'      => ['Emoji-led', 'Emoji-led for a change: the key facts on short separate lines, each starting with one fitting emoji (📍 the place, 📅 the date, ⏰ the time, 💲 the price or starting bid, 📞 the phone, 🏡 🌾 🚜 🌲 the property). Up to 8 emoji in all, one per line, never two in a row; still plain words, still only the facts.', 1.0, ['listing', 'open_house', 'auction_week', 'results', 'roundup']],
+      'list'       => ['List', 'One short line per sale, as the post type asks.', 4.0, ['roundup']],
+    ]);
+  }
+}
+
+/**
+ * Which shape comes next, from the weights of the shapes a type may take and
+ * how often each was used lately ($recent: key => count): the one furthest
+ * behind its share, never the property's last one ($last) when there is
+ * another. Pure.
+ */
+if (!function_exists('ias_choose_shape')) {
+  function ias_choose_shape(array $weights, array $recent, string $last = ''): string {
+    $best = ''; $best_score = INF; $best_w = 0.0;
+    foreach ($weights as $k => $w) {
+      if ($k === $last && count($weights) > 1) continue;
+      $score = ((int) ($recent[$k] ?? 0) + 1) / max(0.01, (float) $w);
+      if ($score < $best_score - 1e-9 || (abs($score - $best_score) < 1e-9 && (float) $w > $best_w)) { $best = (string) $k; $best_score = $score; $best_w = (float) $w; }
+    }
+    return $best !== '' ? $best : (string) array_key_first($weights);
+  }
+}
+
+/** The shape for this post (history `shape`, kept per post type). */
+if (!function_exists('ias_pick_shape')) {
+  function ias_pick_shape(array $post, array $facts_list): string {
+    $type = (string) $post['type'];
+    $weights = [];
+    foreach (ias_shapes() as $k => $def) if (in_array($type, (array) $def[3], true)) $weights[$k] = (float) $def[2];
+    if (!$weights) return 'paragraphs';
+    $recent = [];
+    foreach (ias_history_recent('shape', 45, 0, 300) as $v) {
+      [$t, $k] = array_pad(explode(':', $v, 2), 2, '');
+      if ($t === $type) $recent[$k] = ($recent[$k] ?? 0) + 1;
+    }
+    // Not the property's last shape — a roundup is every week's sales, not one property's, so it keeps to the shares alone.
+    $last_v = $type === 'roundup' ? '' : (ias_history_recent('shape', 365, (int) ($facts_list[0]['id'] ?? 0), 1)[0] ?? '');
+    $last = strpos($last_v, ':') !== false ? (string) explode(':', $last_v, 2)[1] : '';
+    return ias_choose_shape($weights, $recent, $last);
+  }
+}
+
+/** How many emoji a post may carry: the emoji-led shape more, every other one a few at most. */
+if (!function_exists('ias_emoji_max')) {
+  function ias_emoji_max(string $shape): int {
+    return $shape === 'emoji' ? 8 : 3;
+  }
+}
+
 /** The division voices that sit on top of the templates. */
 if (!function_exists('ias_voices')) {
   function ias_voices(): array {
@@ -61,6 +156,12 @@ if (!function_exists('ias_cta_kinds')) {
       'ask'           => ['Comment with a question', 'Invite questions in the comments; we answer them.', ['listing', 'open_house', 'auction_week', 'results', 'roundup']],
       'tag'           => ['Tag someone', 'Ask them to tag someone who would want this.', ['listing', 'open_house', 'auction_week', 'roundup']],
       'brochure'      => ['Reply for the brochure', 'Tell them to comment or message us for the brochure.', ['listing', 'open_house', 'auction_week', 'roundup']],
+      // More of them (DJ, Oct 13, 2026: "We need a few other CTA's"), the Results post above all.
+      'selling'       => ['Thinking of selling?', 'Invite anyone thinking about selling their own farm, land or home at auction to call the office at the office phone number from the facts. No promises about prices or results.', ['results', 'roundup']],
+      'follow'        => ['Follow the page', 'Ask them to follow the page so they hear about the next sale first.', ['listing', 'auction_week', 'results', 'roundup']],
+      'save_date'     => ['Save the date', 'Ask them to put the date on their calendar, naming it (the auction date; for an open house, the open house).', ['listing', 'open_house', 'auction_week']],
+      'share'         => ['Share it', 'Ask them to share the post with someone who has had an eye on a place like this — a neighbor, a friend who farms or hunts. Never describe who should buy by family, age, religion or the like.', ['listing', 'open_house', 'auction_week', 'results']],
+      'thanks'        => ['Thank-you', 'Close by inviting them to join us in thanking the sellers and everyone who came out — in the comments.', ['results']],
     ]);
   }
 }
@@ -387,7 +488,8 @@ if (!function_exists('ias_type_brief')) {
 if (!function_exists('ias_pick_template')) {
   function ias_pick_template(array $post, array $facts_list): string {
     if ($post['type'] === 'roundup') return 'list';
-    $keys = array_keys(ias_templates());
+    $keys = array_keys(ias_templates_for((string) $post['type']));
+    if ($post['type'] === 'results' && !array_filter($facts_list, function ($x) { return $x['price'] !== '' && $x['kind'] !== 'liquidation'; })) $keys = array_values(array_diff($keys, ['r_result'])); // no price to lead with
     $last = ias_history_recent('template', 365, (int) ($facts_list[0]['id'] ?? 0), 1)[0] ?? '';
     $recent = array_count_values(ias_history_recent('template', 30, 0, 200));
     $best = null; $best_n = PHP_INT_MAX;
@@ -407,7 +509,7 @@ if (!function_exists('ias_pick_cta_kind')) {
     $type = (string) $post['type'];
     $kinds = [];
     foreach (ias_cta_kinds() as $k => $def) if (in_array($type, (array) $def[2], true)) $kinds[] = $k;
-    if ($type === 'results' && !array_filter($facts_list, function ($x) { return $x['price'] !== ''; })) $kinds = ['join_list'];
+    if ($type === 'results' && !array_filter($facts_list, function ($x) { return $x['price'] !== ''; })) $kinds = array_values(array_intersect($kinds, ['join_list', 'follow', 'selling', 'thanks'])); // a thank-you with no price
     if (empty($facts_list[0]['lead']['phone'])) $kinds = array_values(array_diff($kinds, ['call_lead']));
     if (!$kinds) return 'ask';
     $last = ias_history_recent('cta_kind', 365, (int) ($facts_list[0]['id'] ?? 0), 1)[0] ?? '';
@@ -429,25 +531,26 @@ if (!function_exists('ias_pick_cta_kind')) {
  */
 if (!function_exists('ias_prompt_rules')) {
   function ias_prompt_rules(): string {
-    return "VOICE: plainspoken and local, the way Intel talks at a sale. Short sentences. No stock marketing gloss (never \"don't miss out\", \"dream home\", \"nestled\", \"boasts\", \"stunning\", \"won't last\", \"opportunity of a lifetime\"). At most one emoji, and none is fine. Never two exclamation points in a row. No words in all caps except abbreviations.\n"
+    return "VOICE: plainspoken and local, the way Intel talks at a sale. Short sentences. No stock marketing gloss (never \"don't miss out\", \"dream home\", \"nestled\", \"boasts\", \"stunning\", \"won't last\", \"opportunity of a lifetime\"). At most one emoji, and none is fine — unless the SHAPE asks for emoji-led lines. Never two exclamation points in a row. No words in all caps except abbreviations.\n"
       . "FACTS: use ONLY the facts in the FACTS block. Never invent or round acreage, prices, features, dates, times, names, phone numbers or history. If the post needs something the facts do not have, write [VERIFY: what is missing] in its place.\n"
-      . "BIDDING: when the facts say how bidding works, state it once, exactly as given — an in-person auction, or Intel Phone Bidding. Never imply buyers can choose between them, and never mention online or internet bidding.\n"
+      . "BIDDING: when the facts say how bidding works, state it once, exactly as given, and in positive words — what it IS: \"bid by phone through Intel Phone Bidding\", or \"an in-person auction on site\". Never say what it is not (no \"no onsite auction\", \"not online\", \"no phone bids\"): saying phone bidding already tells people there is no crowd on site, and saying in-person already tells them there is no phone or online bidding. Never imply buyers can choose between them, and never mention online or internet bidding.\n"
       . "FAIR HOUSING: describe the property, never who should buy it or who the neighbours are. Never write things like \"perfect for families\", \"family-friendly\", \"safe neighborhood\", \"great for retirees\", or anything about race, religion, national origin, sex, disability or familial status.\n";
   }
 }
 
 /** [system, user] for one post. $avoid: recent openers and CTA wordings not to repeat. */
 if (!function_exists('ias_prompt')) {
-  function ias_prompt(array $post, array $facts_list, array $media, string $template, string $cta_kind, array $avoid): array {
+  function ias_prompt(array $post, array $facts_list, array $media, string $template, string $cta_kind, array $avoid, string $shape = 'paragraphs'): array {
     $house = function_exists('ias_voice_rules_block') ? ias_voice_rules_block() : '';
     $system = ia_ai_brand_context() . "\n\n"
       . "You now write Facebook posts for Intel Auctions' own Facebook page.\n"
       . ias_prompt_rules()
       . ($house !== '' ? $house . "\n" : '')
       . "LINKS AND TAGS: no URL or web address anywhere (the link goes in a comment), and no hashtags (they are added separately).\n"
-      . "OUTPUT: JSON only, no code fences: {\"opener\": \"the first line, one sentence\", \"body\": \"the rest of the post before the call to action\", \"cta\": \"the call to action, one or two sentences\"}";
+      . "OUTPUT: JSON only, no code fences: {\"opener\": \"the first line, one sentence\", \"body\": \"the rest of the post before the call to action (line breaks as \\n)\", \"cta\": \"the call to action, one or two sentences\"}";
 
-    $templates = ias_templates();
+    $templates = ias_templates_for((string) $post['type']);
+    $shapes = ias_shapes();
     $voices = ias_voices();
     $ctas = ias_cta_kinds();
     $division = count($facts_list) > 1 ? (string) ($post['division'] ?? 'mixed') : (string) $facts_list[0]['division'];
@@ -455,6 +558,7 @@ if (!function_exists('ias_prompt')) {
 
     $user = 'POST TYPE: ' . ias_type_brief($post, $facts_list) . "\n\n";
     if (isset($templates[$template])) $user .= 'TEMPLATE: ' . $templates[$template][1] . "\n\n";
+    if (isset($shapes[$shape])) $user .= 'SHAPE: ' . $shapes[$shape][1] . "\n\n";
     $user .= 'DIVISION VOICE: ' . ($voices[$division] ?? $voices['farm_home']) . "\n\n";
     $user .= 'CALL TO ACTION: ' . ($ctas[$cta_kind][1] ?? 'Invite questions in the comments.') . "\n";
     if (!empty($avoid['cta'])) $user .= 'Do not reuse any of these recent calls to action, even reworded slightly: ' . implode(' | ', array_slice($avoid['cta'], 0, 12)) . "\n";
@@ -778,6 +882,7 @@ if (!function_exists('ias_generate_post')) {
     $media    = ias_media_person($post, $facts_list) ?? ias_media_apply_alt(ias_media_for_post($post, $facts_list), $flags); // a person's pictures (and alt text) hold through a rewrite
     $template = ias_pick_template($post, $facts_list);
     $cta_kind = ias_pick_cta_kind($post, $facts_list);
+    $shape    = ias_pick_shape($post, $facts_list);
     $avoid = [
       'opener' => ias_history_recent('opener', 30, 0, 40),
       'cta'    => ias_history_recent('cta', 30, 0, 40),
@@ -786,7 +891,7 @@ if (!function_exists('ias_generate_post')) {
     $parts = null;
     $error = '';
     for ($try = 1; $try <= 2; $try++) {
-      [$system, $user] = ias_prompt($post, $facts_list, $media, $template, $cta_kind, $avoid);
+      [$system, $user] = ias_prompt($post, $facts_list, $media, $template, $cta_kind, $avoid, $shape);
       if ($try === 2) $user .= "\n\nYOUR LAST ANSWER WAS NOT USABLE: " . $error . ' Answer again, JSON only.';
       $raw = ia_ai_generate($system, $user, 1200, 'social.' . $post['type']);
       if (is_wp_error($raw)) {
@@ -833,6 +938,7 @@ if (!function_exists('ias_generate_post')) {
       'money'      => $money,
       'phones'     => $phones,
       'fair_extra' => (string) ias_setting('fair_housing_extra', ''),
+      'emoji_max'  => ias_emoji_max($shape),
     ]);
     $holds = $check['holds'];
     foreach ((array) ($parts['_repeat'] ?? []) as $r) $holds[] = 'Still repeating after a second try: ' . $r . '.';
@@ -852,6 +958,7 @@ if (!function_exists('ias_generate_post')) {
       'cta_kind'      => $cta_kind,
       'hashtags'      => $hashtags,
       'template'      => $template,
+      'shape'         => $shape,
       'voice'         => count($facts_list) > 1 ? (string) $post['division'] : (string) $facts_list[0]['division'],
       'first_comment' => $in_comment ? $comment : '',
       'link'          => $link,
@@ -886,6 +993,7 @@ if (!function_exists('ias_generate_post')) {
     if ($parts['cta'] !== '') ias_history_add('cta', $parts['cta'], $first, $post_id);
     ias_history_add('cta_kind', $cta_kind, $first, $post_id);
     ias_history_add('template', $template, $first, $post_id);
+    ias_history_add('shape', (string) $post['type'] . ':' . $shape, $first, $post_id);
     ias_history_add('hashtags', implode(' ', array_map('strtolower', $hashtags)), $first, $post_id);
     foreach ((array) $media['images'] as $img) {
       if ((int) $img['id'] <= 0) continue;
@@ -894,12 +1002,13 @@ if (!function_exists('ias_generate_post')) {
       }
     }
 
-    $tpl_label = ias_templates()[$template][0] ?? 'List';
+    $tpl_label = ias_template_label($template);
     $cta_label = ias_cta_kinds()[$cta_kind][0] ?? $cta_kind;
-    ias_post_trail($post_id, ($forced ? 'Rewritten on request' : 'Draft written') . ' (' . $tpl_label . ', ' . $cta_label . ')' . ($holds ? ' — held: ' . $holds[0] : ''), $actor);
+    $shape_label = ias_shapes()[$shape][0] ?? $shape;
+    ias_post_trail($post_id, ($forced ? 'Rewritten on request' : 'Draft written') . ' (' . $tpl_label . ', ' . $shape_label . ', ' . $cta_label . ')' . ($holds ? ' — held: ' . $holds[0] : ''), $actor);
     ias_log($holds ? 'held' : 'generated', (int) $post['listing_id'], [
       'post' => $post_id, 'type' => $post['type'],
-      'summary' => ($holds ? 'Held: ' . implode(' ', $holds) : 'Draft written') . ' (' . $template . ', ' . $cta_kind . ')',
+      'summary' => ($holds ? 'Held: ' . implode(' ', $holds) : 'Draft written') . ' (' . $template . ', ' . $shape . ', ' . $cta_kind . ')',
     ], $actor);
     /** A draft was written (Phase 4 sends Lane A posts for approval from here). */
     do_action('ias_post_generated', $post_id, $holds);
@@ -918,6 +1027,7 @@ if (!function_exists('ias_recheck_post')) {
       'money'      => $money,
       'phones'     => $phones,
       'fair_extra' => (string) ias_setting('fair_housing_extra', ''),
+      'emoji_max'  => ias_emoji_max((string) ($post['content']['shape'] ?? '')), // an emoji-led post keeps its room for them
     ]);
   }
 }

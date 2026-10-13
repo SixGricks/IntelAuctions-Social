@@ -77,6 +77,16 @@ it, and the spec stays verbatim, so they are recorded here:
   and the person's yes past the veto window); Try again and Edit it here
   again replace "fix it in OneUp". Never write a note, button or email that
   sends someone into OneUp.
+- **Variety, and bidding said positively** (Oct 13, 2026: "We need more
+  variety in the Results posts… sometimes paragraphs and sometimes bullets…
+  1 out of every 5 posts… emoji heavy… Positive statements are better").
+  Every post has a shape (`ias_shapes()`: paragraphs, bullets, short,
+  emoji-led — weighted so emoji-led is about one in five) and Results has its
+  own openings (`ias_templates_results()`) and six calls to action. Bidding is
+  said as what the sale *is*, never what it isn't; the check
+  (`ias_negated_at()`) does not count a way of bidding the sentence denies, so
+  "no onsite auction" on a phone post is not held. The emoji cap is three, or
+  eight on an emoji-led post (`ias_emoji_max()`).
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

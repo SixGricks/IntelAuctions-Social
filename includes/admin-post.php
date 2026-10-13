@@ -443,7 +443,7 @@ add_action('ias_post_view_preview', function (array $p): void {
     echo '</div>';
   }
   $bits = [];
-  if (!empty($c['template'])) $bits[] = 'Written as: ' . (ias_templates()[$c['template']][0] ?? $c['template']);
+  if (!empty($c['template'])) $bits[] = 'Written as: ' . ias_template_label((string) $c['template']) . (!empty($c['shape']) ? ', ' . strtolower((string) (ias_shapes()[$c['shape']][0] ?? $c['shape'])) : '');
   if (!empty($c['voice'])) $bits[] = 'voice: ' . ias_division_label((string) $c['voice']);
   if (!empty($c['cta_kind'])) $bits[] = 'call to action: ' . (ias_cta_kinds()[$c['cta_kind']][0] ?? $c['cta_kind']);
   if (!empty($p['generated_at'])) $bits[] = ($c['generated_by'] ?? '') === 'edited' ? 'edited by ' . ias_actor_name((string) ($flags['edited_by'] ?? '')) : 'written ' . date_i18n('M j, g:i a', strtotime((string) $p['generated_at']));
