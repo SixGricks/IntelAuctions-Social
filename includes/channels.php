@@ -29,6 +29,7 @@ if (!function_exists('ias_channels')) {
   function ias_channels(): array {
     return (array) apply_filters('ias_channels', [
       'facebook'  => ['label' => 'Facebook',  'oneup_type' => 'Facebook',  'text_max' => 63206, 'images_max' => 10, 'link' => 'comment', 'hashtags' => 3,  'crop' => '',          'needs_media' => false, 'live' => true],
+      'gbp'       => ['label' => 'Google Business Profile', 'short' => 'Google', 'oneup_type' => 'GBP', 'text_max' => 1500, 'images_max' => 1, 'link' => 'button', 'hashtags' => 0, 'crop' => '', 'needs_media' => false, 'live' => true],
       'instagram' => ['label' => 'Instagram', 'oneup_type' => 'Instagram', 'text_max' => 2200,  'images_max' => 10, 'link' => 'bio',     'hashtags' => 10, 'crop' => 'square',    'needs_media' => true,  'live' => false],
       'x'         => ['label' => 'X',         'oneup_type' => 'X',         'text_max' => 280,   'images_max' => 4,  'link' => 'text',    'hashtags' => 2,  'crop' => 'landscape', 'needs_media' => false, 'live' => false],
       'linkedin'  => ['label' => 'LinkedIn',  'oneup_type' => 'LinkedIn',  'text_max' => 3000,  'images_max' => 9,  'link' => 'text',    'hashtags' => 3,  'crop' => 'landscape', 'needs_media' => false, 'live' => false],
@@ -42,13 +43,19 @@ if (!function_exists('ias_channel')) {
   }
 }
 
-/** A network's settings: ['on' => bool, 'account' => OneUp account id]. Facebook's are the page id above. */
+/**
+ * A network's settings: ['on' => bool, 'account' => OneUp account id].
+ * Facebook's are the page id above. Google's also carry 'name' (the
+ * location's name in OneUp's lists), 'live' (Send to Google) and 'types'.
+ */
 if (!function_exists('ias_channel_settings')) {
   function ias_channel_settings(string $ch): array {
     if ($ch === 'facebook') return ['on' => true, 'account' => (string) ias_setting('oneup_account_id', '')];
     $all = (array) ias_setting('networks', []);
     $one = (array) ($all[$ch] ?? []);
-    return ['on' => !empty($one['on']), 'account' => trim((string) ($one['account'] ?? ''))];
+    $out = ['on' => !empty($one['on']), 'account' => trim((string) ($one['account'] ?? ''))];
+    if ($ch === 'gbp') $out += ['name' => trim((string) ($one['name'] ?? '')), 'live' => !empty($one['live']), 'types' => array_values(array_map('strval', (array) ($one['types'] ?? [])))];
+    return $out;
   }
 }
 
@@ -57,6 +64,24 @@ if (!function_exists('ias_channels_extra_on')) {
   function ias_channels_extra_on(): array {
     $out = [];
     foreach (array_keys(ias_channels()) as $ch) if ($ch !== 'facebook' && ias_channel_settings($ch)['on']) $out[] = $ch;
+    return $out;
+  }
+}
+
+/**
+ * One line per network besides Facebook that is switched on, for the folded
+ * switches strip: [class, words]. The networks in the dry run only share one.
+ */
+if (!function_exists('ias_channels_summary')) {
+  function ias_channels_summary(): array {
+    $dry = [];
+    $out = [];
+    foreach (ias_channels_extra_on() as $ch) {
+      $state = (array) apply_filters('ias_channel_state', [], $ch); // a network that can go live says where it stands
+      if ($state) { $out[] = $state; continue; }
+      $dry[] = (string) ias_channel($ch)['label'];
+    }
+    if ($dry) $out[] = ['on', implode(', ', $dry) . ': dry run only — not sent'];
     return $out;
   }
 }
@@ -123,6 +148,32 @@ if (!function_exists('ias_x_line')) {
   }
 }
 
+/**
+ * Text with every sentence that carries a phone number taken out (Google
+ * Business Profile refuses those posts), with a short question leading to it
+ * ("Questions?"). A line that was only that goes too. Pure.
+ */
+if (!function_exists('ias_strip_phones')) {
+  function ias_strip_phones(string $text): string {
+    $phone = '/(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]\d{4}\b/';
+    $lines = [];
+    foreach (preg_split('/\n/', $text) as $line) {
+      if (!preg_match($phone, $line)) { $lines[] = $line; continue; }
+      $parts = preg_split('/(?<=[.!?])\s+/', $line);
+      $keep = [];
+      foreach ($parts as $part) {
+        if (!preg_match($phone, $part)) { $keep[] = $part; continue; }
+        // "Questions? Call Jacob at …": the short question that led to the number goes with it.
+        $prev = end($keep);
+        if ($prev !== false && substr(rtrim($prev), -1) === '?' && str_word_count($prev) <= 4) array_pop($keep);
+      }
+      $line = trim(implode(' ', $keep));
+      if ($line !== '') $lines[] = $line;
+    }
+    return trim((string) preg_replace("/\n{3,}/", "\n\n", implode("\n", $lines)));
+  }
+}
+
 /** The post's words for one network ('' when it has none yet). */
 if (!function_exists('ias_channel_text')) {
   function ias_channel_text(array $post, string $ch, ?array $facts_list = null): string {
@@ -144,6 +195,11 @@ if (!function_exists('ias_channel_text')) {
       if (ias_x_length($out) > 280) $out = ias_fit_text($line, 280 - ias_x_length($tail)) . $tail;
       return $out;
     }
+    if ($ch === 'gbp') {
+      // Google refuses a post with a phone number in it (the profile has its own Call button): the sentence goes.
+      $body = ias_strip_phones($body);
+      return ias_fit_text($body, (int) $rules['text_max']);
+    }
     if ($ch === 'instagram') {
       $bio = 'Photos, terms and the full listing are on intelauctions.com — link in our bio.';
       $tags_line = $tags ? "\n\n" . implode(' ', $tags) : '';
@@ -164,6 +220,7 @@ if (!function_exists('ias_channel_text')) {
 if (!function_exists('ias_render_channel')) {
   function ias_render_channel(array $post, string $ch, ?array $facts_list = null): array {
     if ($ch === 'facebook') return ias_render_facebook($post);
+    if ($ch === 'gbp') return ias_render_gbp($post, $facts_list);
     $rules = ias_channel($ch);
     $c = (array) $post['content'];
     $media = (array) ($c['media'] ?? []);
@@ -191,6 +248,53 @@ if (!function_exists('ias_render_channel')) {
   }
 }
 
+/**
+ * The Google Business Profile request: an "update" post with the post's
+ * words for Google, its first picture (a video post takes the listing's best
+ * photo instead — Google shows a picture, not a link), and a Learn more
+ * button to the listing. It goes a minute after Facebook's, so the two are
+ * never one row on OneUp's list (a post is found there by its words and time).
+ * The picture is not also added to the profile's Photos.
+ */
+if (!function_exists('ias_render_gbp')) {
+  function ias_render_gbp(array $post, ?array $facts_list = null): array {
+    $c = (array) $post['content'];
+    $media = (array) ($c['media'] ?? []);
+    $when = '';
+    if (!empty($post['scheduled_at'])) {
+      try { $when = (new DateTimeImmutable((string) $post['scheduled_at'], ia_wp_tz()))->modify('+1 minute')->format('Y-m-d H:i'); } catch (\Exception $e) { $when = ''; }
+    }
+    $params = [
+      'category_id'         => (string) ias_setting('oneup_category_id', ''),
+      'social_network_id'   => ias_channel_settings('gbp')['account'],
+      'scheduled_date_time' => $when,
+      'content'             => ias_channel_text($post, 'gbp', $facts_list),
+      'google_post_type'    => 'update',
+    ];
+    $link = ias_channel_link((string) ($c['link'] ?? ''), 'gbp');
+    if ($link !== '') { $params['cta_button'] = 'LEARN_MORE'; $params['cta_button_url'] = $link; }
+    $img = null;
+    if (!empty($media['images'])) {
+      $img = (array) array_values((array) $media['images'])[0];
+    } elseif (($media['kind'] ?? '') === 'video') {
+      $facts_list = $facts_list ?? ias_post_facts($post);
+      $best = $facts_list ? ias_media_best_photo($facts_list[0]) : 0;
+      if ($best > 0) $img = ias_media_image($best, $facts_list[0]);
+    }
+    $alt = [];
+    if ($img && !empty($img['url'])) {
+      $endpoint = 'schedule_image';
+      $params['image_url'] = (string) $img['url'];
+      $params['image_to_gbp_photo'] = 'false';
+      $alt = [(string) ($img['alt'] ?? '')];
+    } else {
+      $endpoint = 'schedule_text';
+    }
+    $ep = ias_oneup_endpoints()[$endpoint];
+    return ['action' => 'create', 'channel' => 'gbp', 'endpoint' => $endpoint, 'method' => $ep[0], 'url' => IAS_ONEUP_BASE . $ep[1], 'params' => $params, 'alt' => $alt];
+  }
+}
+
 /** What stops this request from being right for its network ([] = nothing). */
 if (!function_exists('ias_channel_problems')) {
   function ias_channel_problems(array $req, string $ch): array {
@@ -215,38 +319,46 @@ if (!function_exists('ias_channel_problems')) {
  * posts as they are then.
  */
 if (!function_exists('ias_push_channels_run')) {
-  function ias_push_channels_run(): int {
-    $chs = ias_channels_extra_on();
+  function ias_push_channels_run(array $only = []): int {
+    $live = function_exists('ias_gbp_live') && ias_gbp_live();
+    $chs = array_values(array_diff(ias_channels_extra_on(), $live ? ['gbp'] : [])); // live Google is gbp.php's
     $logged = 0;
     $now = ias_now();
     $nowsql = $now->format('Y-m-d H:i:s');
     $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
     $floor = $now->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:00');
     $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
+    $statuses = ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'];
+    $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
+      : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
+    foreach ($posts as $p) {
       if ($p['type'] === 'human') continue;
       $flags = (array) $p['flags'];
       $had = (array) ($flags['dry_ch'] ?? []);
       $at = (string) ($p['scheduled_at'] ?? '');
-      $ready = ias_push_ready($p) === '' && $at !== '' && $at >= $nowsql && $at <= $until;
+      $timely = $at !== '' && $at >= $nowsql && $at <= $until;
+      $ready = ias_push_ready($p) === '' && $timely;
       $changed = false;
       foreach (array_unique(array_merge($chs, array_keys($had))) as $ch) {
+        if ($ch === 'gbp' && $live) continue;
         $label = (string) (ias_channel($ch)['label'] ?? $ch);
         $on = in_array($ch, $chs, true);
-        if ($on && $ready && ($p['lane'] === 'A' || !empty($had[$ch]) || $at >= $floor)) {
+        $ok = $ch === 'gbp' ? (ias_gbp_ready($p) === '' && $timely) : $ready; // Google: only the types ticked for it, and not taken off it
+        if ($on && $ok && ($p['lane'] === 'A' || !empty($had[$ch]) || $at >= $floor)) {
           $req = ias_render_channel($p, $ch);
           $hash = md5((string) wp_json_encode($req));
           if (($had[$ch] ?? '') === $hash) continue;
+          if ($ch === 'gbp' && (string) ($flags['gbp']['hash'] ?? '') === $hash) continue; // already on Google as it is, from when it was live
           $problems = ias_channel_problems($req, $ch);
           ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'channel' => $ch,
-            'summary' => (!empty($had[$ch]) ? 'Would replace on ' : 'Would schedule on ') . $label . ' for ' . $fmt($at) . ' — not sent: ' . $label . ' is set up for the dry run only' . ($problems ? '; ' . implode('; ', $problems) : '') . '.',
+            'summary' => (!empty($had[$ch]) ? 'Would replace on ' : 'Would schedule on ') . $label . ' for ' . $fmt($at) . ' — not sent: ' . ($ch === 'gbp' ? implode('; ', ias_gbp_blockers()) : $label . ' is set up for the dry run only') . ($problems ? '; ' . implode('; ', $problems) : '') . '.',
             'payload' => $req]);
           $had[$ch] = $hash;
           $changed = true;
           $logged++;
         } elseif (!empty($had[$ch])) {
           ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'channel' => $ch,
-            'summary' => 'Would delete from ' . $label . ' (' . ($on ? (ias_push_ready($p) ?: 'moved out of reach') : $label . ' switched off') . ') — not sent: dry run only.']);
+            'summary' => 'Would delete from ' . $label . ' (' . ($on ? (($ch === 'gbp' ? ias_gbp_ready($p) : ias_push_ready($p)) ?: 'moved out of reach') : $label . ' switched off') . ') — not sent: dry run only.']);
           unset($had[$ch]);
           $changed = true;
           $logged++;

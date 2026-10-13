@@ -32,6 +32,10 @@ if (!function_exists('ias_calendar_handle_post')) {
     /** Later phases add their own calendar actions here. */
     do_action('ias_calendar_action', $action);
 
+    // A person's change goes to OneUp now, not on the next hourly run (DJ, Oct 13, 2026).
+    $pid = isset($_POST['ias_post']) ? (int) $_POST['ias_post'] : 0;
+    if ($pid > 0 && function_exists('ias_push_now') && in_array($action, ias_push_now_actions(), true)) ias_push_now_flash($pid);
+
     $to = isset($_POST['ias_back']) ? esc_url_raw(wp_unslash($_POST['ias_back'])) : '';
     wp_safe_redirect($to !== '' ? $to : $back);
     exit;
@@ -61,12 +65,12 @@ if (!function_exists('ias_calendar_render')) {
     $button = (string) apply_filters('ias_calendar_header_actions', $button);
     ia_ui_header(
       'Social Calendar',
-      'The next ' . (int) ias_setting('plan_days', 30) . ' days of Facebook posts for every listing. Click a post to see it. '
-        . 'Sundays never carry a post; the shaded days are inside the 48-hour veto window, where nothing new is scheduled.',
+      'The next ' . (int) ias_setting('plan_days', 30) . ' days of posts for every listing. Click a post to see it. '
+        . 'Sundays never carry a post; the shaded days are inside the ' . (int) ias_setting('lead_hours', 48) . "\u{2011}hour veto window, where nothing new is scheduled.",
       $button
     );
     ias_header_end();
-    echo ias_switches_strip();
+    echo ias_switches_strip(true);
     /** A line about the last plan (Phase 3). */
     do_action('ias_calendar_before_grid');
 
@@ -78,17 +82,24 @@ if (!function_exists('ias_calendar_render')) {
     $days  = max(7, (int) ias_setting('plan_days', 30));
     $today = ias_now()->setTime(0, 0);
     $last  = $today->modify('+' . ($days - 1) . ' days');
-    $posts = ias_posts_query(['from' => $today->format('Y-m-d'), 'to' => $last->format('Y-m-d')]);
-
+    // Whole weeks: this week's earlier days (what went out) and the last week's days past the plan.
+    $from  = $today->modify('-' . ((int) $today->format('N') - 1) . ' days');
+    $to    = $last->modify('+' . (7 - (int) $last->format('N')) . ' days');
+    $shown = ias_posts_query(['from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d')]);
+    $posts = [];
     $by_day = [];
-    foreach ($posts as $p) {
+    foreach ($shown as $p) {
       $when = ias_post_when($p);
-      if ($when) $by_day[$when->format('Y-m-d')][] = $p;
+      if (!$when) continue;
+      $by_day[$when->format('Y-m-d')][] = $p;
+      if ($when >= $today && $when->setTime(0, 0) <= $last) $posts[] = $p;
     }
 
-    echo '<div class="ias-legend">';
-    foreach (['planned', 'waiting', 'approved', 'pushed', 'published', 'held', 'failed', 'dropped', 'skipped', 'cancelled', 'human'] as $st) echo ias_status_badge($st);
-    echo '</div>';
+    // The key: only the states on the calendar now.
+    $present = [];
+    foreach ($shown as $p) $present[ias_post_shown_status($p)] = true;
+    $keys = array_values(array_filter(['planned', 'waiting', 'approved', 'pushed', 'published', 'held', 'failed', 'dropped', 'skipped', 'cancelled', 'human'], function ($st) use ($present) { return isset($present[$st]); }));
+    if ($keys) echo '<div class="ias-legend"><span class="description">Key:</span> ' . implode('', array_map('ias_status_badge', $keys)) . '</div>';
 
     ias_calendar_grid($today, $last, $by_day);
 
@@ -104,38 +115,63 @@ if (!function_exists('ias_calendar_render')) {
   }
 }
 
-/** The month grid: Monday-first weeks from this week to the last planned day. */
+/**
+ * The grid: Monday-first weeks from this week to the last planned day, whole
+ * weeks — this week's earlier days show what went out, the last week's days
+ * past the plan are faint. On a phone it is a list of the days that carry
+ * posts, each run of empty days one line (`.ias-cal-gap`, hidden on wider
+ * screens).
+ */
 if (!function_exists('ias_calendar_grid')) {
   function ias_calendar_grid(DateTimeImmutable $today, DateTimeImmutable $last, array $by_day): void {
     $floor = ias_now()->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours');
     $cap   = (int) ias_setting('daily_cap', 3);
     $start = $today->modify('-' . ((int) $today->format('N') - 1) . ' days'); // Monday of this week
     $end   = $last->modify('+' . (7 - (int) $last->format('N')) . ' days');   // Sunday of the last week
+    $run = [];
+    $gap = function () use (&$run) {
+      // A run of empty days, for the phone's list: Sundays at its ends say nothing (they never carry a post).
+      while ($run && $run[0]->format('N') === '7') array_shift($run);
+      while ($run && end($run)->format('N') === '7') array_pop($run);
+      $html = '';
+      if ($run) {
+        $a = $run[0]; $b = end($run);
+        $html = '<div class="ias-cal-gap">' . esc_html($a->format('D M j') . ($a == $b ? '' : ' – ' . $b->format('D M j'))) . ' · nothing planned</div>';
+      }
+      $run = [];
+      return $html;
+    };
 
     echo '<div class="ias-cal">';
-    foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $d) echo '<div class="ias-cal-head">' . esc_html($d) . '</div>';
+    foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $d) echo '<div class="ias-cal-head' . ($d === 'Sun' ? ' sun' : '') . '">' . esc_html($d) . '</div>';
     for ($day = $start; $day <= $end; $day = $day->modify('+1 day')) {
       $key = $day->format('Y-m-d');
-      if ($day < $today || $day > $last) {
-        echo '<div class="ias-day blank"></div>';
-        continue;
-      }
+      $list = $by_day[$key] ?? [];
+      usort($list, function ($a, $b) { return strcmp((string) $a['scheduled_at'], (string) $b['scheduled_at']); });
+      $past = $day < $today;
+      $beyond = $day > $last;
+      $is_today = $key === $today->format('Y-m-d');
+      if (!$past && !$beyond && !$is_today && !$list) $run[] = $day;
+      elseif (!$past) echo $gap();
+
       $classes = ['ias-day'];
       if ($day->format('N') === '7') $classes[] = 'sun';
-      if ($key === $today->format('Y-m-d')) $classes[] = 'today';
-      if ($day->setTime(23, 59) < $floor) $classes[] = 'floor';
-      $list  = $by_day[$key] ?? [];
-      usort($list, function ($a, $b) { return strcmp((string) $a['scheduled_at'], (string) $b['scheduled_at']); });
+      if ($past) $classes[] = 'past';
+      if ($beyond) $classes[] = 'beyond';
+      if ($is_today) $classes[] = 'today';
+      if ($list) $classes[] = 'has';
+      if (!$past && $day->setTime(23, 59) < $floor) $classes[] = 'floor';
       $count = count(array_filter($list, function ($p) { return in_array($p['status'], array_merge(ias_live_statuses(), ['published', 'human']), true); }));
+      $title = $day->format('N') === '7' ? 'Never a post on Sunday' : ($past ? 'Earlier this week' : ($beyond ? 'Past the ' . (int) ias_setting('plan_days', 30) . ' days the plan looks ahead' : ''));
 
-      echo '<div class="' . esc_attr(implode(' ', $classes)) . '">';
-      echo '<div class="ias-day-date"><span>' . esc_html($day->format('D M j')) . '</span>';
-      if ($day->format('N') === '7') echo '<span class="n">no posts</span>';
-      elseif ($count) echo '<span class="n">' . (int) $count . '/' . (int) $cap . '</span>';
+      echo '<div class="' . esc_attr(implode(' ', $classes)) . '"' . ($title !== '' ? ' title="' . esc_attr($title) . '"' : '') . '>';
+      echo '<div class="ias-day-date"><span>' . ($is_today ? '<b class="ias-today">Today</b> ' : '') . esc_html($day->format('D M j')) . '</span>';
+      if ($count && !$past && $day->format('N') !== '7') echo '<span class="n" title="' . esc_attr($count . ' of the ' . $cap . ' posts a day') . '">' . (int) $count . '/' . (int) $cap . '</span>';
       echo '</div>';
       foreach ($list as $p) echo ias_calendar_chip($p);
       echo '</div>';
     }
+    echo $gap();
     echo '</div>';
   }
 }
@@ -143,12 +179,14 @@ if (!function_exists('ias_calendar_grid')) {
 if (!function_exists('ias_calendar_chip')) {
   function ias_calendar_chip(array $p): string {
     $def  = ias_post_type((string) $p['type']);
-    $time = !empty($p['scheduled_at']) ? date_i18n('g:i a', strtotime((string) $p['scheduled_at'])) : 'unscheduled';
+    $timed = !empty($p['scheduled_at']);
+    $time = $timed ? date_i18n('g:i a', strtotime((string) $p['scheduled_at'])) : 'no time yet';
     $statuses = ias_statuses();
     $shown = ias_post_shown_status($p);
-    $title = ($statuses[$shown]['label'] ?? $shown) . (!empty($p['flags']['dry_run']) ? ' in the dry run (nothing was sent)' : '') . (!empty($p['locked']) ? ' · edited in OneUp' : '') . ' · score ' . number_format((float) $p['score'], 0);
-    return '<a class="ias-chip st-' . esc_attr($shown) . '" href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '" title="' . esc_attr($title) . '">'
-      . '<span class="t">' . esc_html($def['short']) . '</span> ' . esc_html($time)
+    $title = ($statuses[$shown]['label'] ?? $shown) . (!empty($p['flags']['dry_run']) ? ' in the dry run (nothing was sent)' : '') . (!empty($p['locked']) ? ' · edited in OneUp' : '')
+      . ($timed ? '' : ' · not placed on the plan yet: shown on its best day') . ' · score ' . number_format((float) $p['score'], 0);
+    return '<a class="ias-chip st-' . esc_attr($shown) . ($timed ? '' : ' untimed') . '" href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '" title="' . esc_attr($title) . '">'
+      . '<span class="t">' . esc_html($def['short']) . '</span> <span class="tm">' . esc_html($time) . '</span>'
       . '<span class="s">' . esc_html(ias_post_subject($p)) . '</span></a>';
   }
 }
@@ -177,6 +215,7 @@ if (!function_exists('ias_calendar_render_post')) {
     ia_ui_header($def['short'] . ' post · ' . ias_post_subject($p), implode(' · ', $bits), $back);
     ias_header_end();
     echo ias_switches_strip(true);
+    if (function_exists('ias_pulse_pill')) echo ias_pulse_pill(); // when OneUp was last heard from (instant.php)
     /** The bar across the top: what this post is waiting for, and the buttons that settle it. */
     do_action('ias_post_view_bar', $p);
 
@@ -216,7 +255,7 @@ if (!function_exists('ias_post_facts_card')) {
     echo '<div class="ias-card"><h3>About this post</h3><table class="ias-kv">';
     if (!empty($p['flags']['dry_run'])) echo '<tr><th>Sent</th><td>' . ias_status_badge('published') . ' <span class="description">in the dry run — nothing was sent to OneUp</span></td></tr>';
     if ($p['lane'] === 'A') $approval = 'Needed — emailed to ' . (implode(' and ', array_map('ias_person_name', ias_approvers())) ?: 'the approvers');
-    elseif ($p['lane'] === 'B') $approval = 'Not needed — ' . (int) ias_setting('lead_hours', 48) . ' hours to veto it in OneUp';
+    elseif ($p['lane'] === 'B') $approval = 'Not needed — ' . (int) ias_setting('lead_hours', 48) . ' hours to skip, move or change it here first';
     else $approval = '';
     if ($approval !== '') echo '<tr><th>Approval</th><td>' . esc_html($approval) . '</td></tr>';
     $start = $day($p['window_start']); $ideal = $day($p['window_ideal']); $end = $day($p['window_end']);
@@ -224,7 +263,9 @@ if (!function_exists('ias_post_facts_card')) {
     elseif ($end === '') $can = 'From ' . ($start ?: $ideal) . ($ideal !== '' ? ' (best ' . $ideal . ')' : '') . ($p['lane'] === 'A' ? ', once approved' : '');
     else $can = ($start ?: $ideal) . ' – ' . $end . ($ideal !== '' ? ' (best ' . $ideal . ')' : '');
     echo '<tr><th>Can go</th><td>' . esc_html($can) . '</td></tr>';
-    echo '<tr><th>Goes out</th><td>' . esc_html($p['scheduled_at'] ? date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) : 'Not scheduled yet') . '</td></tr>';
+    echo '<tr><th>Goes out</th><td>' . esc_html($p['scheduled_at'] ? date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) : 'Not scheduled yet')
+      . (!empty($p['flags']['pinned_by']) ? ' <span class="description">— moved there by ' . esc_html(ias_actor_name((string) $p['flags']['pinned_by'])) . '; the plan keeps it</span>' : '')
+      . (function_exists('ias_move_form') ? ias_move_form($p) : '') . '</td></tr>';
     echo '<tr><th>Priority</th><td><span title="' . esc_attr('Weight ' . (int) $p['weight'] . ' × the starting-bid multiplier') . '">' . esc_html(number_format((float) $p['score'], 0)) . '</span> · ' . esc_html($p['guaranteed'] ? 'guaranteed a place' : 'can be dropped') . '</td></tr>';
     if ($p['oneup_post_id'] !== '') echo '<tr><th>OneUp id</th><td><code>' . esc_html((string) $p['oneup_post_id']) . '</code></td></tr>';
     $links = [];

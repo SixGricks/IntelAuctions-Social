@@ -43,3 +43,9 @@ t_eq('Facebook token expired', ias_oneup_error_in(['status' => 'error', 'msg' =>
 t_eq('Not allowed', ias_oneup_error_in(['success' => false, 'message' => 'Not allowed']), 'success: false');
 t_eq('', ias_oneup_error_in(['error' => false, 'message' => 'Post scheduled successfully', 'data' => ['post_id' => 1]]), 'error: false is not an error');
 t_eq('', ias_oneup_error_in(['posts' => [], 'next_start' => null]), 'a list is not an error');
+
+// Which network an account is, by OneUp's social_network_type (Look up accounts offers each list only its own kind).
+t_ok(ias_oneup_type_is('gbp', 'GBP') && ias_oneup_type_is('gbp', 'Google Business Profile'), 'a GBP account is Google\'s');
+t_ok(ias_oneup_type_is('facebook', 'Facebook') && !ias_oneup_type_is('facebook', 'GBP'), 'a Facebook page is Facebook\'s, a GBP location is not');
+t_ok(ias_oneup_type_is('x', 'Twitter') && ias_oneup_type_is('x', 'X'), 'X answers to Twitter too');
+t_ok(!ias_oneup_type_is('instagram', 'YouTube'), 'a YouTube channel is no network of ours');

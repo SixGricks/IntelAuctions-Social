@@ -85,7 +85,7 @@ add_action('ias_post_view_side', function (array $p): void {
     $o = (array) $p['flags']['oneup'];
     echo '<div class="ias-card"><h3>On OneUp</h3><p>' . ($p['status'] === 'published' ? 'Went out' : 'Scheduled') . ($sent['id'] !== '' ? ' as post <code>#' . esc_html($sent['id']) . '</code>' : '') . ' for ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) ($o['when'] ?? $p['scheduled_at'])))) . '.'
       . (!empty($p['flags']['unconfirmed']) ? ' <span class="description">(waiting for the read-back to confirm it)</span>' : '') . '</p>';
-    if (!empty($p['locked'])) echo '<p><strong>' . esc_html(ucfirst((string) ($p['flags']['edited_in_oneup'] ?? 'edited'))) . ' in OneUp by a person</strong> — the plugin keeps it as they made it and never replaces it.</p>';
+    if (!empty($p['locked'])) echo '<p><strong>' . esc_html(ucfirst((string) ($p['flags']['edited_in_oneup'] ?? 'edited'))) . ' in OneUp by a person</strong> — the plugin keeps it as they made it, until someone presses <strong>Edit it here again</strong> (above).</p>';
     if (!empty($p['flags']['correction']['text']) && empty($p['flags']['correction']['done'])) {
       echo '<p><strong>A fact changed after it went out.</strong> Post this as a comment on it (a published post is never edited — that resets its reach):</p><div class="ias-preview" style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</div>';
     }
@@ -93,7 +93,7 @@ add_action('ias_post_view_side', function (array $p): void {
     if ($p['status'] === 'published') return;
   }
   if ($p['status'] === 'failed') {
-    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Retry it in OneUp, or skip it here.</p></div>';
+    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Press <strong>Try again</strong> (above) to send a fresh copy, or skip it.</p></div>';
     return;
   }
   echo '<div class="ias-card"><h3>' . ($sent['mode'] === 'live' ? 'What went to OneUp' : 'What would go to OneUp') . '</h3>';
@@ -108,77 +108,132 @@ add_action('ias_post_view_side', function (array $p): void {
   foreach (ias_channels_extra_on() as $ch) {
     $req = ias_render_channel($p, $ch);
     $problems = ias_channel_problems($req, $ch);
+    if ($ch === 'gbp') {
+      $g = (array) ($p['flags']['gbp'] ?? []);
+      $gwhy = ias_gbp_ready($p);
+      $state = !ias_gbp_live() ? 'dry run, not sent: ' . implode('; ', ias_gbp_blockers()) : ($gwhy !== '' ? 'not sent: ' . $gwhy : ($g ? 'on OneUp.' : 'goes on the next hourly run (outside the veto window).'));
+      echo '<p><strong>' . esc_html((string) ias_channel($ch)['label']) . '</strong> — ' . esc_html($state) . ($problems ? '; ' . esc_html(implode('; ', $problems)) : '') . '</p>' . $json($req);
+      continue;
+    }
     echo '<p><strong>' . esc_html((string) ias_channel($ch)['label']) . '</strong> — dry run only, not sent' . ($problems ? '; ' . esc_html(implode('; ', $problems)) : '') . '.</p>' . $json($req);
   }
   echo '</div>';
 });
 
-/* ---------------- OneUp connection check (Settings) ---------------- */
+/* ---------------- OneUp accounts (Settings) ---------------- */
 
+/**
+ * Look up accounts: OneUp's categories and their accounts, kept as the
+ * directory Settings offers to choose from. Without script it is a form
+ * (POST → redirect → GET); with it, the page asks over admin-ajax and fills
+ * the lists in place, keeping whatever was changed and not yet saved.
+ */
 add_action('admin_init', function () {
   if (!isset($_POST['ias_oneup_check']) || !current_user_can('manage_options')) return;
   check_admin_referer('ias_oneup_check');
-  if (!ias_setting('master', false)) { // off means the plugin never calls OneUp — not even to read
-    ia_flash_set('<div class="notice notice-warning"><p>Turn the <strong>master switch</strong> on first (dry run can stay on): while it is off, the plugin never calls OneUp.</p></div>');
-    wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS));
-    exit;
-  }
-  $cats = ias_oneup_get('categories');
-  if (is_wp_error($cats)) {
-    ia_flash_set('<div class="notice notice-error"><p>OneUp did not answer: ' . esc_html($cats->get_error_message()) . '</p></div>');
+  $dir = ias_oneup_directory_fetch(ias_actor());
+  if (isset($dir['error'])) {
+    ia_flash_set('<div class="notice notice-' . (ias_setting('master', false) ? 'error' : 'warning') . '"><p>' . esc_html($dir['error']) . '</p></div>');
   } else {
-    $html = '<div class="notice notice-success"><p><strong>OneUp answered.</strong> Categories:</p><ul style="list-style:disc;margin-left:20px">';
-    foreach (ias_oneup_pairs($cats, ['id', 'category_id'], ['category_name', 'name']) as [$id, $name]) {
-      $html .= '<li><code>' . esc_html($id) . '</code> ' . esc_html($name);
-      $accts = ias_oneup_get('accounts', ['category_id' => $id]);
-      if (!is_wp_error($accts)) {
-        $list = [];
-        foreach (ias_oneup_pairs($accts, ['social_network_id', 'id'], ['social_network_name', 'username', 'name']) as [$aid, $aname, $row]) {
-          $list[] = esc_html($aname . ' (' . ($row['social_network_type'] ?? $row['type'] ?? '') . ')') . ': <code>' . esc_html($aid) . '</code>';
-          if ((string) $aid === (string) ias_setting('oneup_account_id', '') && (string) $id === (string) ias_setting('oneup_category_id', '')) ias_settings_update(['oneup_account_name' => $aname]);
-        }
-        if ($list) $html .= '<br>' . implode('<br>', $list);
-      }
-      $html .= '</li>';
-    }
-    $html .= '</ul><p>Copy the category id and the Facebook page\'s account id into the fields below. Nothing was changed in OneUp.</p></div>';
-    ia_flash_set($html);
+    ia_flash_set('<div class="notice notice-success"><p><strong>OneUp answered.</strong> ' . ias_oneup_directory_line() . ' Choose the category and the accounts under OneUp below, then press Save settings. Nothing was changed in OneUp.</p></div>');
   }
-  ias_log('readback', 0, ['summary' => 'Connection check: ' . (is_wp_error($cats) ? $cats->get_error_message() : 'OneUp answered')], ias_actor());
-  wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS));
+  ias_log('readback', 0, ['summary' => 'Look up accounts: ' . (isset($dir['error']) ? $dir['error'] : 'OneUp answered')], ias_actor());
+  wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS) . '#ias-oneup-pick');
   exit;
+});
+
+add_action('wp_ajax_ias_oneup_lookup', function () {
+  if (!current_user_can('manage_options') || !check_ajax_referer('ias_oneup_check', '_wpnonce', false)) wp_send_json_error(['message' => 'Not allowed — reload the page.'], 403);
+  $dir = ias_oneup_directory_fetch(ias_actor());
+  ias_log('readback', 0, ['summary' => 'Look up accounts: ' . (isset($dir['error']) ? $dir['error'] : 'OneUp answered')], ias_actor());
+  if (isset($dir['error'])) wp_send_json_error(['message' => $dir['error']]);
+  $chosen = [];
+  foreach ((array) wp_unslash($_POST['chosen'] ?? []) as $k => $v) $chosen[sanitize_key((string) $k)] = sanitize_text_field((string) $v);
+  wp_send_json_success(['fields' => ias_oneup_pick_options($chosen), 'summary' => ias_oneup_directory_line()]);
+});
+
+/** The page's script: the lists show the chosen category's accounts; Look up accounts fills them in place. */
+add_action('admin_footer', function () {
+  if (($_GET['page'] ?? '') !== IAS_PAGE_SETTINGS || !current_user_can('manage_options')) return;
+  ?>
+<script>
+jQuery(function ($) {
+  var $cat = $('#ias-cat');
+  if (!$cat.length) return;
+  function filter(changed) {
+    var cat = String($cat.val() || '');
+    $('.ias-acct-pick').each(function () {
+      var $s = $(this);
+      $s.find('optgroup').each(function () { var on = !cat || String($(this).data('cat')) === cat; this.hidden = !on; this.disabled = !on; });
+      if ($s.find('option:selected').closest('optgroup').prop('disabled')) $s.val('');
+      if (changed && !$s.val()) { // the category's only account of this kind, ready chosen (Save settings keeps it)
+        var $only = $s.find('optgroup:not([disabled]) option');
+        if ($only.length === 1) $s.val($only.val());
+      }
+    });
+  }
+  $cat.on('change', function () { filter(true); });
+  filter(false);
+  $('#ias-lookup').on('click', function (e) {
+    e.preventDefault();
+    var $b = $(this), was = $b.text(), chosen = { category: $cat.val() || '' };
+    $('.ias-acct-pick').each(function () { chosen[this.id === 'ias-acct' ? 'facebook' : this.id.replace('ias-net-', '')] = $(this).val() || ''; });
+    $b.prop('disabled', true).text('Asking OneUp…');
+    $.post(ajaxurl, { action: 'ias_oneup_lookup', _wpnonce: $('#ias-oneup-lookup-form [name=_wpnonce]').val(), chosen: chosen })
+      .done(function (r) {
+        if (!r || !r.success) { $('#ias-oneup-found').html('<strong style="color:#b32d2e"></strong>').find('strong').text((r && r.data && r.data.message) || 'OneUp did not answer.'); return; }
+        $.each(r.data.fields, function (id, html) { $('#' + id).html(html); });
+        $('#ias-oneup-found').html(r.data.summary + ' <strong>Choose below, then Save settings.</strong>');
+        filter(false);
+      })
+      .fail(function () { $('#ias-oneup-found').html('<strong style="color:#b32d2e">The site did not answer — try again, or reload the page.</strong>'); })
+      .always(function () { $b.prop('disabled', false).text(was); });
+  });
+});
+</script>
+  <?php
 });
 
 add_action('admin_init', function () {
   if (!isset($_POST['ias_oneup_verify']) || !current_user_can('manage_options')) return;
   check_admin_referer('ias_oneup_verify');
-  $r = ias_oneup_verify(ias_actor());
-  ia_flash_set('<div class="notice notice-' . ($r['ok'] ? 'success' : 'warning') . '"><p><strong>Verify OneUp: ' . ($r['ok'] ? 'every step passed.' : 'a step failed') . '</strong> The steps are below.</p></div>');
-  wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS) . '#ias-verify');
+  $ch = sanitize_key(wp_unslash((string) $_POST['ias_oneup_verify'])) === 'gbp' ? 'gbp' : 'facebook';
+  $r = ias_oneup_verify(ias_actor(), $ch);
+  ia_flash_set('<div class="notice notice-' . ($r['ok'] ? 'success' : 'warning') . '"><p><strong>' . ($ch === 'gbp' ? 'Verify for Google' : 'Verify OneUp') . ': ' . ($r['ok'] ? 'every step passed.' : 'a step failed') . '</strong> The steps are below.</p></div>');
+  wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS) . ($ch === 'gbp' ? '#ias-verify-gbp' : '#ias-verify'));
   exit;
 });
 
 add_action('ias_settings_after_form', function () {
   $master = (bool) ias_setting('master', false);
-  $ready = !ias_oneup_blockers(false);
+  // Look up accounts (its button sits in the OneUp section above, form="ias-oneup-lookup-form").
+  echo '<form method="post" id="ias-oneup-lookup-form">' . wp_nonce_field('ias_oneup_check', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_check" value="1"></form>';
   echo '<div class="ias-card" style="max-width:760px"><h2 style="margin-top:0">OneUp connection</h2>';
-  if (!$master) echo '<p class="description">The master switch is off, so the plugin never calls OneUp. Turn it on (dry run can stay on) to check the connection and verify.</p>';
-  echo '<p><strong>Check connection</strong> asks OneUp for its categories and their accounts with the OneUp key — a read-only check that changes nothing — so the ids above can be copied in.</p>';
-  echo '<form method="post" style="margin-bottom:14px">' . wp_nonce_field('ias_oneup_check', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_check" value="1">'
-    . '<button class="button"' . (ias_oneup_key() === '' || !$master ? ' disabled title="' . esc_attr(!$master ? 'Turn the master switch on first' : 'No OneUp key yet (Settings → OneUp)') . '"' : '') . ' data-ia-busy="Asking OneUp…">Check connection</button></form>';
-
-  echo '<h3 id="ias-verify">Verify OneUp</h3><p>Nothing is sent to OneUp for real until this has passed for the page set above. It checks every call the plugin makes, safely: it saves a <strong>draft</strong> for the page (drafts never publish — and if OneUp scheduled it as a real post anyway, Verify says so and takes it off), reads it back, compares its time with the site\'s, deletes it, and reads the scheduled, published and failed lists.</p>';
-  echo '<form method="post">' . wp_nonce_field('ias_oneup_verify', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_verify" value="1">'
-    . '<button class="button button-primary"' . ($ready ? '' : ' disabled title="' . esc_attr(implode('; ', ias_oneup_blockers(false))) . '"') . ' onclick="return confirm(\'Save a test draft in OneUp (it never publishes), read it back and delete it?\')" data-ia-busy="Checking OneUp…">Verify OneUp</button>'
-    . (ias_oneup_verified() ? ' ' . ia_ui_badge('passed for this page', 'ok') : '') . '</form>';
-  $v = get_option('ias_oneup_verify', []);
-  if (is_array($v) && !empty($v['steps'])) {
-    echo '<p style="margin-top:10px">Last run ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $v['at']))) . ' by ' . esc_html((string) $v['by']) . ': ' . ($v['ok'] ? ia_ui_badge('passed', 'ok') : ia_ui_badge('a step failed', 'bad')) . '</p><table class="ias-kv">';
-    foreach ((array) $v['steps'] as $st) {
-      $badge = $st['ok'] === true ? ia_ui_badge('ok', 'ok') : ($st['ok'] === false ? ia_ui_badge('failed', 'bad') : ia_ui_badge('unclear', 'warn'));
-      echo '<tr><th>' . esc_html((string) $st['label']) . '</th><td>' . $badge . ' ' . esc_html((string) $st['detail']) . '</td></tr>';
+  if (!$master) echo '<p class="description">The master switch is off, so the plugin never calls OneUp. Turn it on (dry run can stay on) to look up the accounts and verify.</p>';
+  $verify = function (string $ch) {
+    $gbp = $ch === 'gbp';
+    $ready = $gbp ? !ias_gbp_blockers_read() : !ias_oneup_blockers(false);
+    $why = $gbp ? ias_gbp_blockers_read() : ias_oneup_blockers(false);
+    $passed = $gbp ? ias_gbp_verified() : ias_oneup_verified();
+    $html = '<form method="post" style="margin-bottom:18px">' . wp_nonce_field('ias_oneup_verify', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_verify" value="' . esc_attr($ch) . '">'
+      . '<button class="button' . ($passed || ($gbp && !ias_oneup_verified()) ? '' : ' button-primary') . '"' . ($ready ? '' : ' disabled title="' . esc_attr(implode('; ', $why)) . '"') . ' onclick="return confirm(\'Save a test draft in OneUp (it never publishes), read it back and delete it?\')" data-ia-busy="Checking OneUp…">' . ($gbp ? 'Verify for Google' : 'Verify OneUp') . '</button>'
+      . ($passed ? ' ' . ia_ui_badge($gbp ? 'passed for this location' : 'passed for this page', 'ok') : '') . '</form>';
+    $v = get_option($gbp ? 'ias_gbp_verify' : 'ias_oneup_verify', []);
+    if (is_array($v) && !empty($v['steps'])) {
+      $html .= '<p style="margin-top:10px">Last run ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $v['at']))) . ' by ' . esc_html(ias_actor_name((string) $v['by'])) . ': ' . ($v['ok'] ? ia_ui_badge('passed', 'ok') : ia_ui_badge('a step failed', 'bad')) . '</p><table class="ias-kv">';
+      foreach ((array) $v['steps'] as $st) {
+        $badge = $st['ok'] === true ? ia_ui_badge('ok', 'ok') : ($st['ok'] === false ? ia_ui_badge('failed', 'bad') : ia_ui_badge('unclear', 'warn'));
+        $html .= '<tr><th>' . esc_html((string) $st['label']) . '</th><td>' . $badge . ' ' . esc_html((string) $st['detail']) . '</td></tr>';
+      }
+      $html .= '</table>';
     }
-    echo '</table>';
+    return '<div class="ias-verify-block" style="margin-bottom:18px">' . $html . '</div>';
+  };
+  echo '<h3 id="ias-verify">Verify OneUp</h3><p>Nothing is sent to Facebook for real until this has passed for the page chosen above. It checks every call the plugin makes, safely: it saves a <strong>draft</strong> for the page (drafts never publish — and if OneUp scheduled it as a real post anyway, Verify says so and takes it off), reads it back, compares its time with the site\'s, deletes it, and reads the scheduled, published and failed lists.</p>';
+  echo $verify('facebook');
+  if (ias_channel_settings('gbp')['on'] || get_option('ias_gbp_verify')) {
+    echo '<h3 id="ias-verify-gbp">Verify for Google</h3><p>The same round trip for the Google Business Profile location: nothing goes to Google for real until it has passed for the location chosen above (and <strong>Send to Google</strong> is on).</p>';
+    echo $verify('gbp');
   }
   $rb = get_option('ias_readback_last', []);
   echo '<h3>Read-back</h3><p>' . (is_array($rb) && !empty($rb['at'])

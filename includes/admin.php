@@ -98,25 +98,30 @@ if (!function_exists('ias_admin_styles')) {
       .ias-switch.on{border-color:#00a32a;background:#edfaef}
       .ias-switch.off{color:#50575e}
       .ias-switch.alert{border-color:#d63638;background:#fcf0f1}
-      .ias-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;max-width:1880px}
-      .ias-cal-head{font-weight:600;font-size:12px;color:#50575e;padding:2px 4px}
-      .ias-day{background:#fff;border:1px solid #dcdcde;border-radius:6px;min-height:96px;padding:6px;font-size:12px;overflow:hidden}
+      .ias-cal{display:grid;grid-template-columns:repeat(6,minmax(0,1fr)) minmax(0,.55fr);gap:6px;max-width:1880px}
+      .ias-cal-head{font-weight:600;font-size:12px;color:#50575e;padding:2px 4px}.ias-cal-head.sun{color:#8c8f94}
+      .ias-cal-gap{display:none}
+      .ias-day{background:#fff;border:1px solid #dcdcde;border-radius:6px;min-height:84px;padding:6px;font-size:12px;overflow:hidden}
       .ias-day.sun{background:#f6f7f7;color:#8c8f94}
       .ias-day.today{border-color:#2271b1;box-shadow:0 0 0 1px #2271b1}
       .ias-day.floor{background:repeating-linear-gradient(45deg,#fff,#fff 8px,#f6f7f7 8px,#f6f7f7 16px)}
-      .ias-day.blank{background:transparent;border:0}
-      .ias-day-date{font-weight:600;display:flex;justify-content:space-between;margin-bottom:4px}
-      .ias-day-date .n{font-weight:400;color:#8c8f94}
+      .ias-day.past{background:#f6f7f7;color:#8c8f94}.ias-day.past .ias-chip{opacity:.8}
+      .ias-day.beyond{background:transparent;border-style:dashed;color:#8c8f94}
+      .ias-day-date{font-weight:600;display:flex;justify-content:space-between;gap:4px;margin-bottom:4px}
+      .ias-day-date .n{font-weight:400;color:#8c8f94;cursor:help}
+      .ias-today{display:none}
       .ias-chip{display:block;border-left:3px solid #2271b1;background:#f0f6fc;border-radius:3px;padding:3px 5px;margin:0 0 4px;text-decoration:none;color:#1d2327;line-height:1.3}
       .ias-chip:hover{background:#e5effa}
       .ias-chip .t{font-weight:600}
+      .ias-chip .tm{white-space:nowrap}
+      .ias-chip.untimed{border-left-style:dashed}.ias-chip.untimed .tm{color:#8c8f94;font-style:italic}
       .ias-chip .s{display:block;color:#50575e;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .ias-chip.st-waiting{border-color:#dba617;background:#fcf9e8}
       .ias-chip.st-held,.ias-chip.st-failed{border-color:#d63638;background:#fcf0f1}
       .ias-chip.st-approved,.ias-chip.st-pushed,.ias-chip.st-published{border-color:#00a32a;background:#edfaef}
       .ias-chip.st-dropped,.ias-chip.st-skipped,.ias-chip.st-cancelled{border-color:#8c8f94;background:#f6f7f7;color:#8c8f94;text-decoration:line-through}
       .ias-chip.st-human{border-color:#8c8f94;background:#fff}
-      .ias-legend{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 14px}
+      .ias-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 14px}
       .ias-cols{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:20px;max-width:1880px}
       .ias-card{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:12px 16px;margin:0 0 16px}
       .ias-card h2,.ias-card h3{margin-top:4px}
@@ -235,22 +240,36 @@ if (!function_exists('ias_admin_styles')) {
       .ias-asks{list-style:disc;margin:0 0 0 20px}
       .ias-suggest{border-color:#72aee6;background:#f0f6fc}
       .ias-filters{line-height:2}
+      .ias-gbp-cta{padding:8px 12px 12px}.ias-gbp-cta a{display:inline-block;border:1px solid #1a73e8;color:#1a73e8;border-radius:18px;padding:5px 16px;font-weight:600;text-decoration:none;font-size:13px}
+      .ias-gbp-line .ias-act{display:inline-block;margin:4px 6px 0 0}
+      .ias-pulse{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:-6px 0 12px;font-size:13px;color:#50575e}
+      .ias-pulse-dot{width:9px;height:9px;border-radius:50%;background:#c3c4c7;flex:none}
+      .ias-pulse.is-ok .ias-pulse-dot{background:#00a32a}.ias-pulse.is-error .ias-pulse-dot{background:#d63638}.ias-pulse.is-new .ias-pulse-dot{background:#dba617}
+      .ias-pulse.is-error{color:#8a2424}.ias-pulse.is-new{color:#1d2327;font-weight:600}
+      .ias-pulse [hidden]{display:none!important}
+      .ias-move{margin-top:6px}.ias-move summary{cursor:pointer;color:#2271b1}.ias-move form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
       .ias-post [hidden],.ias-bar [hidden]{display:none!important} /* the .button display of WordPress beats the hidden attribute */
       .ias-switches-fold{margin:10px 0 16px}.ias-switches-fold summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
       .ias-switches-fold summary::-webkit-details-marker{display:none}.ias-switches-fold summary .ias-switch{font-size:13px}
       .ias-switches-more{color:#2271b1;text-decoration:underline;font-size:12px}.ias-switches-fold[open] .ias-switches{margin-top:8px}
       @media (max-width:782px){.ias-voice-table thead{display:none}.ias-voice-table,.ias-voice-table tbody,.ias-voice-table tr,.ias-voice-table td{display:block;width:auto!important}.ias-voice-table tr{border-bottom:1px solid #dcdcde;padding:6px 0}.ias-voice-table td{padding:4px 8px}}
-      @media (max-width:600px){.ias-pics{grid-template-columns:repeat(3,minmax(0,1fr))}.ias-cal{grid-template-columns:minmax(0,1fr)}.ias-day{min-height:0}.ias-day.sun{display:none}}
-      @media (max-width:1100px){.ias-cols{grid-template-columns:minmax(0,1fr)}.ias-cal{grid-template-columns:repeat(2,minmax(0,1fr))}.ias-cal-head{display:none}.ias-day.blank{display:none}}
+      @media (max-width:1100px){.ias-cols{grid-template-columns:minmax(0,1fr)}}
+      /* A phone: the days that carry posts, in a list; each run of empty days one line. */
+      @media (max-width:782px){.ias-cal{display:flex;flex-direction:column;gap:6px}.ias-cal-head{display:none}
+        .ias-day{min-height:0}.ias-day:not(.has):not(.today),.ias-day.past{display:none}.ias-day.floor{background:#fff}
+        .ias-today{display:inline}.ias-day-date{font-size:13px}.ias-chip{padding:6px 8px;font-size:13px}.ias-chip .s{font-size:12px}
+        .ias-cal-gap{display:block;color:#8c8f94;font-size:12px;padding:2px 8px;border-left:2px dotted #c3c4c7;margin-left:8px}}
+      @media (max-width:600px){.ias-pics{grid-template-columns:repeat(3,minmax(0,1fr))}}
     </style>';
   }
 }
 
 /**
  * The switches as a strip of chips — on every screen of this plugin, so
- * nobody wonders whether anything can reach Facebook. $compact (a post's
- * page): one line saying what that means, the chips folded under it, so the
- * post's own bar is on the first screen of a phone.
+ * nobody wonders whether anything can reach Facebook. $compact (the calendar
+ * and a post's page): one line saying what that means for Facebook and each
+ * other network switched on, the chips folded under it, so the calendar and a
+ * post's own bar are on the first screen of a phone.
  */
 if (!function_exists('ias_switches_strip')) {
   function ias_switches_strip(bool $compact = false): string {
@@ -268,7 +287,10 @@ if (!function_exists('ias_switches_strip')) {
       $out .= $chip($def['short'], $on ? 'On' : 'Off', $on ? 'on' : 'off');
     }
     if (function_exists('ias_channels_extra_on')) {
-      foreach (ias_channels_extra_on() as $ch) $out .= $chip((string) ias_channel($ch)['label'], 'Dry run only — not sent yet', 'on');
+      foreach (ias_channels_extra_on() as $ch) {
+        $state = (array) apply_filters('ias_channel_state', [], $ch);
+        $out .= $chip((string) ias_channel($ch)['label'], $state ? (string) preg_replace('/^[^:]+:\s*/', '', (string) $state[1]) : 'Dry run only — not sent yet', 'on');
+      }
     }
     $out .= '</div>';
     if ($compact) {
@@ -277,7 +299,9 @@ if (!function_exists('ias_switches_strip')) {
       elseif (!empty($s['paused'])) $line = ['alert', 'Paused: nothing new goes to OneUp.'];
       elseif (!empty($s['dry_run'])) $line = ['on', 'Dry run: what would go to OneUp is written to the log; nothing is sent.'];
       else $line = ['on', 'Live: ' . ($on ? implode(', ', array_map(function ($t) { return ias_post_type($t)['short']; }, $on)) . ' posts go to Facebook.' : 'no post type is switched on, so nothing is sent.')];
-      $out = '<details class="ias-switches-fold"><summary><span class="ias-switch ' . esc_attr($line[0]) . '">' . esc_html($line[1]) . '</span> <span class="ias-switches-more">All the switches</span></summary>' . $out . '</details>';
+      $more = '';
+      foreach (function_exists('ias_channels_summary') ? ias_channels_summary() : [] as [$class, $text]) $more .= ' <span class="ias-switch ' . esc_attr($class) . '">' . esc_html($text) . '</span>';
+      $out = '<details class="ias-switches-fold"><summary><span class="ias-switch ' . esc_attr($line[0]) . '">' . esc_html($line[1]) . '</span>' . $more . ' <span class="ias-switches-more">All the switches</span></summary>' . $out . '</details>';
     }
     $why = function_exists('ias_ai_blocker') ? ias_ai_blocker() : '';
     if ($why !== '') $out .= '<div class="notice notice-warning inline"><p><strong>Drafts are stopped.</strong> ' . esc_html($why) . ' Planning goes on; a post gets its words once Claude can be asked again.</p></div>';

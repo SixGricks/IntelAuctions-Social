@@ -34,7 +34,7 @@ $html = $view($id);
 t_ok(strpos($html, 'Listing post · 3 Oscar Lane') !== false, 'the title names the post type and the listing');
 t_ok(strpos($html, 'inline ias-bar') === false, 'a planned post that waits for nothing has no bar');
 foreach (['class="ias-post"', '<h2>Edit</h2>', 'id="ias-pictures"', 'class="ias-fb ias-fb-facebook"', 'About this post', 'History'] as $needle) t_ok(strpos($html, $needle) !== false, '…it has ' . strip_tags($needle));
-t_ok(strpos($html, 'Not needed — 48 hours to veto it in OneUp') !== false && strpos($html, 'Can go') !== false && strpos($html, 'guaranteed a place') !== false, 'the details are in plain words (approval, when it can go, its place)');
+t_ok(strpos($html, 'Not needed — 48 hours to skip, move or change it here first') !== false && strpos($html, 'Can go') !== false && strpos($html, 'guaranteed a place') !== false, 'the details are in plain words (approval, when it can go, its place)');
 t_ok(strpos($html, '<th>Lane</th>') === false && strpos($html, '<th>Window</th>') === false, '…not the plugin\'s own words (lane, window)');
 t_ok(strpos($html, 'Skip this post…') !== false && strpos($html, '>Rewrite<') !== false, 'Rewrite and Skip end the Edit card');
 

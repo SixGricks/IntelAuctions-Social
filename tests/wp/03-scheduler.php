@@ -132,7 +132,7 @@ ob_start(); ias_calendar_render(); $html = ob_get_clean();
 t_ok(strpos($html, 'What would go to OneUp') !== false && strpos($html, 'scheduled_date_time') !== false, 'a post shows what would go to OneUp');
 $_GET = ['page' => IAS_PAGE_SETTINGS];
 ob_start(); ias_settings_render(); $html = ob_get_clean();
-t_ok(strpos($html, 'Check connection') !== false, 'Settings offers the OneUp connection check');
+t_ok(strpos($html, 'Look up accounts') !== false && strpos($html, 'form="ias-oneup-lookup-form"') !== false && strpos($html, '<form method="post" id="ias-oneup-lookup-form">') !== false, 'Settings offers Look up accounts (its button in the OneUp section, its form outside the settings form)');
 $_GET = [];
 restore_error_handler();
 t_eq([], $errors, 'no PHP notices on the screens');

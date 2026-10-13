@@ -1,5 +1,81 @@
 # Intel Auctions Social changelog
 
+## 0.10.0 (2026-10-13) — Nobody needs OneUp: instant both ways
+DJ: "can we make sure that Jacob and the intel team never needs to touch
+OneUp? I would love a clear 2 way communication between oneup and the plugin.
+Instant update both directions."
+- **To OneUp at once.** Save changes, Rewrite, Skip, Restore, Keep as
+  written, Move, Try again, Edit it here again and Google's buttons send that
+  post to OneUp in the same click (`ias_push_now()`), for Facebook and Google,
+  under the hourly run's rules and lock, after reading OneUp's scheduled list
+  (a light read that never concludes a delete). The page says what happened
+  on OneUp. The push loops are one function per post now (`ias_push_one()`,
+  `ias_gbp_one()`), shared by the hourly run.
+- **From OneUp while anyone looks.** OneUp has no webhooks, so an open
+  calendar or post asks it every minute (`ias_oneup_pulse()`, one full
+  read-back for everyone looking, `ias_pulse`), with **Check now**; news
+  shows at once on the calendar and as **Show the changes** on a post. The
+  hourly run still reads back when nobody looks.
+- **Never into OneUp.** **Move…** on a post (a day and a time; it holds —
+  `flags.pinned` — and goes even inside the veto window: the person said
+  yes; never Sunday), **Let the plan choose the time**, **Try again** on a
+  failed post (a fresh copy; the failed one's id kept apart), **Edit it here
+  again** on a post someone changed in OneUp (their version becomes the
+  post's, nothing re-sent), **Send this version to Google instead** for a
+  Google copy changed there. No screen, note or email tells anyone to do
+  something in OneUp: the Monday email's OneUp button and Settings' OneUp
+  calendar link are gone, and the veto window reads "skip, move or change it
+  here".
+- Tests: a single test file run on its own no longer leaves the next full
+  run's install-defaults check failing.
+
+## 0.9.0 (2026-10-13) — Google Business Profile; accounts chosen from lists; the calendar
+DJ, on Social Settings after Check connection: "why if you can call and return
+this am i entering the data rather then just having the system call, respond,
+and give me a choice what to add. Also I want to be able to schedule GBM posts
+from here." And: "the calendar page needs some UI work."
+- **Look up accounts.** One button in Settings → OneUp asks OneUp for its
+  categories and their accounts and keeps the answer (`ias_oneup_directory`:
+  ids, names and kinds — never the key). The category, the Facebook page, the
+  Google location and each other network's account are then chosen from
+  lists — no id is typed. Each list offers only its own kind of account, from
+  the category chosen; a category's only account of a kind comes ready chosen
+  (saved only by Save settings). It fills the lists in place, keeping unsaved
+  changes; without script it is a form. A saved account OneUp no longer lists
+  stays, marked; one from another category is pointed out on save. The
+  account's name in OneUp (which the read-back matches by) comes from the
+  list. Check connection is gone — Look up accounts replaces it.
+- **Google Business Profile**, through OneUp, with its own switch (**Send to
+  Google**), its own **Verify for Google** (`ias_gbp_verify`), its own record of
+  what was sent (`flags.gbp`, never Facebook's `flags.oneup`) and Facebook's
+  rules on its own books: never twice (an attempt is looked for before it is
+  sent again), replaced or taken back only by its OneUp id, a person's edit,
+  move or delete in OneUp kept, a cancelled listing's copy off at once.
+  Google's words are Facebook's without hashtags or phone numbers (Google
+  refuses those posts), within 1,500 characters, with one picture (a video
+  post's listing photo), a Learn more button to the listing and no first
+  comment, a minute after the Facebook post. A refusal, or a failure to
+  publish, stops Google for that post only — never the Facebook post. A
+  post's Google tab says where it stands, with **Keep this one off Google** /
+  **Send it to Google again**. Which post types go to Google is a setting.
+  Until it is live, Google is a dry run like Instagram's. Live needs toolkit
+  4.68.0, whose `ia_social_gbp_managed` this answers (while Listing posts go
+  to Google): the toolkit then drafts no Google post, queues no "Review and
+  post: GBP post", drops Google from its webhook and promo cards.
+- **Verify** takes a network (`ias_oneup_verify($by, 'gbp')`); Facebook's is
+  unchanged.
+- **The calendar**: whole weeks (this week's earlier days greyed with what
+  went out, the last week's days past the plan faint); a narrow Sunday
+  column; a time never breaks across lines; a post with no time yet reads
+  *no time yet* with a dashed edge; the key lists only the statuses on the
+  calendar; the switches are one line (Facebook, then the other networks)
+  with the chips folded under it. On a phone the calendar is a list — Today,
+  then the days that carry posts, each run of empty days one line — instead
+  of a two-column grid (the one-column rule was being overridden by the
+  tablet one).
+- Settings: the Verify buttons get room; a name badge no longer repeats the
+  list beside it.
+
 ## 0.8.0 (2026-10-13) — Talk it over edits the whole post; Save changes never approves
 DJ, on the first real chats: "give the AI agent a way to edit first comments
 and anything else about the post. Also this needs a way to save changes

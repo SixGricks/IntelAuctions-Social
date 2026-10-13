@@ -44,7 +44,9 @@ if (!function_exists('ias_settings_defaults')) {
       'review_hour' => 7,
 
       // More networks (DJ, Oct 13, 2026): planned and dry-run only until each gets its own Verify.
+      // Google Business Profile has its own (0.9.0): sent for real once `live` is on and it has passed.
       'networks' => [
+        'gbp'       => ['on' => false, 'account' => '', 'name' => '', 'live' => false, 'types' => ['listing', 'open_house', 'auction_week', 'results']],
         'instagram' => ['on' => false, 'account' => ''],
         'x'         => ['on' => false, 'account' => ''],
         'linkedin'  => ['on' => false, 'account' => ''],

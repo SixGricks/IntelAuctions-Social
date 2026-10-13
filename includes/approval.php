@@ -385,10 +385,10 @@ if (!function_exists('ias_review_email')) {
       $html .= $h('Last month: ' . date_i18n('F Y', strtotime($ym . '-01'))) . ias_summary_html($ym, true);
     }
 
-    $cal = (string) ias_setting('oneup_calendar_url', '');
+    // Everything is done on the Social Calendar: nobody needs OneUp (DJ, Oct 13, 2026).
     $html .= '<p style="margin-top:24px">'
-      . ($cal !== '' ? '<a href="' . esc_url($cal) . '" style="display:inline-block;background:' . $navy . ';color:#fff;text-decoration:none;font-weight:bold;padding:10px 18px;border-radius:6px;margin-right:8px">Open the OneUp calendar</a>' : '')
-      . '<a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR)) . '" style="display:inline-block;border:1px solid ' . $navy . ';color:' . $navy . ';text-decoration:none;font-weight:bold;padding:10px 18px;border-radius:6px">Open the Social Calendar</a></p>'
+      . '<a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR)) . '" style="display:inline-block;background:' . $navy . ';color:#fff;text-decoration:none;font-weight:bold;padding:10px 18px;border-radius:6px">Open the Social Calendar</a></p>'
+      . '<p style="font-size:13px;color:#646970">Skip, move or change any post there — it reaches OneUp at once.</p>'
       . '<p style="font-size:12px;color:#646970">Sent every ' . esc_html(['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Monday'][(int) ias_setting('review_day', 1)] ?? 'Monday') . ' at ' . (int) ias_setting('review_hour', 7) . ':00 to ' . esc_html(implode(', ', ias_approvers())) . ' by Intel Auctions Social.</p></div>';
     return ['Facebook this week: ' . count($week) . ' posts' . ($waiting ? ', ' . count($waiting) . ' waiting for approval' : '') . ($dropped ? ', ' . count($dropped) . ' dropped' : ''), $html];
   }

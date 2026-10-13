@@ -330,6 +330,84 @@ if (!function_exists('ias_oneup_pairs')) {
 }
 
 /**
+ * What OneUp holds, as Look up accounts last found it (Settings): the
+ * categories and each one's accounts — ['at', 'by', 'categories' => [['id',
+ * 'name', 'accounts' => [['id', 'name', 'type']]]]]. Ids and names only,
+ * never the key. Settings offers these to choose from, so no id is typed.
+ */
+if (!function_exists('ias_oneup_directory')) {
+  function ias_oneup_directory(): array {
+    $d = get_option('ias_oneup_directory', []);
+    return is_array($d) && isset($d['categories']) && is_array($d['categories']) ? $d : [];
+  }
+}
+
+/**
+ * Ask OneUp for its categories and their accounts (read-only) and keep the
+ * answer as the directory. Returns the directory, or ['error' => why]. Needs
+ * the master switch on and the key, like every call. A category whose accounts could not
+ * be read keeps the accounts it had last time.
+ */
+if (!function_exists('ias_oneup_directory_fetch')) {
+  function ias_oneup_directory_fetch(string $by = ''): array {
+    if (!ias_setting('master', false)) return ['error' => 'Turn the master switch on and save first (dry run can stay on): while it is off, the plugin never calls OneUp.'];
+    if (ias_oneup_key() === '') return ['error' => 'Add the OneUp key first (Settings → OneUp) and save.'];
+    $cats = ias_oneup_get('categories');
+    if (is_wp_error($cats)) return ['error' => 'OneUp did not answer: ' . $cats->get_error_message()];
+    $old = [];
+    foreach ((array) (ias_oneup_directory()['categories'] ?? []) as $c) $old[(string) $c['id']] = (array) $c['accounts'];
+    $out = [];
+    $problems = [];
+    foreach (ias_oneup_pairs($cats, ['id', 'category_id'], ['category_name', 'name']) as [$id, $name]) {
+      $accts = ias_oneup_get('accounts', ['category_id' => $id]);
+      $list = [];
+      if (is_wp_error($accts)) {
+        $problems[] = 'the accounts of "' . ($name !== '' ? $name : $id) . '" could not be read (' . $accts->get_error_message() . ')';
+        $list = $old[$id] ?? [];
+      } else {
+        foreach (ias_oneup_pairs($accts, ['social_network_id', 'id'], ['social_network_name', 'username', 'name']) as [$aid, $aname, $row]) {
+          $list[] = ['id' => mb_substr($aid, 0, 200), 'name' => mb_substr($aname, 0, 200), 'type' => mb_substr((string) ($row['social_network_type'] ?? $row['type'] ?? ''), 0, 40)];
+        }
+      }
+      $out[] = ['id' => mb_substr($id, 0, 64), 'name' => mb_substr($name, 0, 200), 'accounts' => $list];
+    }
+    $dir = ['at' => ias_now_sql(), 'by' => $by, 'categories' => $out, 'problems' => $problems];
+    update_option('ias_oneup_directory', $dir, false);
+    // The page's name in OneUp's lists comes from here too (the read-back matches a person's posts by it).
+    $acct = ias_oneup_directory_account((string) ias_setting('oneup_account_id', ''), (string) ias_setting('oneup_category_id', ''));
+    if ($acct && $acct['name'] !== '' && $acct['name'] !== (string) ias_setting('oneup_account_name', '')) ias_settings_update(['oneup_account_name' => $acct['name']]);
+    return $dir;
+  }
+}
+
+/** One account in the directory (['id', 'name', 'type', 'category']), or null; $category '' = any. */
+if (!function_exists('ias_oneup_directory_account')) {
+  function ias_oneup_directory_account(string $id, string $category = ''): ?array {
+    if ($id === '') return null;
+    foreach ((array) (ias_oneup_directory()['categories'] ?? []) as $c) {
+      if ($category !== '' && (string) $c['id'] !== $category) continue;
+      foreach ((array) $c['accounts'] as $a) if ((string) $a['id'] === $id) return $a + ['category' => (string) $c['id']];
+    }
+    return null;
+  }
+}
+
+/** Is a OneUp account of this social_network_type one for network $ch? */
+if (!function_exists('ias_oneup_type_is')) {
+  function ias_oneup_type_is(string $ch, string $type): bool {
+    $type = strtolower(trim($type));
+    $names = [
+      'facebook'  => ['facebook', 'facebook page', 'fb'],
+      'instagram' => ['instagram', 'instagram business'],
+      'x'         => ['x', 'twitter'],
+      'linkedin'  => ['linkedin', 'linkedin page', 'linkedin company'],
+      'gbp'       => ['gbp', 'google', 'google business profile', 'google my business', 'gmb'],
+    ][$ch] ?? [strtolower($ch)];
+    return in_array($type, $names, true);
+  }
+}
+
+/**
  * Is this plugin really posting Facebook? Only when Listing posts can
  * actually reach OneUp: the master switch on, dry run off, the key and the
  * ids set, Listing posts on. Pause does not change it: a pause is a short

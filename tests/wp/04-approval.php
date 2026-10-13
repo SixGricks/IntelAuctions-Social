@@ -128,7 +128,8 @@ ias_job_run();
 $review = array_values(array_filter($mail(), function ($x) { return strpos((string) $x['subject'], 'Facebook this week') === 0; }));
 t_eq(2, count($review), 'the Monday email goes to both approvers');
 $body = (string) ($review[0]['message'] ?? '');
-foreach (['This week', 'Waiting for approval', 'New since last week', 'Dropped this week', 'Open the OneUp calendar'] as $part) {
+t_ok(strpos($body, 'Open the OneUp calendar') === false, 'the Monday email sends nobody into OneUp (0.10.0)');
+foreach (['This week', 'Waiting for approval', 'New since last week', 'Dropped this week', 'Open the Social Calendar'] as $part) {
   t_ok(strpos($body, $part) !== false, "the Monday email has: {$part}");
 }
 t_ok(stripos($body, 'Facebook Event') === false, 'the Monday email has no Facebook Events section');
@@ -139,8 +140,12 @@ t_eq(0, count(array_filter($mail(), function ($x) { return strpos((string) $x['s
 $errors = [];
 set_error_handler(function ($no, $str, $file, $line) use (&$errors) { $errors[] = "{$str} at " . basename($file) . ":{$line}"; return true; });
 $_GET = ['page' => IAS_PAGE_CALENDAR];
+ias_post_update($pid2, ['status' => 'waiting']);
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
-t_ok(strpos($html, 'Waiting for approval') !== false, 'the calendar lists the posts waiting for approval');
+ias_post_update($pid2, ['status' => 'approved']);
+t_ok(strpos($html, '<h3>Waiting for approval <span class="description">(1)</span></h3>') !== false, 'the calendar lists the posts waiting for approval');
+ob_start(); ias_calendar_render(); $html2 = ob_get_clean();
+t_ok(strpos($html2, '<h3>Waiting for approval') === false, '…and has no such list (nor that key) when none is waiting');
 t_ok(stripos($html, 'Facebook Event') === false && strpos($html, 'FB Events') === false, '…and offers no Facebook Events (DJ dropped them)');
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $pid];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();

@@ -60,7 +60,7 @@ $v = ias_oneup_verify('admin');
 t_ok(!$v['ok'] && strpos((string) $v['steps'][0]['detail'], 'master switch is off') !== false, 'Verify OneUp refuses while the master switch is off, saying why');
 t_eq([], ias_t_oneup_calls(), '…without one call to OneUp');
 $html = $screen(IAS_PAGE_SETTINGS);
-t_ok(preg_match('/disabled title="Turn the master switch on first"[^>]*>Check connection/', $html) === 1, 'Settings disables Check connection while the master switch is off');
+t_ok(preg_match('/id="ias-lookup" disabled title="Turn the master switch on[^"]*"[^>]*>Look up accounts/', $html) === 1, 'Settings disables Look up accounts while the master switch is off');
 t_ok(preg_match('/disabled title="[^"]*master switch is off[^"]*"[^>]*>Verify OneUp/', $html) === 1, '…and Verify OneUp');
 
 // ---- 2. Everything on but Verify OneUp: still nothing is written ----
@@ -247,7 +247,7 @@ $n = count($S['calls']);
 ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();
 $bp = $lp($b);
 t_eq('held', $bp['status'], 'its listing changed: it stops for a person');
-t_ok(strpos((string) $bp['note'], 'fix it there') !== false, '…who is told to fix it in OneUp (or skip it here)');
+t_ok(strpos((string) $bp['note'], 'Edit it here again') !== false, '…who is told to take it back here (Edit it here again), never sent into OneUp');
 t_ok($bp['generated_at'] === $before['generated_at'] && $bp['content']['text'] === $before['content']['text'], '…and Claude is not asked to rewrite it');
 t_eq([], $writes($n), '…nor is it replaced or taken off OneUp');
 

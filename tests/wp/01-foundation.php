@@ -34,7 +34,9 @@ foreach (['ias_calendar_render' => 'Social Calendar', 'ias_settings_render' => '
 restore_error_handler();
 t_eq([], $errors, 'no PHP notices while rendering');
 
-// Settings: install defaults are safe; sanitising keeps them in range.
+// Settings: install defaults are safe; sanitising keeps them in range. (From a fresh install: a single test
+// file run on its own before this suite leaves its settings behind.)
+delete_option('ias_settings');
 $s = ias_settings();
 t_ok(!$s['master'] && $s['dry_run'] && !in_array(true, $s['types'], true), 'nothing can reach Facebook at install');
 [$clean, $problems] = ias_settings_sanitize([

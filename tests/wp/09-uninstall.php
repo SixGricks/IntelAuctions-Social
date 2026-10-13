@@ -24,6 +24,10 @@ update_option('ias_voice_notes', ['Never use the word nestled.'], false);
 update_option('ias_voice_suggest', ['rules' => []], false);
 update_option('ias_voice_learned', ['ts' => time()], false);
 update_option('ias_voice_pruned', '2026-11-02', false);
+update_option('ias_oneup_directory', ['at' => '2026-11-02 05:30:00', 'categories' => []], false);
+update_option('ias_gbp_verify', ['ok' => true], false);
+update_option('ias_gbp_mode', 'live', false);
+update_option('ias_pulse', ['ts' => time()], false);
 $wpdb->insert($wpdb->options, ['option_name' => 'ias_chat_lock_123', 'option_value' => (string) time(), 'autoload' => 'no']);
 $wpdb->insert(ias_table('chat'), ['post_id' => 1, 'who' => 'person', 'message' => 'Shorter', 'created_at' => ias_now_sql()]);
 
@@ -34,7 +38,7 @@ include IAS_PATH . 'uninstall.php';
 wp_cache_flush();
 
 foreach (['posts', 'history', 'chat', 'voice'] as $t) t_eq(null, $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->prefix . 'ias_' . $t)), "table ias_{$t} is gone");
-foreach (['ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_last_plan', 'ia_job_last_run_ias_social', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_chat_lock_123'] as $o) t_eq(false, get_option($o), "option {$o} is gone");
+foreach (['ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_last_plan', 'ia_job_last_run_ias_social', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_chat_lock_123', 'ias_oneup_directory', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_pulse'] as $o) t_eq(false, get_option($o), "option {$o} is gone");
 t_eq(false, get_transient('ias_updater_response'), 'the updater cache is gone');
 t_eq(0, (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key LIKE '\\_ias\\_%'"), 'every _ias_ meta key is gone');
 t_ok((int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_iast_fixture'") > 0, 'other meta (the test fixtures\' marker) is untouched');
