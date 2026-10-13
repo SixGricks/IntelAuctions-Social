@@ -10,6 +10,37 @@ it, and the spec stays verbatim, so they are recorded here:
 - **Facebook Events are out** (Oct 12, 2026: "don't worry about facebook events
   at all"). Removed in 0.4.3 — no event cards, no switch, no Monday-email
   section. Don't build them back from the spec's "Facebook Events" section.
+- **The keys belong in Settings** (Oct 13, 2026), not only in wp-config: the
+  OneUp key has a field under Settings → OneUp (option `ias_oneup_api_key`,
+  never echoed back or logged; the `INTEL_ONEUP_API_KEY` constant still wins),
+  and the toolkit sets the Claude key on Settings & Data → Services & Budgets
+  (4.67.0). The spec's "API key stored in wp-config" is superseded.
+- **More networks are provisioned** (Oct 13, 2026: "provision for more social
+  networks now. At least Instagram, X, and LinkedIn"). `includes/channels.php`
+  holds their rules and renderers; they are planned, previewed and dry-run
+  only. Making one live needs its own Verify and its own sent record
+  (`flags.oneup` is Facebook's) — never reuse Facebook's. X's words come from
+  the facts (`ias_x_line()`), never from Claude's prose. Facebook's renderer
+  (`ias_render_facebook()`) must not change output for the others' sake: its
+  hash is what was sent.
+- **A person chooses pictures by hand** (Oct 13, 2026) and that holds
+  (`flags.media_by`), like their edited words.
+- **Talk it over and the brand voice** (Oct 13, 2026: "a little AI chatbot I
+  can discuss the post with and have it edit real time, then keep a log of
+  final posts to learn the brand voice over time"). The chat (`chat.php`)
+  only ever changes the words on the person's screen — **Save text is the one
+  way a post's words change**, through the same edit path and checks. Every
+  turn is one `ia_ai_generate()` call (`social.chat`), behind
+  `ias_ai_blocker()`, a per-post lock, the repeat guard and the per-post cap
+  (`chat_turns`). The brand voice (`voice.php`) is **learned only from what a
+  person wrote, approved or starred**; house rules are a person's to save —
+  Claude's suggestions (`social.voice`) change nothing until then, and a rule
+  never overrules facts, bidding or fair housing (`ias_prompt_rules()` comes
+  first in every prompt, drafts and chat alike). **The rules are the long-term
+  memory and the log is a window** (DJ: "write short rules and guides based on
+  the changes made over time"): `ias_voice_prune()` keeps 120 days of posts
+  (starred kept, 400 at most) and 45 of chat, `ias_voice_auto_learn()` reads
+  the log at most weekly; nothing sent to Claude may grow with the log.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude
@@ -60,7 +91,10 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
 - **Money and AI safety:** every Claude call goes through the toolkit's
   `ia_ai_generate()` (metered against its monthly cap) with a `social.*` feature
   name, and is guarded against paying twice (a draft is regenerated only when its
-  facts changed or a person asks; a photo is graded once). AI output is always a
+  facts changed or a person asks; a photo is graded once). A batch of calls
+  checks `ias_ai_blocker()` first: with no key or the month's cap spent, nothing
+  is tried and the switches strip says so once, rather than every post and
+  listing recording the same failure. AI output is always a
   draft: prompts forbid invented facts (`[VERIFY]` markers hold the post), and the
   fair-housing screen holds any flagged draft for a person.
 - **Nothing reaches Facebook until DJ turns a switch on.** The master switch and
@@ -101,6 +135,16 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when
   its facts change it is held with `ias_stale_hold()`.
+- **A `[VERIFY]` marker never goes anywhere** (`ias_has_verify()`): not by
+  Keep as written, not by any other release of a hold — push readiness says no.
+- **The post view** (`ias_calendar_render_post()`): the bar
+  (`ias_post_view_bar`) speaks for what the post waits for and carries its
+  buttons; Edit and Pictures (`ias_post_view_main`, with Talk it over between
+  them on `ias_post_view_after_edit`), the preview per network
+  (`ias_post_view_preview`, redrawn unsaved through `ias_preview_html()`),
+  the details (`ias_post_view_side`). One primary
+  button at rest. Show people by name (`ias_actor_name()`), never a login.
+  Screens print `ias_header_end()` after the header so notices land under it.
 - **Never post on Sunday, never send an approval email or reminder on Sunday.**
   Times are the site's time zone (`ia_wp_tz()`), always.
 - **Field names** resolve through the toolkit's helpers (`ia_acf_field_*`); the

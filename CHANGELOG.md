@@ -1,5 +1,106 @@
 # Intel Auctions Social changelog
 
+## 0.7.0 (2026-10-13) — Talk it over, and the brand voice (every switch still off)
+DJ, after reading more previews: "a little AI chatbot I can discuss the post
+with and have it edit real time, then keep a log of final posts to learn the
+brand voice over time."
+- **Talk it over.** A chat under each post's text: say what you don't like and
+  Claude rewrites the words in the editor as you talk, with the preview
+  following unsaved. Undo, Use this version, quick asks (Shorter, Plainer,
+  Warmer, Lead with the auction date, Fix grammar only), and a warning when a
+  version would stop for a decision if saved. Nothing is saved until Save
+  text, which checks it like any edit. Claude works under the drafts' rules
+  (now shared, `ias_prompt_rules()`) and the house rules; it may use a fact
+  the person gives it — saying the listing lacks it — never one of its own.
+  One metered `social.chat` call per message, behind the no-Claude check, a
+  per-post lock, a repeat guard (a double click is answered once) and at most
+  30 answers a post (Settings → Talk it over). Kept in `{prefix}ias_chat`;
+  what was asked follows the post into a Rewrite.
+- **Brand voice** (new tab). House rules, up to 30, in every draft and chat
+  after facts, bidding and fair housing (a fair-housing phrase is refused as a
+  rule); **Add to the house voice** from the chat. The log of final posts
+  (`{prefix}ias_voice`): every post a person saved or approved and every post
+  that went out, Claude's draft beside the final words with a word-by-word
+  diff, and what was asked in the chat. The newest posts a person wrote,
+  approved or starred go into each new draft as examples (Settings: 3; never
+  the same listing's, a held one or a marked one); a post that went out
+  unread teaches nothing unless starred. **Suggest updates from the log**:
+  one `social.voice` call; Claude's rules wait for a person to save them.
+- **The rules are what lasts; the log is a window** (DJ: it "should write
+  short rules and guides based on the changes made over time"). Claude reads
+  the log on its own once 8 new posts teach, at most weekly (Settings → Learn
+  on its own), and the suggestion waits on Brand voice, the calendar and the
+  weekly email. Once a day the log forgets posts after 120 days (starred ones
+  stay; 400 at most) and chat messages after 45; a person's chat message
+  keeps a fingerprint of the words, not a second copy.
+- Each draft now keeps Claude's words as written (`content.claude_text`).
+- Guide: §3 named the old place for the Anthropic key; it is Services &
+  Budgets from toolkit 4.67.0.
+- DB 0.2.0 (two new tables); uninstall removes them, the four `ias_voice_*`
+  options and the chat locks.
+
+## 0.6.0 (2026-10-13) — More networks, pictures by hand, a cleaner post view (every switch still off)
+From DJ's first look at a real draft and the UI review that followed:
+- **Pictures by hand.** Each post's page has a picture editor: add any
+  picture from the Media Library, drag (or ‹ ›) to reorder, × to take one out,
+  up to 10; the first leads. A person's choice holds through rewrites and
+  listing changes (`flags.media_by`); "Let the plugin choose again" hands it
+  back (and the property's record of pictures used follows it, so its other
+  posts avoid the right ones); an approved roundup or Results post needs a
+  fresh yes.
+- **Never the same view twice.** Narvon Country Home's post opened with two
+  near-identical front exteriors. Every photo now gets a difference-hash
+  fingerprint (`_ias_dhash`); two shots of one view never share a post, an
+  Open House skips the Listing post's views, and the Listing post follows its
+  lead with a different kind. A partly graded gallery is chosen from its
+  graded photos only (no more SEO filenames as alt text).
+- **No "12:00 am".** A sale with a date and no time (the date field reads as
+  midnight) gives Claude no time, so it no longer holds the draft on
+  `[VERIFY: auction time, facts say 12:00 am]`.
+- **A `[VERIFY]` marker never goes out.** Keep as written cleared the hold and
+  the marked text could reach Facebook; now it is refused (and not offered),
+  and a post whose text or first comment carries a marker is never ready to
+  push (`ias_has_verify()`).
+- **More networks, provisioned.** Instagram, X and LinkedIn
+  (`includes/channels.php`): rules, a switch and OneUp account id each in
+  Settings, a renderer (Instagram: the words with "link in our bio" and square
+  crops; X: one line from the facts within 280; LinkedIn: the words and the
+  link), a preview tab each, and their requests in the dry-run log with
+  take-backs. Nothing is sent to them, even with Facebook live — each needs
+  its own Verify first. Facebook's requests are unchanged.
+- **The OneUp key in Settings** (option `ias_oneup_api_key`, not autoloaded,
+  never shown back or logged; a wp-config constant still wins). Verify OneUp
+  now records the key it passed with: another key must verify again.
+- **The post view, cleaned up** (UI review): a bar that says what the post
+  waits for with the buttons beside it; Edit and Pictures | a Facebook-style
+  preview | the details, in three, two or one columns; plain words in About
+  this post; people's names in the history and the Log; the OneUp request
+  folded; Approve the one primary button on a waiting post. The calendar puts
+  Needs a decision, Waiting for approval and Corrections above the grid when
+  there are any; Settings has a Save button near the top; the Log reads in
+  words; nothing is wider than a phone.
+- Claude's key is now set in the toolkit's Settings & Data → Services &
+  Budgets (toolkit 4.67.0); Settings links there when the toolkit can.
+- Tests: `02c-photos-and-time`, `02d-pictures`, `02e-post-view`,
+  `07b-networks`, more in `05-decisions` and `08-oneup-safety`; the test
+  site's month of fake Claude usage no longer spends the real cap.
+
+## 0.5.2 (2026-10-13) — Without Claude, say so (every switch still off)
+From the first audit of the live site, where the toolkit has no Anthropic key:
+- **Nothing is tried without Claude.** When the toolkit has no Anthropic key,
+  or the month's token cap is spent (`ias_ai_blocker()`), the hourly drafts
+  and photo grading stop before calling anything. No post is stamped with the
+  error or put on the six-hour wait, and no "failed" log line is written for
+  each listing. Planning carries on.
+- **Every Social screen says so**, under the switches ("Drafts are stopped"
+  and why), and **Settings → Claude** shows ready or stopped, with the month's
+  tokens against the toolkit's cap.
+- Guide: §3 needs the toolkit's Anthropic key, and covers installing from a
+  `main` branch zip and what the updater installs. §7 treats the toolkit's
+  social webhook as optional (no URL means nothing to hand over), and turns
+  Listing posts on as the only type when going live.
+- `tests/wp/02b-claude-stopped.php`.
+
 ## 0.5.1 (2026-10-12) — Phase 5 review: OneUp safety (every switch still off)
 Every finding of the Phase 5 review, each with a test against the fake OneUp
 (`tests/wp/08-oneup-safety.php`, and the tests fail on 0.5.0):

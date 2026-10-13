@@ -237,5 +237,30 @@ ias_t_clock('2026-12-02 05:30'); // 32 days after the sale, still no yes
 ias_sync();
 t_eq('waiting', ias_post_get($rid)['status'], 'a Results post still waiting a month after the sale is not cancelled — it never expires');
 
+// ---- 12. A [VERIFY] marker never goes out (the UI review, Oct 13: Keep as written cleared the hold and the marker went with it) ----
+ias_t_clock('2026-11-02 05:30');
+$vp = ias_post_get($hid);
+$content = (array) $vp['content'];
+$content['text'] = "12 Held Lane in Strasburg sells Saturday, November 28 at [VERIFY: auction time, facts say 12:00 am]. It is an in-person auction.\n\nCall the office.";
+$flags = $vp['flags'];
+$flags['holds'] = ['Claude marked something to check: [VERIFY: auction time, facts say 12:00 am]'];
+unset($flags['released_by']);
+ias_post_update($hid, ['status' => 'held', 'content' => $content, 'flags' => $flags]);
+$_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $hid];
+ob_start(); ias_calendar_render(); $html = ob_get_clean();
+$_GET = [];
+t_ok(strpos($html, 'Keep as written') === false, 'a draft held for a [VERIFY] marker is not offered Keep as written');
+$act('release', ['ias_post' => $hid]);
+t_eq('held', ias_post_get($hid)['status'], '…and pressing it anyway is refused: it stays held');
+$flags['released_by'] = 'someone';
+ias_post_update($hid, ['status' => 'planned', 'flags' => $flags]);
+t_eq('the text still has a [VERIFY] marker', ias_push_ready(ias_post_get($hid)), 'even released by other means, a post with a marker is never ready to go out');
+$content['text'] = 'A post with a fine text.';
+$content['first_comment'] = 'Photos and terms: [VERIFY: the listing link]';
+ias_post_update($hid, ['content' => $content]);
+t_eq('the text still has a [VERIFY] marker', ias_push_ready(ias_post_get($hid)), '…nor with one in its first comment');
+$act('edit', ['ias_post' => $hid, 'ias_text' => "12 Held Lane in Strasburg sells Saturday, November 28 at 10:00 am. It is an in-person auction.\n\nCall the office.", 'ias_comment' => 'Photos and terms: https://example.com/']);
+t_ok(!ias_has_verify((array) ias_post_get($hid)['content']), 'the fact typed in place of the marker: the marker is gone');
+
 remove_all_filters('pre_wp_mail');
 ias_t_claude_off();

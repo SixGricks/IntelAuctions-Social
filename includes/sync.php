@@ -366,6 +366,12 @@ if (!function_exists('ias_drafts_run')) {
     $out = ['written' => 0, 'held' => 0, 'failed' => 0, 'left' => 0, 'errors' => []];
     if ($limit <= 0) return $out;
     $due = ias_drafts_due();
+    $why = $due ? ias_ai_blocker() : '';
+    if ($why !== '') { // no key, or the month's budget spent: nothing is tried, so no post is stamped with the error
+      $out['left'] = count($due);
+      $out['errors'][] = $why;
+      return $out;
+    }
     $started = microtime(true);
     foreach ($due as $i => $p) {
       if ($i >= $limit || microtime(true) - $started > $seconds) { $out['left'] = count($due) - $i; break; }

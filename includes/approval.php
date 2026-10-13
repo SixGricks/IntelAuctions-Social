@@ -129,6 +129,7 @@ if (!function_exists('ias_approve')) {
     ias_post_update($post_id, ['status' => 'approved', 'approvals' => $a, 'approved_by' => mb_substr($by, 0, 100), 'approved_at' => ias_now_sql(), 'note' => '']);
     ias_post_trail($post_id, 'Approved by ' . $by . ' (' . $via . ')', $by);
     ias_log('approved', (int) $p['listing_id'], ['post' => $post_id, 'type' => $p['type'], 'summary' => 'Approved by ' . $by . ' (' . $via . ')'], $by);
+    if (function_exists('ias_voice_record')) ias_voice_record($post_id, 'kept'); // a person said yes to these words: the brand-voice log keeps them
 
     // On the plan straight away — the approval was the yes, so no 48-hour wait.
     if (function_exists('ias_plan_run')) {
@@ -365,6 +366,9 @@ if (!function_exists('ias_review_email')) {
     if ($held) $html .= $h('Needs a decision (' . count($held) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="color:#646970;font-size:13px">' . esc_html((string) $p['note']) . '</span></li>'; }, $held)) . '</ul>';
     $fixes = function_exists('ias_corrections_waiting') ? ias_corrections_waiting() : [];
     if ($fixes) $html .= $h('Corrections to post as a comment (' . count($fixes) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</span></li>'; }, $fixes)) . '</ul><p style="font-size:13px;color:#646970">A post that has gone out is never edited (that resets its reach): post the correction as a comment on it, then press Comment posted on the Social Calendar.</p>';
+
+    $voice = function_exists('ias_voice_review_html') ? ias_voice_review_html() : '';
+    if ($voice !== '') $html .= $h('House rules: Claude suggested changes') . $voice;
 
     $new = array_filter(ias_posts_query(['order' => 'id', 'limit' => 300]), function ($p) use ($since) { return (string) $p['created_at'] >= $since && $p['type'] !== 'human'; });
     $counts = array_count_values(array_map(function ($p) { return ias_post_type((string) $p['type'])['label']; }, $new));

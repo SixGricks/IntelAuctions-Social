@@ -105,7 +105,7 @@ if (!function_exists('ias_oneup_blockers')) {
     $out = [];
     if (!ias_setting('master', false)) $out[] = 'the master switch is off';
     if ($write && ias_setting('dry_run', true)) $out[] = 'dry run is on';
-    if (ias_oneup_key() === '') $out[] = 'no OneUp key in wp-config';
+    if (ias_oneup_key() === '') $out[] = 'no OneUp key (Settings → OneUp)';
     if ((string) ias_setting('oneup_category_id', '') === '' || (string) ias_setting('oneup_account_id', '') === '') $out[] = 'the OneUp category or Facebook account id is not set';
     if ($write && !$out && !ias_oneup_verified()) $out[] = 'Verify OneUp has not passed for this page';
     return $out;
@@ -121,6 +121,7 @@ if (!function_exists('ias_oneup_verified')) {
   function ias_oneup_verified(): bool {
     $v = get_option('ias_oneup_verify', []);
     return is_array($v) && !empty($v['ok']) && ($v['tz_offset'] ?? null) === 0
+      && (string) ($v['key'] ?? '') === ias_oneup_key_print()
       && (string) ($v['category'] ?? '') === (string) ias_setting('oneup_category_id', '')
       && (string) ($v['account'] ?? '') === (string) ias_setting('oneup_account_id', '');
   }
@@ -180,7 +181,7 @@ if (!function_exists('ias_oneup_call')) {
     $eps = ias_oneup_endpoints();
     if (!isset($eps[$endpoint])) return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'Unknown OneUp call: ' . $endpoint, 'id' => ''];
     $key = ias_oneup_key();
-    if ($key === '') return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'No OneUp key: add INTEL_ONEUP_API_KEY to wp-config.php.', 'id' => ''];
+    if ($key === '') return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'No OneUp key: add it under Settings → OneUp (or INTEL_ONEUP_API_KEY in wp-config.php).', 'id' => ''];
     [$method, $path] = $eps[$endpoint];
     $send = function (string $method) use ($path, $params, $key) {
       $url = IAS_ONEUP_BASE . $path;

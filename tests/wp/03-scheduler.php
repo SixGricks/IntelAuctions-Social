@@ -145,7 +145,7 @@ t_ok(!ia_social_facebook_managed(), 'every switch on but no OneUp key: Facebook 
 t_eq(['gbp', 'facebook'], ia_social_channels(), '…so the webhook still carries Facebook');
 add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
 t_ok(!ia_social_facebook_managed(), 'the key and the ids but Verify OneUp not passed: Facebook stays the webhook\'s');
-update_option('ias_oneup_verify', ['ok' => true, 'tz_offset' => 0, 'category' => '42', 'account' => 'fb_123'], false);
+update_option('ias_oneup_verify', ['ok' => true, 'tz_offset' => 0, 'category' => '42', 'account' => 'fb_123', 'key' => ias_oneup_key_print()], false);
 t_ok(ia_social_facebook_managed(), 'with the key, the ids and Verify OneUp passed, the toolkit hands Facebook over');
 t_eq(['gbp'], ia_social_channels(), '…and the webhook carries Google Business Profile only');
 ias_settings_update(['paused' => true]);

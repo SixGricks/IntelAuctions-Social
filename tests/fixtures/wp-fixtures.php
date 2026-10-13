@@ -16,14 +16,22 @@ if (function_exists('ias_t_reset')) return;
 
 function ias_t_reset(): void {
   global $wpdb;
+  ias_db_migrate(); // a schema bump (0.7.0's chat and voice tables) lands before anything reads them, as admin_init would
   $wpdb->query('TRUNCATE ' . ias_table('posts'));
   $wpdb->query('TRUNCATE ' . ias_table('history'));
+  $wpdb->query('TRUNCATE ' . ias_table('chat'));
+  $wpdb->query('TRUNCATE ' . ias_table('voice'));
   $wpdb->query("DELETE FROM {$wpdb->prefix}ia_events WHERE event LIKE 'ias.%'");
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock'] as $o) delete_option($o);
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned'] as $o) delete_option($o);
+  $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
   update_option('ias_settings', [], true);
+  // The fake Claude's calls are metered like real ones: without this, a month of test runs spends the
+  // toolkit's real monthly cap and every later draft is refused as over budget.
+  delete_option('ia_ai_tok_in_' . current_time('Y-m'));
+  delete_option('ia_ai_tok_out_' . current_time('Y-m'));
 }
 
 function ias_t_clock(string $when): void {
@@ -60,9 +68,34 @@ function ias_t_photo(string $label, array $rgb = [90, 120, 80]): int {
   $im = imagecreatetruecolor(1600, 1067);
   imagefilledrectangle($im, 0, 0, 1600, 1067, imagecolorallocate($im, $rgb[0], $rgb[1], $rgb[2]));
   imagefilledrectangle($im, 0, 700, 1600, 1067, imagecolorallocate($im, max(0, $rgb[0] - 40), max(0, $rgb[1] - 40), max(0, $rgb[2] - 40)));
+  // A pattern of its own, seeded by the label, so no two fixture photos look like the same view
+  // to the near-duplicate check (real photos differ like this; flat colour blocks would not).
+  mt_srand(crc32($label));
+  for ($i = 0; $i < 14; $i++) {
+    $x = mt_rand(0, 1500); $y = mt_rand(0, 960); $v = mt_rand(0, 255);
+    imagefilledrectangle($im, $x, $y, $x + mt_rand(120, 520), $y + mt_rand(90, 400), imagecolorallocate($im, $v, (int) ($v * 0.8), (int) ($v * 0.6)));
+  }
+  mt_srand();
   imagestring($im, 5, 40, 40, $label, imagecolorallocate($im, 255, 255, 255));
   imagejpeg($im, $file, 85);
   imagedestroy($im);
+  $id = wp_insert_attachment(['post_mime_type' => 'image/jpeg', 'post_title' => $label, 'post_status' => 'inherit'], $file);
+  require_once ABSPATH . 'wp-admin/includes/image.php';
+  wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $file));
+  update_post_meta($id, '_iast_fixture', 1);
+  return (int) $id;
+}
+
+/** A second shot of the same view as $att: the same picture, a touch brighter and shifted a few pixels. */
+function ias_t_photo_twin(int $att, string $label): int {
+  $src = imagecreatefromjpeg((string) get_attached_file($att));
+  $im = imagecreatetruecolor(1600, 1067);
+  imagecopy($im, $src, 0, 0, 12, 8, 1588, 1059);
+  imagefilter($im, IMG_FILTER_BRIGHTNESS, 12);
+  $up = wp_upload_dir();
+  $file = trailingslashit($up['path']) . 'ias-test-' . sanitize_title($label) . '-' . wp_rand(1000, 9999) . '.jpg';
+  imagejpeg($im, $file, 85);
+  imagedestroy($im); imagedestroy($src);
   $id = wp_insert_attachment(['post_mime_type' => 'image/jpeg', 'post_title' => $label, 'post_status' => 'inherit'], $file);
   require_once ABSPATH . 'wp-admin/includes/image.php';
   wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $file));
@@ -126,7 +159,22 @@ function ias_t_claude(): void {
     $n = $GLOBALS['ias_t_claude_n'];
     $body = json_decode((string) $args['body'], true);
     $content = $body['messages'][0]['content'];
-    if (is_array($content)) { // photo grading
+    $GLOBALS['ias_t_claude_last'] = ['system' => (string) ($body['system'] ?? ''), 'user' => is_string($content) ? $content : ''];
+    if (is_string($content) && strpos($content, ' SAYS: ') !== false) { // Talk it over
+      preg_match('/<<<\n(.*)\n>>>/s', $content, $m);
+      $now = (string) ($m[1] ?? '');
+      $said = trim(substr($content, strrpos($content, ' SAYS: ') + 7));
+      $lines = explode("\n", $now);
+      $tags = preg_match('/^#/', (string) end($lines)) ? "\n\n" . end($lines) : '';
+      $answer = ['reply' => 'I left it as it is.', 'text' => null, 'rule' => null];
+      if (stripos($said, 'shorter') !== false) $answer = ['reply' => 'Cut it down to the sale and the call.', 'text' => 'Shorter, take ' . $n . '. It is an in-person auction. Call the office.' . $tags, 'rule' => null];
+      if (stripos($said, 'families') !== false) $answer = ['reply' => 'Added it, as you asked.', 'text' => $now . "\n\nPerfect for families.", 'rule' => null];
+      if (stripos($said, 'never ') === 0) $answer = ['reply' => 'Taken out, and I will remember.', 'text' => 'Plain words, take ' . $n . '. It is an in-person auction.' . $tags, 'rule' => ucfirst(rtrim($said, '.')) . '.'];
+      if (stripos($said, 'not json') !== false) $answer = null;
+      $text = $answer === null ? 'Plain words, no JSON at all.' : json_encode($answer);
+    } elseif (is_string($content) && strpos($content, 'THE HOUSE RULES NOW:') !== false) { // Brand voice: Suggest updates
+      $text = json_encode(['rules' => ['Never use the word nestled.', 'Lead with the place.', 'Call it perfect for families.'], 'why' => 'They keep cutting the gloss.']);
+    } elseif (is_array($content)) { // photo grading
       $count = count(array_filter($content, function ($b) { return ($b['type'] ?? '') === 'image'; }));
       $kinds = ['aerial', 'exterior', 'interior', 'barn', 'land', 'interior', 'exterior', 'aerial'];
       $rows = [];

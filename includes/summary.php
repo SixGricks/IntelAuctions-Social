@@ -131,7 +131,7 @@ add_action('ias_log_top', function () {
   $last_month = $now->modify('first day of last month')->format('Y-m');
   echo '<div class="ias-card" style="max-width:1100px"><h2 style="margin-top:4px">Monthly summary</h2><p class="description">Which post types and divisions earn their slots.</p>';
   foreach ([$this_month => 'So far this month', $last_month => 'Last month'] as $ym => $label) {
-    echo '<h3>' . esc_html($label . ' — ' . date_i18n('F Y', strtotime($ym . '-01'))) . '</h3>' . ias_summary_html($ym);
+    echo '<h3>' . esc_html($label . ' — ' . date_i18n('F Y', strtotime($ym . '-01'))) . '</h3><div class="ias-summary-scroll">' . ias_summary_html($ym) . '</div>';
   }
   echo '</div>';
 });

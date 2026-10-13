@@ -1,6 +1,6 @@
 <?php
 /**
- * Intel Auctions Social — the two tables.
+ * Intel Auctions Social — the tables.
  *
  *   {prefix}ias_posts    — one row per social post: its listing(s), type,
  *                          status, score, window, scheduled time, OneUp id,
@@ -11,10 +11,16 @@
  *                          so planning the same post twice updates one row.
  *   {prefix}ias_history  — every opener, call to action, hashtag set, template
  *                          and image a post has used, for the no-repeat rules.
+ *   {prefix}ias_chat     — Talk it over (0.7.0): each message a person sent
+ *                          about a post and each answer Claude gave, with the
+ *                          text it proposed (chat.php).
+ *   {prefix}ias_voice    — the brand-voice log (0.7.0): one row per post a
+ *                          person wrote, approved or that went out — Claude's
+ *                          draft beside the final words (voice.php).
  *
  * Photo grades live on the attachment (post meta `_ias_photo`), so each
- * picture is graded once whichever post asks. Both tables, and everything
- * else this plugin stores, go on uninstall (uninstall.php).
+ * picture is graded once whichever post asks. Every table, and everything
+ * else this plugin stores, goes on uninstall (uninstall.php).
  *
  * Versioned by `ias_db_version`; migrated on admin_init and at the start of
  * every cron run (auto-updates never fire activation hooks).
@@ -22,7 +28,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-if (!defined('IAS_DB_VERSION')) define('IAS_DB_VERSION', '0.1.0');
+if (!defined('IAS_DB_VERSION')) define('IAS_DB_VERSION', '0.2.0');
 
 /** Fully-prefixed table name: ias_table('posts') → wp_ias_posts. */
 if (!function_exists('ias_table')) {
@@ -46,6 +52,8 @@ if (!function_exists('ias_db_migrate')) {
     $charset = $wpdb->get_charset_collate();
     $posts   = ias_table('posts');
     $history = ias_table('history');
+    $chat    = ias_table('chat');
+    $voice   = ias_table('voice');
 
     dbDelta("CREATE TABLE {$posts} (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -101,8 +109,46 @@ if (!function_exists('ias_db_migrate')) {
   KEY listing_kind (listing_id,kind)
 ) {$charset};");
 
-    // Only stamp the version when both tables are really there.
-    foreach ([$posts, $history] as $table) {
+    dbDelta("CREATE TABLE {$chat} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  post_id bigint(20) unsigned NOT NULL DEFAULT 0,
+  who varchar(10) NOT NULL DEFAULT '',
+  actor varchar(100) NOT NULL DEFAULT '',
+  message text,
+  proposal longtext,
+  meta text,
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY post_id (post_id)
+) {$charset};");
+
+    dbDelta("CREATE TABLE {$voice} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  post_id bigint(20) unsigned NOT NULL DEFAULT 0,
+  listing_id bigint(20) unsigned NOT NULL DEFAULT 0,
+  type varchar(20) NOT NULL DEFAULT '',
+  division varchar(20) NOT NULL DEFAULT '',
+  claude_text longtext,
+  final_text longtext,
+  edited tinyint(1) NOT NULL DEFAULT 0,
+  approved_by varchar(100) NOT NULL DEFAULT '',
+  person varchar(100) NOT NULL DEFAULT '',
+  asks text,
+  touched tinyint(1) NOT NULL DEFAULT 0,
+  clean tinyint(1) NOT NULL DEFAULT 1,
+  learn tinyint(1) NOT NULL DEFAULT 1,
+  star tinyint(1) NOT NULL DEFAULT 0,
+  state varchar(10) NOT NULL DEFAULT 'kept',
+  created_at datetime NOT NULL,
+  updated_at datetime NOT NULL,
+  out_at datetime DEFAULT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY post_id (post_id),
+  KEY state_touched (state,touched)
+) {$charset};");
+
+    // Only stamp the version when every table is really there.
+    foreach ([$posts, $history, $chat, $voice] as $table) {
       if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))) !== $table) return;
     }
     update_option('ias_db_version', IAS_DB_VERSION, true);

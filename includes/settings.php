@@ -43,7 +43,14 @@ if (!function_exists('ias_settings_defaults')) {
       'review_day'  => 1,       // Monday (ISO 1–7)
       'review_hour' => 7,
 
-      // OneUp (the API key lives in wp-config as INTEL_ONEUP_API_KEY).
+      // More networks (DJ, Oct 13, 2026): planned and dry-run only until each gets its own Verify.
+      'networks' => [
+        'instagram' => ['on' => false, 'account' => ''],
+        'x'         => ['on' => false, 'account' => ''],
+        'linkedin'  => ['on' => false, 'account' => ''],
+      ],
+
+      // OneUp (the key: Settings → OneUp, or INTEL_ONEUP_API_KEY in wp-config, which wins).
       'oneup_category_id'  => '',
       'oneup_account_id'   => '',   // the Facebook page's social_network_id in OneUp
       'oneup_account_name' => '',   // how OneUp's lists name that page (filled in by Check connection / Verify OneUp)
@@ -59,6 +66,9 @@ if (!function_exists('ias_settings_defaults')) {
       'fair_housing_extra'   => '',      // more phrases to stop, one per line
       'grade_size'           => 'medium', // image size Claude grades photos at (tokens grow with pixels)
       'generate_per_run'     => 8,       // most Claude drafts written in one hourly run
+      'chat_turns'           => 30,      // Talk it over: Claude's answers a post can have at most (0 = no chat)
+      'voice_examples'       => 3,       // posts a person wrote or approved, shown to Claude in each new draft (0 = none)
+      'voice_auto'           => true,    // Claude reads the brand-voice log on its own (at most weekly, after 8 new posts) and suggests rules for a person to save
     ];
   }
 }
@@ -73,6 +83,8 @@ if (!function_exists('ias_settings')) {
       if (!array_key_exists($key, $out)) continue; // a key a later release dropped
       if (in_array($key, ['types', 'weights'], true) && is_array($value)) {
         $out[$key] = array_merge($out[$key], array_intersect_key($value, $out[$key]));
+      } elseif ($key === 'networks' && is_array($value)) {
+        foreach ($out['networks'] as $ch => $def) if (isset($value[$ch]) && is_array($value[$ch])) $out['networks'][$ch] = array_merge($def, array_intersect_key($value[$ch], $def));
       } else {
         $out[$key] = $value;
       }
@@ -118,11 +130,33 @@ if (!function_exists('ias_approvers')) {
   }
 }
 
-/** The OneUp API key from wp-config ('' when not set). Never stored in the database. */
+/** Where the OneUp key comes from: 'constant' (wp-config, wins), 'option' (Settings) or '' (none). */
+if (!function_exists('ias_oneup_key_source')) {
+  function ias_oneup_key_source(): string {
+    if (defined('INTEL_ONEUP_API_KEY') && is_string(INTEL_ONEUP_API_KEY) && trim(INTEL_ONEUP_API_KEY) !== '') return 'constant';
+    return trim((string) get_option('ias_oneup_api_key', '')) !== '' ? 'option' : '';
+  }
+}
+
+/**
+ * The OneUp API key ('' when not set): INTEL_ONEUP_API_KEY in wp-config.php,
+ * else the one saved under Settings → OneUp (option `ias_oneup_api_key`, not
+ * autoloaded, never shown back in full, never logged — DJ, Oct 13, 2026: the
+ * keys belong in Settings, not only in wp-config).
+ */
 if (!function_exists('ias_oneup_key')) {
   function ias_oneup_key(): string {
-    $key = (defined('INTEL_ONEUP_API_KEY') && is_string(INTEL_ONEUP_API_KEY)) ? trim(INTEL_ONEUP_API_KEY) : '';
-    return trim((string) apply_filters('ias_oneup_key', $key)); // the tests supply theirs this way; never stored
+    $src = ias_oneup_key_source();
+    $key = $src === 'constant' ? trim(INTEL_ONEUP_API_KEY) : ($src === 'option' ? trim((string) get_option('ias_oneup_api_key', '')) : '');
+    return trim((string) apply_filters('ias_oneup_key', $key)); // the tests supply theirs this way
+  }
+}
+
+/** A short fingerprint of the key (never the key): Verify OneUp records the key it passed with. */
+if (!function_exists('ias_oneup_key_print')) {
+  function ias_oneup_key_print(): string {
+    $key = ias_oneup_key();
+    return $key === '' ? '' : substr(hash('sha256', $key), 0, 12);
   }
 }
 

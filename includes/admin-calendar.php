@@ -65,6 +65,7 @@ if (!function_exists('ias_calendar_render')) {
         . 'Sundays never carry a post; the shaded days are inside the 48-hour veto window, where nothing new is scheduled.',
       $button
     );
+    ias_header_end();
     echo ias_switches_strip();
     /** A line about the last plan (Phase 3). */
     do_action('ias_calendar_before_grid');
@@ -86,7 +87,7 @@ if (!function_exists('ias_calendar_render')) {
     }
 
     echo '<div class="ias-legend">';
-    foreach (['planned', 'waiting', 'approved', 'pushed', 'published', 'held', 'dropped', 'human'] as $st) echo ias_status_badge($st);
+    foreach (['planned', 'waiting', 'approved', 'pushed', 'published', 'held', 'failed', 'dropped', 'skipped', 'cancelled', 'human'] as $st) echo ias_status_badge($st);
     echo '</div>';
 
     ias_calendar_grid($today, $last, $by_day);
@@ -160,68 +161,96 @@ if (!function_exists('ias_calendar_render_post')) {
     $back = '<a class="button" href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR)) . '">← Calendar</a>';
     if (!$p) {
       ia_ui_header('Social post', '', $back);
+      ias_header_end();
       echo '<div class="notice notice-error"><p>No such post.</p></div></div>';
       return;
     }
     $def = ias_post_type((string) $p['type']);
-    ia_ui_header($def['label'] . ': ' . ias_post_subject($p), '', $back);
+    // One line under the title: its state, when it goes out, where, and the listing.
+    $bits = [ias_status_badge(ias_post_shown_status($p))];
+    $bits[] = !empty($p['scheduled_at']) ? 'Goes out <strong>' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at']))) . '</strong>' : 'Not scheduled yet';
+    if ((string) $p['county'] !== '') $bits[] = esc_html((string) $p['county']);
+    if ((string) $p['division'] !== '') $bits[] = esc_html(ias_division_label((string) $p['division']));
+    foreach (array_slice((array) $p['listing_ids'], 0, 3) as $lid) {
+      $bits[] = '<a href="' . esc_url((string) get_edit_post_link((int) $lid, '')) . '" title="Edit the listing">' . esc_html(html_entity_decode(get_the_title((int) $lid), ENT_QUOTES, 'UTF-8')) . '</a>';
+    }
+    ia_ui_header($def['short'] . ' post · ' . ias_post_subject($p), implode(' · ', $bits), $back);
+    ias_header_end();
     echo ias_switches_strip();
+    /** The bar across the top: what this post is waiting for, and the buttons that settle it. */
+    do_action('ias_post_view_bar', $p);
 
-    echo '<div class="ias-cols"><div>';
-    /** The post's preview and the things a person can do with it (later phases). */
+    echo '<div class="ias-post"><div class="ias-post-edit">';
+    /** The left column: the words and the pictures, to edit. */
     do_action('ias_post_view_main', $p);
     if (!has_action('ias_post_view_main')) {
       $text = (string) ($p['content']['text'] ?? '');
-      echo '<div class="ias-card"><h2>Preview</h2>';
-      echo $text !== '' ? '<div class="ias-preview">' . esc_html($text) . '</div>' : '<p class="description">No draft written yet.</p>';
-      echo '</div>';
+      echo '<div class="ias-card"><h2>Preview</h2>' . ($text !== '' ? '<div class="ias-preview">' . esc_html($text) . '</div>' : '<p class="description">No draft written yet.</p>') . '</div>';
     }
-    echo '</div><div>';
+    echo '</div><div class="ias-post-preview">';
+    /** The middle: the post as each network would show it. */
+    do_action('ias_post_view_preview', $p);
+    echo '</div><div class="ias-post-side">';
     ias_post_facts_card($p);
-    /** Later phases add cards to the right-hand column (what would go to OneUp). */
+    /** The right: approval, what would go to OneUp, and the history. */
     do_action('ias_post_view_side', $p);
     ias_post_trail_card($p);
     echo '</div></div></div>';
   }
 }
 
-/** The post's numbers: status, lane, window, score, schedule, listings. */
+/**
+ * WordPress puts a notice after the first .wp-header-end. The toolkit's
+ * header prints one from 4.67.0; with an older toolkit, the page does.
+ */
+if (!function_exists('ias_header_end')) {
+  function ias_header_end(): void {
+    if (!defined('IA_TOOLKIT_VERSION') || version_compare((string) IA_TOOLKIT_VERSION, '4.67.0', '<')) echo '<hr class="wp-header-end">';
+  }
+}
+
+/** The post's facts, in the words a person uses. */
 if (!function_exists('ias_post_facts_card')) {
   function ias_post_facts_card(array $p): void {
-    $def = ias_post_type((string) $p['type']);
-    $fmt = function ($d) { return $d ? date_i18n('D M j', strtotime((string) $d)) : '—'; };
+    $day = function ($d) { return $d ? date_i18n('D M j', strtotime((string) $d)) : ''; };
     echo '<div class="ias-card"><h3>About this post</h3><table class="ias-kv">';
-    echo '<tr><th>Status</th><td>' . ias_status_badge(ias_post_shown_status($p)) . (!empty($p['flags']['dry_run']) ? ' <span class="description">in the dry run — nothing was sent to OneUp</span>' : '') . '</td></tr>';
-    echo '<tr><th>Lane</th><td>' . esc_html($p['lane'] === 'A' ? 'A — approve first (email)' : ($p['lane'] === 'B' ? 'B — scheduled, 48-hour veto window' : '—')) . '</td></tr>';
-    echo '<tr><th>Window</th><td>' . esc_html($fmt($p['window_start']) . ' → ' . $fmt($p['window_ideal']) . ' → ' . ($p['window_end'] ? $fmt($p['window_end']) : 'whenever approved')) . '</td></tr>';
-    echo '<tr><th>Scheduled</th><td>' . esc_html($p['scheduled_at'] ? date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) : 'not yet') . '</td></tr>';
-    echo '<tr><th>Priority</th><td>' . esc_html(number_format((float) $p['score'], 1)) . ' <span class="description">(weight ' . (int) $p['weight'] . ($p['guaranteed'] ? ', guaranteed' : ', can be dropped') . ')</span></td></tr>';
-    if ($p['county'] !== '') echo '<tr><th>County</th><td>' . esc_html((string) $p['county']) . '</td></tr>';
-    if ($p['division'] !== '') echo '<tr><th>Division</th><td>' . esc_html(ias_division_label((string) $p['division'])) . '</td></tr>';
+    if (!empty($p['flags']['dry_run'])) echo '<tr><th>Sent</th><td>' . ias_status_badge('published') . ' <span class="description">in the dry run — nothing was sent to OneUp</span></td></tr>';
+    if ($p['lane'] === 'A') $approval = 'Needed — emailed to ' . (implode(' and ', array_map('ias_person_name', ias_approvers())) ?: 'the approvers');
+    elseif ($p['lane'] === 'B') $approval = 'Not needed — ' . (int) ias_setting('lead_hours', 48) . ' hours to veto it in OneUp';
+    else $approval = '';
+    if ($approval !== '') echo '<tr><th>Approval</th><td>' . esc_html($approval) . '</td></tr>';
+    $start = $day($p['window_start']); $ideal = $day($p['window_ideal']); $end = $day($p['window_end']);
+    if ($start === '' && $ideal === '' && $end === '') $can = 'Not set yet';
+    elseif ($end === '') $can = 'From ' . ($start ?: $ideal) . ($ideal !== '' ? ' (best ' . $ideal . ')' : '') . ($p['lane'] === 'A' ? ', once approved' : '');
+    else $can = ($start ?: $ideal) . ' – ' . $end . ($ideal !== '' ? ' (best ' . $ideal . ')' : '');
+    echo '<tr><th>Can go</th><td>' . esc_html($can) . '</td></tr>';
+    echo '<tr><th>Goes out</th><td>' . esc_html($p['scheduled_at'] ? date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])) : 'Not scheduled yet') . '</td></tr>';
+    echo '<tr><th>Priority</th><td><span title="' . esc_attr('Weight ' . (int) $p['weight'] . ' × the starting-bid multiplier') . '">' . esc_html(number_format((float) $p['score'], 0)) . '</span> · ' . esc_html($p['guaranteed'] ? 'guaranteed a place' : 'can be dropped') . '</td></tr>';
     if ($p['oneup_post_id'] !== '') echo '<tr><th>OneUp id</th><td><code>' . esc_html((string) $p['oneup_post_id']) . '</code></td></tr>';
     $links = [];
     foreach ((array) $p['listing_ids'] as $lid) {
       $links[] = '<a href="' . esc_url((string) get_edit_post_link((int) $lid, '')) . '">' . esc_html(html_entity_decode(get_the_title((int) $lid), ENT_QUOTES, 'UTF-8')) . '</a>';
     }
     if ($links) echo '<tr><th>' . (count($links) > 1 ? 'Listings' : 'Listing') . '</th><td>' . implode('<br>', $links) . '</td></tr>';
-    if (!empty($p['note'])) echo '<tr><th>Note</th><td>' . esc_html((string) $p['note']) . '</td></tr>';
+    // The note repeats the bar when the post is held, stale, waiting for photos or for a yes.
+    $in_bar = $p['status'] === 'held' || !empty($p['flags']['stale']) || !empty($p['flags']['needs']) || in_array($p['status'], ['waiting', 'skipped', 'cancelled', 'dropped', 'failed'], true);
+    if (!empty($p['note']) && !$in_bar) echo '<tr><th>Note</th><td>' . esc_html((string) $p['note']) . '</td></tr>';
     echo '</table></div>';
   }
 }
 
-/** What has happened to the post, newest last. */
+/** What has happened to the post, newest first — eight, then the rest folded away. */
 if (!function_exists('ias_post_trail_card')) {
   function ias_post_trail_card(array $p): void {
-    $trail = isset($p['flags']['trail']) && is_array($p['flags']['trail']) ? $p['flags']['trail'] : [];
+    $trail = isset($p['flags']['trail']) && is_array($p['flags']['trail']) ? array_reverse($p['flags']['trail']) : [];
     echo '<div class="ias-card"><h3>History</h3>';
     if (!$trail) {
       echo '<p class="description">Nothing yet.</p></div>';
       return;
     }
-    echo '<ul style="margin:0">';
-    foreach (array_reverse($trail) as $t) {
-      echo '<li><span class="description">' . esc_html(date_i18n('M j, g:i a', strtotime((string) $t['at']))) . ' · ' . esc_html((string) $t['by']) . '</span><br>' . esc_html((string) $t['what']) . '</li>';
-    }
-    echo '</ul></div>';
+    $li = function (array $t) { return '<li><span class="description">' . esc_html(date_i18n('M j, g:i a', strtotime((string) $t['at']))) . ' · ' . esc_html(ias_actor_name((string) $t['by'])) . '</span><br>' . esc_html((string) $t['what']) . '</li>'; };
+    echo '<ul class="ias-trail">' . implode('', array_map($li, array_slice($trail, 0, 8))) . '</ul>';
+    if (count($trail) > 8) echo '<details><summary>Show all ' . count($trail) . '</summary><ul class="ias-trail">' . implode('', array_map($li, array_slice($trail, 8))) . '</ul></details>';
+    echo '</div>';
   }
 }

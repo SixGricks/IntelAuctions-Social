@@ -125,6 +125,7 @@ if (!function_exists('ias_push_ready')) {
   function ias_push_ready(array $p): string {
     if (empty($p['scheduled_at'])) return 'no time yet';
     if (empty($p['content']['text'])) return 'no draft yet';
+    if (ias_has_verify((array) $p['content'])) return 'the text still has a [VERIFY] marker';
     if ($p['status'] === 'held' || ias_post_needs_decision($p)) return 'it needs a decision';
     if (!empty($p['flags']['stale'])) return 'the listing changed and the draft has not been rewritten yet';
     if ($p['lane'] === 'A' && $p['status'] !== 'approved') return 'it is waiting for approval';
@@ -220,6 +221,7 @@ if (!function_exists('ias_push_run_locked')) {
           ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'published_at' => $at, 'note' => '']);
           ias_post_trail((int) $p['id'], 'Its time came on OneUp');
         }
+        if (function_exists('ias_voice_record')) ias_voice_record((int) $p['id'], 'out'); // the log of final posts
         $out['published']++;
         continue;
       }
@@ -276,6 +278,7 @@ if (!function_exists('ias_push_run_locked')) {
         $out['deleted']++;
       }
     }
+    if (function_exists('ias_push_channels_run')) $out['dryrun'] += ias_push_channels_run(); // Instagram, X, LinkedIn: the dry run only, for now
     return $out;
   }
 }

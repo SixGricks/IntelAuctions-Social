@@ -15,6 +15,7 @@ if (!function_exists('ias_guide_render')) {
     $md   = is_readable($path) ? (string) file_get_contents($path) : '';
     ias_admin_styles();
     ia_ui_header('Social Guide', 'How Intel Auctions Social works. Source: <code>docs/guide.md</code> in the plugin.');
+    ias_header_end();
     echo ias_switches_strip();
     if ($md === '') {
       echo '<div class="notice notice-error"><p><strong>docs/guide.md is missing.</strong> Reinstall the plugin from its latest release.</p></div></div>';

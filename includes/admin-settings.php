@@ -43,7 +43,12 @@ if (!function_exists('ias_settings_sanitize')) {
       $out[$key] = $v;
     };
 
-    foreach (['master', 'dry_run', 'paused', 'link_in_comment'] as $key) $out[$key] = !empty($in[$key]);
+    foreach (['master', 'dry_run', 'paused', 'link_in_comment', 'voice_auto'] as $key) $out[$key] = !empty($in[$key]);
+    $networks = [];
+    foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
+      $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
+    }
+    $out['networks'] = $networks;
     $types = [];
     foreach (array_keys(ias_settings_defaults()['types']) as $type) $types[$type] = !empty($in['types'][$type]);
     $out['types'] = $types;
@@ -79,6 +84,8 @@ if (!function_exists('ias_settings_sanitize')) {
     $int('jitter_minutes', 0, 59);
     $int('review_day', 1, 6); // never on Sunday
     $int('review_hour', 0, 23);
+    $int('chat_turns', 0, 100);
+    $int('voice_examples', 0, 6);
     $int('generate_per_run', 0, 30);
 
     // Posting windows: rows of start–end, each a real time with start before end.
@@ -145,6 +152,12 @@ if (!function_exists('ias_settings_handle_post')) {
     foreach ($new as $key => $value) {
       if (wp_json_encode($old[$key] ?? null) !== wp_json_encode($value)) $changed[] = $key;
     }
+    // The OneUp key: its own option (not autoloaded), blank keeps it; never logged, only that it changed.
+    if (ias_oneup_key_source() !== 'constant') {
+      $key = trim(sanitize_text_field((string) wp_unslash($_POST['ias_oneup_key_new'] ?? '')));
+      if ($key !== '' && $key !== (string) get_option('ias_oneup_api_key', '')) { update_option('ias_oneup_api_key', $key, false); $changed[] = 'OneUp key'; }
+      elseif ($key === '' && !empty($_POST['ias_oneup_key_clear']) && get_option('ias_oneup_api_key', '') !== '') { delete_option('ias_oneup_api_key'); $changed[] = 'OneUp key removed'; }
+    }
     if ($changed) ias_log('settings', 0, ['changed' => $changed], ias_actor());
 
     $html = '<div class="notice notice-success"><p>Settings saved' . ($changed ? ' (' . esc_html(implode(', ', $changed)) . ')' : ' — nothing changed') . '.</p></div>';
@@ -164,6 +177,7 @@ if (!function_exists('ias_settings_render')) {
     ias_admin_styles();
     $s = ias_settings();
     ia_ui_header('Social Settings', 'Everything that can make a post public starts <strong>off</strong>. Turn on the master switch and one post type at a time, Listing posts first.');
+    ias_header_end();
     echo ias_switches_strip();
 
     $check = function (string $name, bool $on, string $label, string $help = '') {
@@ -186,22 +200,48 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row">Post types</th><td>';
     foreach (ias_post_types() as $type => $def) {
       if ($type === 'human') continue;
-      echo $check('ias[types][' . $type . ']', ias_type_on($type), '<strong>' . esc_html($def['label']) . '</strong> <span class="description">— lane ' . esc_html($def['lane']) . ', ' . esc_html($def['window']) . '</span>') . '<br>';
+      echo $check('ias[types][' . $type . ']', ias_type_on($type), '<strong>' . esc_html($def['short']) . '</strong> (' . esc_html($def['label']) . ') <span class="description">— ' . esc_html($def['lane'] === 'A' ? 'approve first' : 'scheduled, ' . (int) ias_setting('lead_hours', 48) . ' hours to veto') . ', ' . esc_html($def['window']) . '</span>') . '<br>';
     }
     echo '<p class="description">A type that is off is still planned and drafted, so you can read it on the calendar; it just never goes to OneUp.</p></td></tr>';
     echo '</table>';
+    submit_button('Save settings', 'primary', 'submit-top'); // the switches above, saved without scrolling a long page
 
     $key = ias_oneup_key();
+    $src = ias_oneup_key_source();
     echo '<h2>OneUp</h2><table class="form-table" role="presentation">';
-    echo '<tr><th scope="row">API key</th><td>' . ($key !== ''
-      ? ia_ui_badge('Set in wp-config', 'ok') . ' <code>…' . esc_html(substr($key, -4)) . '</code>'
-      : ia_ui_badge('Not set', 'warn') . '<br><span class="description">Add <code>define(\'INTEL_ONEUP_API_KEY\', \'…\');</code> to wp-config.php (from oneupapp.io → API access). It is never stored in the database.</span>') . '</td></tr>';
+    echo '<tr><th scope="row"><label for="ias-oneup-key">API key</label></th><td>';
+    if ($src === 'constant') {
+      echo ia_ui_badge('Set in wp-config', 'ok') . ' <code>…' . esc_html(substr($key, -4)) . '</code><br><span class="description"><code>INTEL_ONEUP_API_KEY</code> in wp-config.php wins over a key saved here.</span>';
+    } else {
+      // Never echo the saved key back into the page.
+      echo ($src === 'option' ? ia_ui_badge('Saved', 'ok') . ' <span class="description">ends <code>…' . esc_html(substr($key, -4)) . '</code></span><br>' : ia_ui_badge('Not set', 'warn') . '<br>')
+        . '<input type="password" id="ias-oneup-key" name="ias_oneup_key_new" value="" class="regular-text" autocomplete="off" placeholder="' . esc_attr($src === 'option' ? 'paste a new key to replace — blank keeps it' : 'from oneupapp.io → API access') . '">'
+        . ($src === 'option' ? ' <label><input type="checkbox" name="ias_oneup_key_clear" value="1"> remove key</label>' : '')
+        . '<br><span class="description">From oneupapp.io → API access. Saved for this site only, never shown again or written to the log. A new key means pressing <strong>Verify OneUp</strong> again before anything is sent. (Or set <code>INTEL_ONEUP_API_KEY</code> in wp-config.php, which wins.)</span>';
+    }
+    echo '</td></tr>';
     echo '<tr><th scope="row"><label for="ias-cat">Category id</label></th><td><input id="ias-cat" type="text" name="ias[oneup_category_id]" value="' . esc_attr((string) $s['oneup_category_id']) . '" class="regular-text"><br><span class="description">The OneUp category that holds the Intel Facebook page.</span></td></tr>';
     echo '<tr><th scope="row"><label for="ias-acct">Facebook account id</label></th><td><input id="ias-acct" type="text" name="ias[oneup_account_id]" value="' . esc_attr((string) $s['oneup_account_id']) . '" class="regular-text">'
       . ((string) $s['oneup_account_name'] !== '' ? ' ' . ia_ui_badge((string) $s['oneup_account_name'], 'ok') : '')
       . '<br><span class="description">The page\'s <code>social_network_id</code> in that category. Facebook is the only channel at launch; the category\'s other accounts (Google Business Profile, YouTube) are left alone.</span></td></tr>';
     echo '<tr><th scope="row"><label for="ias-calurl">Calendar link</label></th><td><input id="ias-calurl" type="url" name="ias[oneup_calendar_url]" value="' . esc_attr((string) $s['oneup_calendar_url']) . '" class="regular-text"><br><span class="description">Where the Monday email\'s "Open the OneUp calendar" button goes.</span></td></tr>';
     echo '<tr><th scope="row">Listing link</th><td>' . $check('ias[link_in_comment]', !empty($s['link_in_comment']), 'Put the link in the first comment', 'Facebook shows posts with a link in them to fewer people. Untick only if OneUp cannot post first comments: the link then goes at the end of the post.') . '</td></tr>';
+    echo '</table>';
+
+    echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram, X and LinkedIn are set up but not sent to yet. Switch one on and every post is also planned for it: its words and pictures show on each post, and what would go to OneUp is written to the log as a dry run. Nothing reaches these networks until a later release gives each one its own Verify. Their account ids are on <strong>Check connection</strong> (below), in the same OneUp category as the Facebook page.</p><table class="form-table" role="presentation">';
+    foreach (ias_channels() as $ch => $rules) {
+      if ($ch === 'facebook') continue;
+      $n = (array) (($s['networks'] ?? [])[$ch] ?? []);
+      $what = [
+        'instagram' => 'The Facebook words with “link in our bio” (Instagram captions carry no links), square pictures, up to 10.',
+        'x'         => 'One short line made from the listing\'s facts, the link and up to 4 pictures, within 280 characters.',
+        'linkedin'  => 'The Facebook words with the link at the end, up to 9 pictures.',
+      ][$ch] ?? '';
+      echo '<tr><th scope="row">' . esc_html((string) $rules['label']) . '</th><td>'
+        . $check('ias[networks][' . $ch . '][on]', !empty($n['on']), 'Plan posts for ' . esc_html((string) $rules['label']) . ' <span class="description">(dry run only)</span>')
+        . '<br><label>OneUp account id <input type="text" name="ias[networks][' . esc_attr($ch) . '][account]" value="' . esc_attr((string) ($n['account'] ?? '')) . '" class="regular-text" placeholder="' . esc_attr($ch === 'linkedin' ? 'urn:li:organization:…' : 'social_network_id') . '"></label>'
+        . '<br><span class="description">' . esc_html($what) . '</span></td></tr>';
+    }
     echo '</table>';
 
     echo '<h2>Priority</h2><p class="description">Priority = the post type\'s weight × the starting-bid multiplier. When a day is full, the lowest priority moves first; Listing, Results and the roundup are never dropped whatever their priority.</p>';
@@ -257,7 +297,16 @@ if (!function_exists('ias_settings_render')) {
       echo '<option value="' . esc_attr($k) . '" ' . selected((string) $s['grade_size'], $k, false) . '>' . esc_html($label) . '</option>';
     }
     echo '</select><br><span class="description">Claude looks at each photo once, at this size, to score it and tag its kind.</span></td></tr>';
+    $why = ias_ai_blocker();
+    $month = function_exists('ia_ai_tokens_month') ? (int) (ia_ai_tokens_month()['total'] ?? 0) : null;
+    $cap = function_exists('ia_ai_token_cap') ? (int) ia_ai_token_cap() : 0;
+    echo '<tr><th scope="row">Claude</th><td>' . ($why === '' ? ia_ui_badge('Ready', 'ok') : ia_ui_badge('Stopped', 'warn') . ' ' . esc_html($why))
+      . (function_exists('ia_ai_key_settings_url') ? ' <a href="' . esc_url(ia_ai_key_settings_url()) . '">' . ($why === '' ? 'Change the key or the cap' : 'Set the key and the cap') . '</a>' : '')
+      . ($month !== null ? '<br><span class="description">Drafts and photo grading use the toolkit\'s Anthropic key and its monthly cap (Intel SEO → Settings & Data → Services & Budgets): ' . esc_html(number_format($month)) . ' tokens used this month' . ($cap > 0 ? ' of ' . esc_html(number_format($cap)) : ', no cap') . ', across every feature.</span>' : '') . '</td></tr>';
     echo '<tr><th scope="row">Drafts per run</th><td>' . $num('ias[generate_per_run]', $s['generate_per_run'], 0, 30, 'drafts an hour at most') . '<br><span class="description">Each is one Claude call against the toolkit\'s monthly cap. 0 stops new drafts.</span></td></tr>';
+    echo '<tr><th scope="row">Talk it over</th><td>' . $num('ias[chat_turns]', $s['chat_turns'], 0, 100, 'answers from Claude per post at most') . '<br><span class="description">The chat beside each post\'s text. Every message is one Claude call against the monthly cap; nothing changes until you press Save text. 0 takes the chat away.</span></td></tr>';
+    echo '<tr><th scope="row">Examples in each draft</th><td>' . $num('ias[voice_examples]', $s['voice_examples'], 0, 6, 'posts') . '<br><span class="description">The newest posts a person wrote, approved or starred on <a href="' . esc_url(ias_admin_url(IAS_PAGE_VOICE)) . '">Brand voice</a>, shown to Claude as how the team sounds (about 250 tokens each). 0 shows none.</span></td></tr>';
+    echo '<tr><th scope="row">Learn on its own</th><td><label><input type="checkbox" name="ias[voice_auto]" value="1" ' . checked(!empty($s['voice_auto']), true, false) . '> Claude reads the brand-voice log by itself and suggests house rules</label><br><span class="description">At most once a week, once ' . (int) (function_exists('ias_voice_auto_after') ? ias_voice_auto_after() : 8) . ' new posts a person wrote, approved or starred have come in: one Claude call. The suggestion waits on Brand voice (and in the weekly email) until someone saves or discards it.</span></td></tr>';
     echo '</table>';
 
     /** Later phases add their sections here. */
