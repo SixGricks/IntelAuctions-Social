@@ -1,5 +1,17 @@
 # Intel Auctions Social changelog
 
+## 0.10.1 (2026-10-13) — the account goes to OneUp as a list
+The live account refused Verify OneUp and Verify for Google at "Save a
+draft": "OneUp said: Social Network ID must be an array." Every scheduling
+call now sends the account as a list of one (`["1336677789520495"]`, as
+OneUp's documentation writes it); should OneUp refuse that with the same
+words, the call is made once more as `social_network_id[0]=…`, and the form
+that works is kept (`ias_oneup_id_form`) and tried first from then on. A
+refusal like that creates nothing, so the second try can never make a
+second post; refused both ways, the call says so after two tries. What is
+recorded and compared as sent is unchanged, so no post looks changed by it.
+The test fake now refuses a plain id the way OneUp does.
+
 ## 0.10.0 (2026-10-13) — Nobody needs OneUp: instant both ways
 DJ: "can we make sure that Jacob and the intel team never needs to touch
 OneUp? I would love a clear 2 way communication between oneup and the plugin.

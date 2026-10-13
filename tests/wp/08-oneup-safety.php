@@ -292,6 +292,40 @@ t_ok(strpos((string) $lp($e)['note'], 'OneUp has not confirmed') !== false, 'a d
 ias_readback_run();
 t_eq(1, $noted(), '…once');
 
+
+// ---- The account goes as a list (the real OneUp, Oct 13, 2026: "Social Network ID must be an array.") ----
+t_eq(['content' => 'x', 'social_network_id' => '["1336677789520495"]'], ias_oneup_wire_params(['social_network_id' => '1336677789520495', 'content' => 'x'], 'json'), 'one account goes as a JSON list of one');
+t_eq(['content' => 'x', 'social_network_id[0]' => 'accounts/1/locations/2'], ias_oneup_wire_params(['social_network_id' => 'accounts/1/locations/2', 'content' => 'x'], 'brackets'), '…or as social_network_id[0]');
+t_eq(['social_network_id' => 'ALL'], ias_oneup_wire_params(['social_network_id' => 'ALL'], 'json'), '"ALL" stays as it is');
+delete_option('ias_oneup_id_form');
+$n = count($S['calls']);
+$r = ias_oneup_call('schedule_text', ['category_id' => '42', 'social_network_id' => 'fb_123', 'scheduled_date_time' => '2026-12-30 09:17', 'content' => 'List form check', 'isDraftPost' => 'true']);
+$sent = ias_t_oneup_calls($n, 'scheduletextpost');
+t_ok($r['ok'] && count($sent) === 1 && $sent[0]['raw_sn'] === '["fb_123"]', 'the account goes over the wire as a list, and OneUp takes it at once');
+$S['id_form'] = 'brackets'; // an OneUp that reads only social_network_id[…]
+$n = count($S['calls']);
+$r = ias_oneup_call('schedule_text', ['category_id' => '42', 'social_network_id' => 'fb_123', 'scheduled_date_time' => '2026-12-30 09:18', 'content' => 'Bracket form check', 'isDraftPost' => 'true']);
+$sent = ias_t_oneup_calls($n, 'scheduletextpost');
+t_ok($r['ok'] && count($sent) === 2 && $sent[1]['raw_sn'] === ['fb_123'], 'refused as "must be an array", it is sent once more as social_network_id[0] — and taken');
+t_eq(1, count(array_filter($S['drafts'], function ($row) { return $row['content'] === 'Bracket form check'; })), '…one draft, not two: the refusal created nothing');
+t_eq('brackets', (string) get_option('ias_oneup_id_form'), '…and that form is kept');
+$n = count($S['calls']);
+ias_oneup_call('schedule_text', ['category_id' => '42', 'social_network_id' => 'fb_123', 'scheduled_date_time' => '2026-12-30 09:19', 'content' => 'Kept form check', 'isDraftPost' => 'true']);
+t_eq(1, count(ias_t_oneup_calls($n, 'scheduletextpost')), '…and tried first from then on: one call');
+$S['id_form'] = 'any';
+$S['fail_next'] = 0;
+$n = count($S['calls']);
+$S['id_form'] = 'nothing';
+add_filter('pre_http_request', $never = function ($pre, $args, $url) {
+  if (strpos((string) $url, 'oneupapp.io/api/schedule') === false) return $pre;
+  return ['headers' => [], 'body' => '{"error":true,"message":"Social Network ID must be an array."}', 'response' => ['code' => 200, 'message' => 'OK'], 'cookies' => [], 'filename' => null];
+}, 20, 3);
+$r = ias_oneup_call('schedule_text', ['category_id' => '42', 'social_network_id' => 'fb_123', 'scheduled_date_time' => '2026-12-30 09:20', 'content' => 'Neither form', 'isDraftPost' => 'true']);
+remove_filter('pre_http_request', $never, 20);
+$S['id_form'] = 'any';
+t_ok(!$r['ok'] && strpos($r['error'], 'must be an array') !== false && count(ias_t_oneup_calls($n, 'scheduletextpost')) === 2, 'refused both ways: it says so after two tries, never a third');
+foreach ($S['drafts'] as $id => $row) if (strpos((string) $row['content'], 'form check') !== false || $row['content'] === 'Neither form') unset($S['drafts'][$id]);
+
 ias_t_oneup_off();
 ias_t_claude_off();
 ias_settings_update(['master' => false, 'dry_run' => true, 'paused' => false, 'types' => ['listing' => false, 'auction_week' => false]]);
