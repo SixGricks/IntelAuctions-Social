@@ -120,6 +120,11 @@ if (!function_exists('ias_settings_sanitize')) {
 
     $out['brand_font_id'] = max(0, (int) ($in['brand_font_id'] ?? 0));
     $out['fair_housing_extra'] = sanitize_textarea_field((string) ($in['fair_housing_extra'] ?? ''));
+    if (isset($in['comment_leads']) && is_array($in['comment_leads'])) {
+      $leads = [];
+      foreach (array_keys(ias_settings_defaults()['comment_leads']) as $k) $leads[$k] = mb_substr(sanitize_text_field((string) ($in['comment_leads'][$k] ?? '')), 0, 120);
+      $out['comment_leads'] = $leads; // blank = the default (ias_comment_lead())
+    }
     $grade = (string) ($in['grade_size'] ?? 'medium');
     $out['grade_size'] = in_array($grade, ['thumbnail', 'medium', 'medium_large'], true) ? $grade : 'medium';
 
@@ -290,6 +295,13 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row"><label for="ias-font">Brand font</label></th><td><input id="ias-font" type="number" min="0" name="ias[brand_font_id]" value="' . ($font > 0 ? $font : '') . '" class="small-text"> '
       . ($font > 0 ? ($font_file !== '' && preg_match('/\.(ttf|otf)$/i', $font_file) ? ia_ui_badge(basename($font_file), 'ok') : ia_ui_badge('not a .ttf/.otf file — using Inter', 'warn')) : ia_ui_badge('Inter (bundled)', 'muted'))
       . '<br><span class="description">The Media Library id of a .ttf or .otf file for the Results graphic and the roundup collage. Blank uses the bundled Inter. (WordPress may need the font file types allowed to upload them.)</span></td></tr>';
+    $lead_labels = ['listing' => 'Listing and Auction Week', 'open_house' => 'Open House', 'results' => 'Results', 'several' => 'A post about several properties', 'roundup' => 'New This Week'];
+    $leads = (array) $s['comment_leads'];
+    echo '<tr><th scope="row">First comment</th><td><p class="description" style="margin-top:0">The words before the listing link in each post\'s first comment. Blank uses the default. New drafts use them; a post already written keeps its comment (edit it there, or Rewrite).</p><table class="ias-kv">';
+    foreach ($lead_labels as $k => $label) {
+      echo '<tr><th><label for="ias-lead-' . esc_attr($k) . '">' . esc_html($label) . '</label></th><td><input id="ias-lead-' . esc_attr($k) . '" type="text" class="regular-text" name="ias[comment_leads][' . esc_attr($k) . ']" value="' . esc_attr((string) ($leads[$k] ?? '')) . '" placeholder="' . esc_attr((string) ias_settings_defaults()['comment_leads'][$k]) . '" maxlength="120"> <span class="description">… then the link</span></td></tr>';
+    }
+    echo '</table></td></tr>';
     echo '<tr><th scope="row"><label for="ias-fh">More fair-housing phrases</label></th><td><textarea id="ias-fh" name="ias[fair_housing_extra]" rows="4" class="large-text">' . esc_textarea((string) $s['fair_housing_extra']) . '</textarea>'
       . '<br><span class="description">One per line. A draft containing one stops for a decision, like "perfect for families" or "safe neighborhood" already do.</span></td></tr>';
     echo '<tr><th scope="row">Photo grading</th><td><select name="ias[grade_size]">';
@@ -304,7 +316,7 @@ if (!function_exists('ias_settings_render')) {
       . (function_exists('ia_ai_key_settings_url') ? ' <a href="' . esc_url(ia_ai_key_settings_url()) . '">' . ($why === '' ? 'Change the key or the cap' : 'Set the key and the cap') . '</a>' : '')
       . ($month !== null ? '<br><span class="description">Drafts and photo grading use the toolkit\'s Anthropic key and its monthly cap (Intel SEO → Settings & Data → Services & Budgets): ' . esc_html(number_format($month)) . ' tokens used this month' . ($cap > 0 ? ' of ' . esc_html(number_format($cap)) : ', no cap') . ', across every feature.</span>' : '') . '</td></tr>';
     echo '<tr><th scope="row">Drafts per run</th><td>' . $num('ias[generate_per_run]', $s['generate_per_run'], 0, 30, 'drafts an hour at most') . '<br><span class="description">Each is one Claude call against the toolkit\'s monthly cap. 0 stops new drafts.</span></td></tr>';
-    echo '<tr><th scope="row">Talk it over</th><td>' . $num('ias[chat_turns]', $s['chat_turns'], 0, 100, 'answers from Claude per post at most') . '<br><span class="description">The chat beside each post\'s text. Every message is one Claude call against the monthly cap; nothing changes until you press Save text. 0 takes the chat away.</span></td></tr>';
+    echo '<tr><th scope="row">Talk it over</th><td>' . $num('ias[chat_turns]', $s['chat_turns'], 0, 100, 'answers from Claude per post at most') . '<br><span class="description">The chat beside each post: Claude changes its text, first comment, pictures and alt text as you talk. Every message is one Claude call against the monthly cap; nothing changes until you press Save changes. 0 takes the chat away.</span></td></tr>';
     echo '<tr><th scope="row">Examples in each draft</th><td>' . $num('ias[voice_examples]', $s['voice_examples'], 0, 6, 'posts') . '<br><span class="description">The newest posts a person wrote, approved or starred on <a href="' . esc_url(ias_admin_url(IAS_PAGE_VOICE)) . '">Brand voice</a>, shown to Claude as how the team sounds (about 250 tokens each). 0 shows none.</span></td></tr>';
     echo '<tr><th scope="row">Learn on its own</th><td><label><input type="checkbox" name="ias[voice_auto]" value="1" ' . checked(!empty($s['voice_auto']), true, false) . '> Claude reads the brand-voice log by itself and suggests house rules</label><br><span class="description">At most once a week, once ' . (int) (function_exists('ias_voice_auto_after') ? ias_voice_auto_after() : 8) . ' new posts a person wrote, approved or starred have come in: one Claude call. The suggestion waits on Brand voice (and in the weekly email) until someone saves or discards it.</span></td></tr>';
     echo '</table>';

@@ -161,8 +161,16 @@ function ias_t_claude(): void {
     $content = $body['messages'][0]['content'];
     $GLOBALS['ias_t_claude_last'] = ['system' => (string) ($body['system'] ?? ''), 'user' => is_string($content) ? $content : ''];
     if (is_string($content) && strpos($content, ' SAYS: ') !== false) { // Talk it over
-      preg_match('/<<<\n(.*)\n>>>/s', $content, $m);
+      preg_match('/THE POST TEXT NOW[^\n]*\n<<<\n(.*?)\n>>>/s', $content, $m);
       $now = (string) ($m[1] ?? '');
+      preg_match('/THE FIRST COMMENT NOW:\n<<<\n(.*?)\n>>>/s', $content, $cm);
+      $comment_now = isset($cm[1]) ? (string) $cm[1] : null;
+      preg_match('/PICTURES ON THE POST NOW[^\n]*\n(.*?)\n\n/s', $content, $pm);
+      preg_match_all('/^\d+\. ([ag]\d+) /m', (string) ($pm[1] ?? ''), $pk);
+      $pics_now = $pk[1];
+      preg_match('/THE PROPERTY\'S OTHER PHOTOS[^\n]*\n(.*?)\n\n/s', $content, $om);
+      preg_match_all('/^(a\d+) /m', (string) ($om[1] ?? ''), $ok);
+      $GLOBALS['ias_t_claude_chat'] = ['text' => $now, 'comment' => $comment_now, 'pictures' => $pics_now, 'others' => $ok[1]];
       $said = trim(substr($content, strrpos($content, ' SAYS: ') + 7));
       $lines = explode("\n", $now);
       $tags = preg_match('/^#/', (string) end($lines)) ? "\n\n" . end($lines) : '';
@@ -171,6 +179,17 @@ function ias_t_claude(): void {
       if (stripos($said, 'families') !== false) $answer = ['reply' => 'Added it, as you asked.', 'text' => $now . "\n\nPerfect for families.", 'rule' => null];
       if (stripos($said, 'never ') === 0) $answer = ['reply' => 'Taken out, and I will remember.', 'text' => 'Plain words, take ' . $n . '. It is an in-person auction.' . $tags, 'rule' => ucfirst(rtrim($said, '.')) . '.'];
       if (stripos($said, 'not json') !== false) $answer = null;
+      if (stripos($said, 'comment') !== false && $comment_now !== null) { // the first comment: the lead-in changed, the links kept
+        preg_match_all('~https?://\S+~', $comment_now, $urls);
+        $answer = ['reply' => 'The comment now says View full listing.', 'text' => null, 'comment' => 'View full listing: ' . implode("\n", $urls[0]), 'rule' => stripos($said, 'never') !== false ? 'In comments, never say "How it sold".' : null];
+      }
+      if (stripos($said, 'drop the link') !== false) $answer = ['reply' => 'Done.', 'text' => null, 'comment' => 'View full listing on our website.', 'rule' => null];
+      if (stripos($said, 'aerial first') !== false && $pics_now) { // pictures: the last one leads, one of the property's others comes in, alt text for the new lead
+        $order = array_reverse($pics_now);
+        if (!empty($ok[1])) $order[] = $ok[1][0];
+        $answer = ['reply' => 'The aerial leads now, and I added one more.', 'text' => null, 'pictures' => array_merge($order, ['a99999999', $order[0]]), 'alt' => [$order[0] => 'Aerial view of the farm and its barns.', 'a99999999' => 'Not a picture of this property.'], 'rule' => null];
+      }
+      if (stripos($said, 'alt only') !== false && $pics_now) $answer = ['reply' => 'Better alt text on the lead.', 'text' => null, 'pictures' => null, 'alt' => [$pics_now[0] => 'The farmhouse from the lane, with the bank barn behind it.'], 'rule' => null];
       $text = $answer === null ? 'Plain words, no JSON at all.' : json_encode($answer);
     } elseif (is_string($content) && strpos($content, 'THE HOUSE RULES NOW:') !== false) { // Brand voice: Suggest updates
       $text = json_encode(['rules' => ['Never use the word nestled.', 'Lead with the place.', 'Call it perfect for families.'], 'why' => 'They keep cutting the gloss.']);

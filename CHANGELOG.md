@@ -1,5 +1,32 @@
 # Intel Auctions Social changelog
 
+## 0.8.0 (2026-10-13) — Talk it over edits the whole post; Save changes never approves
+DJ, on the first real chats: "give the AI agent a way to edit first comments
+and anything else about the post. Also this needs a way to save changes
+without approving."
+- **The whole post.** Talk it over now changes the first comment, which
+  pictures go with the post and in what order (from the post's and the
+  property's own photos, which Claude is shown by key with their kind, grade,
+  alt text and whether another post uses them), and their alt text — as well
+  as the text. Unknown or repeated pictures are dropped; more than 10 never
+  reach the screen. Undo and Use this version cover all of it, and the
+  preview follows the pictures and the comment too. What Claude cannot
+  change (the time, the type, the facts) it says, and where to change it.
+- **Save changes, everywhere, never approving.** One button name in the Edit
+  card, a "Not saved yet" strip in the chat and the Pictures card, all saving
+  the words, the first comment, the pictures and their alt text in one go;
+  **Save and approve** stays for an approve-first post. A post waiting for a
+  yes gets one new approval email for everything saved at once (it was one
+  per change). Pictures or alt text changed on their own no longer make the
+  words a person's edit. Discard changes throws the unsaved away.
+- **Alt text by hand** (✎ on each picture), kept on the post (`flags.alt`)
+  through rewrites and re-picks; alt text alone needs no fresh yes.
+- **The first comment is checked** on save: fair housing, `[VERIFY]`, and the
+  listing link (a comment that lost it stops for a decision).
+- **First comment lead-ins in Settings** (`comment_leads`). Results now says
+  "View the full listing:" — DJ: never "how it sold". Posts already written
+  keep their comment until edited or rewritten.
+
 ## 0.7.0 (2026-10-13) — Talk it over, and the brand voice (every switch still off)
 DJ, after reading more previews: "a little AI chatbot I can discuss the post
 with and have it edit real time, then keep a log of final posts to learn the

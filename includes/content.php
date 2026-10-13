@@ -168,26 +168,36 @@ if (!function_exists('ias_announced_page_url')) {
   }
 }
 
+/**
+ * The words before the link in a first comment (Settings → First comment):
+ * $which is listing, open_house, results, several (a post about more than
+ * one property) or roundup. A blank setting falls back to the default.
+ */
+if (!function_exists('ias_comment_lead')) {
+  function ias_comment_lead(string $which): string {
+    $defaults = ias_settings_defaults()['comment_leads'];
+    $leads = (array) ias_setting('comment_leads', $defaults);
+    $lead = trim((string) ($leads[$which] ?? ''));
+    return $lead !== '' ? $lead : (string) ($defaults[$which] ?? $defaults['listing']);
+  }
+}
+
 /** The first comment and the link it carries. */
 if (!function_exists('ias_first_comment')) {
   function ias_first_comment(array $post, array $facts_list): array {
     $id = (int) $post['id'];
     if ($post['type'] === 'roundup') {
       $link = ias_tracked_link(ias_announced_page_url(), 'roundup', $id);
-      return ['Every new sale, with dates as they are set: ' . $link, $link];
+      return [ias_comment_lead('roundup') . ' ' . $link, $link];
     }
     if (count($facts_list) > 1) {
       $lines = [];
       foreach ($facts_list as $f) $lines[] = ($f['street'] ?: $f['title']) . ': ' . ias_tracked_link((string) $f['url'], (string) $post['type'], $id);
-      return ["Photos, terms and details:\n" . implode("\n", $lines), ias_tracked_link((string) $facts_list[0]['url'], (string) $post['type'], $id)];
+      return [ias_comment_lead('several') . "\n" . implode("\n", $lines), ias_tracked_link((string) $facts_list[0]['url'], (string) $post['type'], $id)];
     }
     $f = $facts_list[0];
     $link = ias_tracked_link((string) $f['url'], (string) $post['type'], $id);
-    $lead = [
-      'results' => 'The listing and how it sold: ',
-      'open_house' => 'Photos, directions and the full listing: ',
-    ][$post['type']] ?? 'Photos, terms and the full listing: ';
-    $comment = $lead . $link;
+    $comment = ias_comment_lead(in_array($post['type'], ['results', 'open_house'], true) ? (string) $post['type'] : 'listing') . ' ' . $link;
     if ($f['video'] !== '' && !$f['video_file'] && in_array($post['type'], ['listing', 'open_house'], true)) {
       $comment .= "\nVideo walkthrough: " . $f['video'];
     }
@@ -525,7 +535,125 @@ if (!function_exists('ias_media_person')) {
       $out['images'][] = ias_media_image($att, $f);
     }
     if (!$out['images']) $out['kind'] = 'none';
-    return $out;
+    return ias_media_apply_alt($out, (array) $post['flags']);
+  }
+}
+
+/** A post's pictures as editor keys, in order: `a<attachment id>`, or `g<n>` for its drawn graphic n. */
+if (!function_exists('ias_media_keys')) {
+  function ias_media_keys(array $post): array {
+    $keys = [];
+    foreach ((array) ($post['content']['media']['images'] ?? []) as $n => $img) $keys[] = (int) ($img['id'] ?? 0) > 0 ? 'a' . (int) $img['id'] : 'g' . (int) $n;
+    return $keys;
+  }
+}
+
+/**
+ * Keys to pictures: `a<id>` is any image in the Media Library, `g<n>` the
+ * post's own drawn graphic n (so no address can be typed in). Unknown keys,
+ * repeats and missing attachments are dropped. Returns image entries.
+ */
+if (!function_exists('ias_media_from_keys')) {
+  function ias_media_from_keys(array $post, array $keys, array $facts_list): array {
+    $current = (array) ($post['content']['media']['images'] ?? []);
+    $images = [];
+    $seen = [];
+    foreach ($keys as $key) {
+      $key = trim((string) $key);
+      if (isset($seen[$key]) || !preg_match('/^([ag])(\d+)$/', $key, $m)) continue;
+      $seen[$key] = true;
+      if ($m[1] === 'g') {
+        $g = $current[(int) $m[2]] ?? null;
+        if (is_array($g) && (int) ($g['id'] ?? 0) === 0) $images[] = $g;
+        continue;
+      }
+      $att = (int) $m[2];
+      if (!wp_attachment_is_image($att)) continue;
+      $f = $facts_list[0] ?? ['title' => get_the_title((int) $post['listing_id'])];
+      foreach ($facts_list as $one) if (in_array($att, array_map('intval', (array) $one['photos']), true)) { $f = $one; break; }
+      $images[] = ias_media_image($att, $f);
+    }
+    return array_values(ias_media_apply_alt(['images' => $images], (array) $post['flags'])['images']);
+  }
+}
+
+/** A person's alt text (`flags.alt`, by attachment id) over the graded one, through rewrites and re-picks. */
+if (!function_exists('ias_media_apply_alt')) {
+  function ias_media_apply_alt(array $media, array $flags): array {
+    $alts = (array) ($flags['alt'] ?? []);
+    if (!$alts) return $media;
+    foreach ((array) ($media['images'] ?? []) as $i => $img) {
+      $att = (int) ($img['id'] ?? 0);
+      if ($att > 0 && isset($alts[$att]) && trim((string) $alts[$att]) !== '') $media['images'][$i]['alt'] = (string) $alts[$att];
+    }
+    return $media;
+  }
+}
+
+/**
+ * A person sets pictures' alt text: $alts is key => text (`a<id>` only — the
+ * drawn graphics describe themselves); blank hands a picture back to its
+ * graded alt text. Kept on the post (`flags.alt`), so it holds through a
+ * rewrite. Alt text is not what an approver judges, so it needs no fresh yes.
+ * Returns the number of pictures changed.
+ */
+if (!function_exists('ias_alt_save')) {
+  function ias_alt_save(int $post_id, array $alts, string $actor): int {
+    $p = ias_post_get($post_id);
+    if (!$p) return 0;
+    $flags = $p['flags'];
+    $mine = (array) ($flags['alt'] ?? []);
+    $changed = 0;
+    foreach ($alts as $key => $text) {
+      if (!preg_match('/^a(\d+)$/', (string) $key, $m) || !wp_attachment_is_image((int) $m[1])) continue;
+      $att = (int) $m[1];
+      $text = mb_substr(trim((string) preg_replace('/\s+/u', ' ', sanitize_text_field((string) $text))), 0, 250);
+      $was = (string) ($mine[$att] ?? '');
+      if ($text === $was) continue;
+      if ($text === '') unset($mine[$att]); else $mine[$att] = $text;
+      $changed++;
+    }
+    if (!$changed) return 0;
+    $flags['alt'] = $mine;
+    $content = (array) $p['content'];
+    // Back to the graded alt text where a person's was taken away, then theirs on top.
+    $facts_list = ias_post_facts($p);
+    foreach ((array) ($content['media']['images'] ?? []) as $i => $img) {
+      $att = (int) ($img['id'] ?? 0);
+      if ($att > 0 && !isset($mine[$att])) {
+        $f = $facts_list[0] ?? ['title' => get_the_title((int) $p['listing_id'])];
+        $content['media']['images'][$i]['alt'] = ias_photo_alt($att, $f);
+      }
+    }
+    $content['media'] = ias_media_apply_alt((array) ($content['media'] ?? []), $flags);
+    ias_post_update($post_id, ['content' => $content, 'flags' => $flags]);
+    ias_post_trail($post_id, 'Alt text changed: ' . $changed . ' picture' . ($changed === 1 ? '' : 's'), $actor);
+    ias_log('edited', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Alt text changed on ' . $changed . ' picture' . ($changed === 1 ? '' : 's')], $actor);
+    return $changed;
+  }
+}
+
+/**
+ * What would stop a first comment a person (or Talk it over) wrote: a
+ * fair-housing phrase, a [VERIFY] marker, or a listing link that is no longer
+ * there (every link the plugin would put in it). [] = fine.
+ */
+if (!function_exists('ias_comment_holds')) {
+  function ias_comment_holds(array $post, string $comment, ?array $facts_list = null): array {
+    if (trim($comment) === '' && empty($post['content']['first_comment'])) return [];
+    $holds = [];
+    foreach (ias_fair_housing_check($comment, (string) ias_setting('fair_housing_extra', '')) as $hit) {
+      $holds[] = 'Fair housing in the first comment: "' . $hit['phrase'] . '" (' . $hit['why'] . ').';
+    }
+    if (preg_match_all('/\[VERIFY[^\]]*\]/i', $comment, $m)) $holds[] = 'The first comment has something to check: ' . implode(' ', array_unique($m[0]));
+    $facts_list = $facts_list ?? ias_post_facts($post);
+    if ($facts_list) {
+      [$canonical] = ias_first_comment($post, $facts_list);
+      preg_match_all('~https?://\S+~', (string) $canonical, $links);
+      $missing = array_values(array_filter(array_unique($links[0]), function ($u) use ($comment) { return strpos($comment, $u) === false; }));
+      if ($missing) $holds[] = 'The first comment no longer carries ' . (count($missing) === 1 ? 'the listing link' : count($missing) . ' of the listing links') . ' — put ' . (count($missing) === 1 ? 'it' : 'them') . ' back, or keep it as written if that is meant.';
+    }
+    return $holds;
   }
 }
 
@@ -549,31 +677,16 @@ if (!function_exists('ias_media_history')) {
  * A person chooses a post's pictures: $keys in order, each `a<attachment id>`
  * (any image in the Media Library) or `g<n>` (the post's own drawn graphic n,
  * so no address can be typed in). Returns ['ok', 'error', 'count'].
- * Approved or waiting Lane A posts need a fresh yes, as for changed words.
+ * Approved or waiting Lane A posts need a fresh yes, as for changed words;
+ * $notify false leaves sending for it to the caller (Save changes does it
+ * once, after the words).
  */
 if (!function_exists('ias_media_save')) {
-  function ias_media_save(int $post_id, array $keys, string $actor): array {
+  function ias_media_save(int $post_id, array $keys, string $actor, bool $notify = true): array {
     $p = ias_post_get($post_id);
     if (!$p) return ['ok' => false, 'error' => 'No such post.', 'count' => 0];
     $facts_list = ias_post_facts($p);
-    $current = (array) ($p['content']['media']['images'] ?? []);
-    $images = [];
-    $seen = [];
-    foreach ($keys as $key) {
-      $key = trim((string) $key);
-      if (isset($seen[$key]) || !preg_match('/^([ag])(\d+)$/', $key, $m)) continue;
-      $seen[$key] = true;
-      if ($m[1] === 'g') {
-        $g = $current[(int) $m[2]] ?? null;
-        if (is_array($g) && (int) ($g['id'] ?? 0) === 0) $images[] = $g;
-        continue;
-      }
-      $att = (int) $m[2];
-      if (!wp_attachment_is_image($att)) continue;
-      $f = $facts_list[0] ?? ['title' => get_the_title((int) $p['listing_id'])];
-      foreach ($facts_list as $one) if (in_array($att, array_map('intval', (array) $one['photos']), true)) { $f = $one; break; }
-      $images[] = ias_media_image($att, $f);
-    }
+    $images = ias_media_from_keys($p, $keys, $facts_list);
     $max = ias_media_max();
     if (count($images) > $max) return ['ok' => false, 'error' => 'A post carries at most ' . $max . ' pictures — remove ' . (count($images) - $max) . '.', 'count' => count($images)];
 
@@ -593,7 +706,7 @@ if (!function_exists('ias_media_save')) {
     $what = count($images) ? count($images) . ' picture' . (count($images) === 1 ? '' : 's') : 'no pictures';
     ias_post_trail($post_id, 'Pictures chosen by hand: ' . $what, $actor);
     ias_log('edited', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Pictures chosen by hand: ' . $what], $actor);
-    if (in_array($status, ['waiting', 'approved'], true)) do_action('ias_post_edited', $post_id, (array) ($flags['holds'] ?? []));
+    if ($notify && in_array($status, ['waiting', 'approved'], true)) do_action('ias_post_edited', $post_id, (array) ($flags['holds'] ?? [])); // Save changes tells once, after the words
     return ['ok' => true, 'error' => '', 'count' => count($images)];
   }
 }
@@ -607,7 +720,7 @@ if (!function_exists('ias_media_reset')) {
     unset($flags['media_by'], $flags['media_at']);
     $p['flags'] = $flags;
     $facts_list = ias_post_facts($p);
-    $media = $facts_list ? ias_media_for_post($p, $facts_list) : ['kind' => 'none', 'images' => [], 'video_url' => ''];
+    $media = $facts_list ? ias_media_apply_alt(ias_media_for_post($p, $facts_list), $flags) : ['kind' => 'none', 'images' => [], 'video_url' => ''];
     $content = (array) $p['content'];
     $content['media'] = $media;
     $update = ['content' => $content, 'flags' => $flags, 'images_used' => array_values(array_filter(array_map(function ($i) { return (int) $i['id']; }, (array) $media['images'])))];
@@ -662,7 +775,7 @@ if (!function_exists('ias_generate_post')) {
     if (!$facts_list) return ['ok' => false, 'error' => 'The listing this post was for is gone.'];
 
     $flags = $post['flags'];
-    $media    = ias_media_person($post, $facts_list) ?? ias_media_for_post($post, $facts_list); // a person's pictures hold through a rewrite
+    $media    = ias_media_person($post, $facts_list) ?? ias_media_apply_alt(ias_media_for_post($post, $facts_list), $flags); // a person's pictures (and alt text) hold through a rewrite
     $template = ias_pick_template($post, $facts_list);
     $cta_kind = ias_pick_cta_kind($post, $facts_list);
     $avoid = [
