@@ -1,5 +1,21 @@
 # Intel Auctions Social changelog
 
+## 0.5.2 (2026-10-13) — Without Claude, say so (every switch still off)
+From the first audit of the live site, where the toolkit has no Anthropic key:
+- **Nothing is tried without Claude.** When the toolkit has no Anthropic key,
+  or the month's token cap is spent (`ias_ai_blocker()`), the hourly drafts
+  and photo grading stop before calling anything. No post is stamped with the
+  error or put on the six-hour wait, and no "failed" log line is written for
+  each listing. Planning carries on.
+- **Every Social screen says so**, under the switches ("Drafts are stopped"
+  and why), and **Settings → Claude** shows ready or stopped, with the month's
+  tokens against the toolkit's cap.
+- Guide: §3 needs the toolkit's Anthropic key, and covers installing from a
+  `main` branch zip and what the updater installs. §7 treats the toolkit's
+  social webhook as optional (no URL means nothing to hand over), and turns
+  Listing posts on as the only type when going live.
+- `tests/wp/02b-claude-stopped.php`.
+
 ## 0.5.1 (2026-10-12) — Phase 5 review: OneUp safety (every switch still off)
 Every finding of the Phase 5 review, each with a test against the fake OneUp
 (`tests/wp/08-oneup-safety.php`, and the tests fail on 0.5.0):

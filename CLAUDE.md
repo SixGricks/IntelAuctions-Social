@@ -60,7 +60,10 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
 - **Money and AI safety:** every Claude call goes through the toolkit's
   `ia_ai_generate()` (metered against its monthly cap) with a `social.*` feature
   name, and is guarded against paying twice (a draft is regenerated only when its
-  facts changed or a person asks; a photo is graded once). AI output is always a
+  facts changed or a person asks; a photo is graded once). A batch of calls
+  checks `ias_ai_blocker()` first: with no key or the month's cap spent, nothing
+  is tried and the switches strip says so once, rather than every post and
+  listing recording the same failure. AI output is always a
   draft: prompts forbid invented facts (`[VERIFY]` markers hold the post), and the
   fair-housing screen holds any flagged draft for a person.
 - **Nothing reaches Facebook until DJ turns a switch on.** The master switch and

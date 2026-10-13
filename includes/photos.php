@@ -108,6 +108,8 @@ if (!function_exists('ias_photos_grade')) {
     $todo = array_slice($todo, 0, 40); // a big gallery: the first 40 are plenty to choose from
     $out = ['graded' => 0, 'left' => count($todo), 'error' => ''];
     if (!$todo) return $out;
+    $why = ias_ai_blocker();
+    if ($why !== '') { $out['error'] = $why; return $out; } // said once on every Social screen, not logged per listing
     $err_at = (int) get_post_meta((int) $f['id'], '_ias_grade_error_at', true);
     if ($err_at > time() - 6 * HOUR_IN_SECONDS) {
       $out['error'] = 'Grading failed less than 6 hours ago; waiting before paying for another try.';

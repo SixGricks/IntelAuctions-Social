@@ -1,6 +1,6 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.5.1.** The canonical user documentation, rendered inside
+> **Documented version: 0.5.2.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
@@ -23,15 +23,15 @@ The plugin is built in phases. Each ships with publishing off and is checked bef
 | 2. Content | Drafts for every post type, photo grading, crops, the results graphic, the fair-housing screen | 0.2.0 |
 | 3. Scheduler | The 5:00 plan, the rules, cancellations, dry-run payloads | 0.3.0 |
 | 4. Approval | The approval emails and their links, morning reminders, the Monday email | 0.4.0 |
-| 5. OneUp live | Pushing to OneUp, reading back, cancelling, Verify OneUp, corrections, the monthly summary | 0.5.0–0.5.1 |
+| 5. OneUp live | Pushing to OneUp, reading back, cancelling, Verify OneUp, corrections, the monthly summary | 0.5.0–0.5.2 |
 | 6. The rest | Each post type switched on in turn | — |
 
 This version is **phase 5, built and switched off**: every current listing's posts are drafted, checked and planned to the minute every morning; the roundup and Results posts are emailed to DJ and Jacob for a yes; the Monday email goes out; and the pushes to OneUp, the hourly read-back, cancelling, corrections and the monthly summary are all in place. With the switches as they ship, what would go to OneUp is written to the log as a dry run and nothing reaches Facebook. Phase 5 is done when one week of Listing posts publishes as planned — **Going live** (§7) is the checklist for starting that week.
 
 ## 3. Installing it
 
-1. Make sure the **Intel Auctions Toolkit** is active at **4.66.0** or newer.
-2. Plugins → Add New → Upload Plugin, choose `intel-auctions-social.zip` from the latest release at github.com/SixGricks/IntelAuctions-Social/releases, then **Activate**. Updates then arrive through WordPress like any plugin's.
+1. Make sure the **Intel Auctions Toolkit** is active at **4.66.0** or newer, with its **Anthropic API key** set (Auctions → AI Content): every draft and photo grade is a Claude call through the toolkit, and without the key nothing is written (§6).
+2. Plugins → Add New → Upload Plugin, choose `intel-auctions-social.zip` from the latest release at github.com/SixGricks/IntelAuctions-Social/releases, then **Activate**. A zip of the repository's `main` branch (Code → Download ZIP) installs too, as `IntelAuctions-Social-main`; updates keep whichever folder it is in. Updates then arrive through WordPress like any plugin's: the updater takes the latest release that is not a pre-release (its tag with or without a `v`), installs the release file named exactly `intel-auctions-social.zip`, and falls back to the release's source zip when there is none.
 3. Add the OneUp API key to `wp-config.php` (from oneupapp.io → API access): `define('INTEL_ONEUP_API_KEY', '…');` — it is never stored in the database.
 4. In **Settings**, press **Check connection**, copy in the OneUp category id and the Facebook page's account id (for Intel: category **Intel**, page **Intel Auctions (Narvon)**), save, and press **Verify OneUp** (§7). Everything stays off until you turn it on.
 
@@ -81,7 +81,7 @@ Across the top of every screen, the **switches strip** shows the master switch, 
 - **Limits and posting windows**: at most 3 posts a day, at least 2 when posts can be pulled in, 3 hours apart, in the windows 6:00–7:30 AM, 11:30 AM–1:00 PM and 7:00–9:00 PM, each time shifted by up to 25 minutes; the 48-hour veto window; how far ahead it plans (30 days) and pushes (21 days), and the hour the morning plan runs (5:00).
 - **Approvals and the weekly email**: who approves (dj@ and jacob@intelauctions.com), and when the weekly review email goes (Monday 7:00; any day but Sunday). Below the form: **Send the weekly email now**, **Check connection** and **Verify OneUp** (both need the master switch on; Verify OneUp shows the result of its last run and **passed for this page** once it has, §7), and when the read-back last ran and what it found.
 - **Links back to the site**: the tracking tags on every link.
-- **Copy and pictures**: the brand font for the graphics, more fair-housing phrases to stop on, the size photos are graded at (bigger costs more), and how many drafts are written an hour.
+- **Copy and pictures**: the brand font for the graphics, more fair-housing phrases to stop on, the size photos are graded at (bigger costs more), and how many drafts are written an hour — with **Claude**'s state beside them: ready, or stopped and why (no Anthropic key in the toolkit, or the month's cap spent), and the tokens used this month against the toolkit's cap.
 
 ### Log
 
@@ -177,6 +177,8 @@ The plugin's job runs every hour on the toolkit's dispatcher (`ias_social`, list
 
 Nothing is paid for twice: a draft is rewritten only when the listing's facts behind it change (and nobody has edited it) — on the next run, at most once an hour — or when a person presses **Rewrite** (at most hourly). A failed call waits 6 hours before trying again. Until a draft whose facts changed has been rewritten, it is never pushed.
 
+**Without Claude** — the toolkit has no Anthropic key, or the month's cap is spent — nothing is tried: no draft, no photo grade, no post marked failed. A notice under the switches on every Social screen says **Drafts are stopped** and why, and **Settings → Claude** shows it too, with the month's tokens against the cap. The plan carries on (posts without words are never pushed), and the next hourly run after the key is back, or the cap raised, writes the drafts.
+
 ## 7. The plan
 
 ### The morning run
@@ -243,12 +245,12 @@ A post that has gone out is never edited — editing resets its reach. When a fa
 1. Turn on the **master switch** and leave **dry run on**. The plugin may now call OneUp, but only to read: the hourly read-back starts, and nothing is written.
 2. **Settings → Check connection**, copy in the category id and the Facebook page's account id, save.
 3. **Verify OneUp**: it saves a test **draft** for the page (drafts never publish; it is set a month out), reads it back, checks that OneUp's time zone matches the site's, deletes it, and reads the scheduled, published and failed lists. Every step should say **ok**, and the button then shows **passed for this page**. Nothing is written to OneUp for real until it has — for the category and account set now; change either and it must pass again. If OneUp scheduled the draft as a real post, Verify fails and takes it off at once (if even that fails, it says to delete it in OneUp now). If a step fails, nothing goes live until it is fixed (the plugin's calls to OneUp are named in one filterable list, `ias_oneup_endpoints`).
-4. Make the **Zapier/Make scenario** behind the toolkit's social webhook post to Facebook only when the payload's `channels` contains `facebook` (below).
-5. Turn **dry run** off and **Listing posts** on, and save. The next hourly run schedules the Listing posts outside the 48-hour window on OneUp; check them on the OneUp calendar.
+4. If the toolkit's social webhook is in use (Settings & Data → Automation has a URL), make the **Zapier/Make scenario** behind it post to Facebook only when the payload's `channels` contains `facebook` (below). With no URL there, nothing else posts listings to Facebook and there is nothing to change.
+5. Turn **dry run** off with **Listing posts** the only post type on (switch any others off first), and save. The next hourly run schedules the Listing posts outside the 48-hour window on OneUp; check them on the OneUp calendar.
 6. When the first Listing post publishes, check on Facebook that its link is in the first comment. If OneUp did not post it, untick **Put the link in the first comment**: the link then ends the post.
 7. One week of Listing posts publishing as planned finishes Phase 5. Then turn on the other types one at a time (Phase 6).
 
-**Handing Facebook over from the toolkit.** The toolkit's social webhook (Settings & Data → Automation) still posts each listing to Facebook through Zapier/Make. This plugin tells the toolkit when it has taken Facebook over (the toolkit's `ia_social_facebook_managed`): only when Listing posts can really reach OneUp — the master switch on, dry run off, the key and the ids set, Verify OneUp passed for that page, and Listing posts on (Pause does not change it). Until then the webhook carries Facebook as before; from then on its payload says `channels: ["gbp"]`, the toolkit's promo steps ask for the Google Business Profile post only, and promo tasks already in the queue drop their Facebook step. **Before Listing posts go live, make the Zapier/Make scenario post to Facebook only when `channels` contains `facebook`**, or Facebook gets the listing twice.
+**Handing Facebook over from the toolkit.** If the toolkit's social webhook is set up (Settings & Data → Automation has a URL), it sends each listing to Zapier/Make, which may post it to Facebook. This plugin tells the toolkit when it has taken Facebook over (the toolkit's `ia_social_facebook_managed`): only when Listing posts can really reach OneUp — the master switch on, dry run off, the key and the ids set, Verify OneUp passed for that page, and Listing posts on (Pause does not change it). Until then the webhook carries Facebook as before; from then on its payload says `channels: ["gbp"]`, the toolkit's promo steps ask for the Google Business Profile post only, and promo tasks already in the queue drop their Facebook step. **Before Listing posts go live, make the Zapier/Make scenario post to Facebook only when `channels` contains `facebook`**, or Facebook gets the listing twice. With no webhook URL, the toolkit sends nothing, and the promo steps are the only part of the handover that changes anything.
 
 **Check connection** under Settings asks OneUp for its categories and their accounts with the key from wp-config — a read-only call that changes nothing — so the category id and the Facebook account id can be copied in. Like every call to OneUp, it needs the master switch on.
 

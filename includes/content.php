@@ -482,6 +482,30 @@ if (!function_exists('ias_first_line')) {
 }
 
 /**
+ * Why Claude cannot be asked for anything now ('' = it can): the toolkit has
+ * no Anthropic key, or this month's token budget is spent. The hourly drafts
+ * and photo grading check it first, so a missing key costs nothing, stamps no
+ * post with an error and writes no log line per listing — every Social screen
+ * says it once instead (the switches strip). The toolkit's helpers are
+ * optional here: without them, ia_ai_generate() reports the same thing.
+ */
+if (!function_exists('ias_ai_blocker')) {
+  function ias_ai_blocker(): string {
+    if (function_exists('ia_ai_api_key') && ia_ai_api_key() === '') {
+      return 'The toolkit has no Anthropic API key, so no draft can be written and no photo graded. Add it under Auctions → AI Content (or as INTEL_ANTHROPIC_API_KEY in wp-config.php).';
+    }
+    if (function_exists('ia_ai_token_cap') && function_exists('ia_ai_tokens_month')) {
+      $cap = (int) ia_ai_token_cap();
+      $used = (int) (ia_ai_tokens_month()['total'] ?? 0);
+      if ($cap > 0 && $used >= $cap) {
+        return 'This month\'s Claude budget in the toolkit is spent (' . number_format($used) . ' of ' . number_format($cap) . ' tokens), so no draft can be written until next month or until the cap is raised under Intel SEO → Settings & Data.';
+      }
+    }
+    return '';
+  }
+}
+
+/**
  * Write (or rewrite) one post's draft. Returns ['ok' => bool, 'status' => …, 'error' => '…'].
  * $forced = a person pressed Regenerate.
  */

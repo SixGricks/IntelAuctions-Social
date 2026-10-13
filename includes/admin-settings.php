@@ -257,6 +257,11 @@ if (!function_exists('ias_settings_render')) {
       echo '<option value="' . esc_attr($k) . '" ' . selected((string) $s['grade_size'], $k, false) . '>' . esc_html($label) . '</option>';
     }
     echo '</select><br><span class="description">Claude looks at each photo once, at this size, to score it and tag its kind.</span></td></tr>';
+    $why = ias_ai_blocker();
+    $month = function_exists('ia_ai_tokens_month') ? (int) (ia_ai_tokens_month()['total'] ?? 0) : null;
+    $cap = function_exists('ia_ai_token_cap') ? (int) ia_ai_token_cap() : 0;
+    echo '<tr><th scope="row">Claude</th><td>' . ($why === '' ? ia_ui_badge('Ready', 'ok') : ia_ui_badge('Stopped', 'warn') . ' ' . esc_html($why))
+      . ($month !== null ? '<br><span class="description">Drafts and photo grading use the toolkit\'s key (Auctions → AI Content) and its monthly cap (Intel SEO → Settings & Data): ' . esc_html(number_format($month)) . ' tokens used this month' . ($cap > 0 ? ' of ' . esc_html(number_format($cap)) : ', no cap') . ', across every feature.</span>' : '') . '</td></tr>';
     echo '<tr><th scope="row">Drafts per run</th><td>' . $num('ias[generate_per_run]', $s['generate_per_run'], 0, 30, 'drafts an hour at most') . '<br><span class="description">Each is one Claude call against the toolkit\'s monthly cap. 0 stops new drafts.</span></td></tr>';
     echo '</table>';
 

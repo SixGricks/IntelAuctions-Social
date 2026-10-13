@@ -149,6 +149,8 @@ if (!function_exists('ias_switches_strip')) {
       $out .= $chip($def['short'], $on ? 'On' : 'Off', $on ? 'on' : 'off');
     }
     $out .= '</div>';
+    $why = function_exists('ias_ai_blocker') ? ias_ai_blocker() : '';
+    if ($why !== '') $out .= '<div class="notice notice-warning inline"><p><strong>Drafts are stopped.</strong> ' . esc_html($why) . ' Planning goes on; a post gets its words once Claude can be asked again.</p></div>';
     return $out;
   }
 }

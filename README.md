@@ -1,6 +1,6 @@
 # Intel Auctions Social
 
-A WordPress plugin (**v0.5.1**) for intelauctions.com, the sister of the
+A WordPress plugin (**v0.5.2**) for intelauctions.com, the sister of the
 [Intel Auctions Toolkit](https://github.com/SixGricks/IntelAuction). It turns
 each auction into a set of Facebook posts, plans them three a day through OneUp, and keeps
 a person in the loop on the posts that carry hard facts.
@@ -11,7 +11,7 @@ a person in the loop on the posts that carry hard facts.
 - **What changed:** [`CHANGELOG.md`](CHANGELOG.md).
 - **Working on it:** [`CLAUDE.md`](CLAUDE.md) (conventions) and [`tests/README.md`](tests/README.md).
 
-**Needs** the Intel Auctions Toolkit 4.66.0 or newer, PHP 7.4+ and WordPress 5.3+. Without
+**Needs** the Intel Auctions Toolkit 4.66.0 or newer with its Anthropic API key set (every draft is a Claude call through it), PHP 7.4+ and WordPress 5.3+. Without
 the toolkit it shows a notice and does nothing.
 
 **Install:** upload `intel-auctions-social.zip` from the latest GitHub release (Plugins → Add
