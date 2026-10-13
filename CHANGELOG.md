@@ -1,5 +1,56 @@
 # Intel Auctions Social changelog
 
+## 0.11.0 (2026-10-13) — Results posts that don't read alike; positive bidding words
+DJ: "We need more variety in the Results posts. They read almost identical…
+sometimes paragraphs and sometimes bullets… 1 out of every 5 posts being
+emoji heavy… Saying Phone bid implies no onsite. Positive statements are
+better."
+- **Shapes.** Every post is now written in a shape that rotates by weight per
+  post type (`ias_shapes()`, `ias_pick_shape()`, kept 45 days in the history
+  as `shape`): paragraphs, bullets ("• " lines of facts), short (Auction Week
+  and Results) and emoji-led (about one in five; up to 8 emoji, one a line).
+  Never the shape the property's last post used. The prompt carries a
+  `SHAPE:` line; the post keeps `content.shape`; its page says "Written as:
+  <opening>, <shape>"; the history entry names both.
+- **Results openings of their own** (`ias_templates_results()`): result first
+  (only with a price), thanks first, place first, sale day first, to the
+  neighbors — in place of the listing openings.
+- **More calls to action:** thinking of selling?, follow the page, save the
+  date, share it, and a thank-you. Results rotates through six (join the list,
+  a question, selling, follow, share, thanks).
+- **Positive bidding words.** The rules ask for what the sale is ("bid by
+  phone through Intel Phone Bidding", "an in-person auction on site"), never
+  what it isn't ("no onsite auction", "not online").
+- **The bidding check reads negation** (`ias_negated_at()`): a way of bidding
+  the sentence denies ("no onsite auction", "not an in-person sale", "no
+  online bidding", "phone bidding is not available") is no mention of it, so
+  a phone-bid post saying "no onsite auction" is no longer held as saying
+  both. "On site" is matched with or without the space or hyphen.
+- **Talk it over keeps the shape** (`ias_chat_shape_line()`): its prompt
+  names the post's shape and keeps it unless the person asks for another.
+- **The emoji cap follows the shape** (`ias_emoji_max()`): three, or eight on
+  an emoji-led post (`emoji_max` in the check's context, kept on recheck).
+- Tests: `tests/unit/variety.php` (the mix over 100 picks: emoji 15–25%, no
+  repeat per property, paragraphs and bullets both used), negation cases in
+  `tests/unit/checks.php`, and `tests/wp/02i-variety.php` (ten Results posts
+  written in turn; the phone-bid "no onsite auction" post not held).
+
+## 0.10.2 (2026-10-13) — OneUp's documented delete; no test draft left behind
+With the account sent as a list, the live site's Verify OneUp and Verify for
+Google saved their drafts, read them back and matched the time zone — then
+failed to delete them: "OneUp answered HTTP 404: Page Not Found". The delete
+went to `deletepost`, a guessed name OneUp does not have. It now goes to
+OneUp's documented `deletescheduledpost` (POST, `post_id`).
+- OneUp's 404 web page (no such address) is never taken for "the post is
+  gone" (`ias_oneup_no_route()`); its own "not found" answer still is, when its
+  list agrees.
+- A test draft Verify cannot delete is not left for a person to delete in
+  OneUp: its id is kept (`ias_oneup_verify_leftovers`) and the next Verify
+  deletes it first ("Earlier test drafts"). The two drafts the 0.10.1 runs
+  left (#53747135, #53747143) are read from those runs' own steps and deleted
+  the same way, by their ids.
+- The test fake answers the old name with OneUp's 404 page.
+
 ## 0.10.1 (2026-10-13) — the account goes to OneUp as a list
 The live account refused Verify OneUp and Verify for Google at "Save a
 draft": "OneUp said: Social Network ID must be an array." Every scheduling

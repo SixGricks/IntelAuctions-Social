@@ -207,6 +207,20 @@ if (!function_exists('ias_chat_tiles')) {
   }
 }
 
+/**
+ * The shape the post was written in (content.shape), so a revision keeps it —
+ * bullets stay bullets, an emoji-led post keeps its emoji lines — unless the
+ * person asks for another. '' for a post written before shapes, or a list.
+ */
+if (!function_exists('ias_chat_shape_line')) {
+  function ias_chat_shape_line(array $post, string $person): string {
+    $shape = (string) ($post['content']['shape'] ?? '');
+    $shapes = function_exists('ias_shapes') ? ias_shapes() : [];
+    if ($shape === '' || $shape === 'list' || !isset($shapes[$shape])) return '';
+    return "SHAPE: this post is written as \"" . $shapes[$shape][0] . "\": " . $shapes[$shape][1] . " Keep that shape unless {$person} asks for another.\n";
+  }
+}
+
 /** [system, user] for one turn. $screen: ias_chat_screen(); $pictures: ias_chat_pictures(); $history: the conversation so far (rows). */
 if (!function_exists('ias_chat_prompt')) {
   function ias_chat_prompt(array $post, array $facts_list, $screen, array $history, string $message, string $person, ?array $pictures = null): array {
@@ -219,6 +233,7 @@ if (!function_exists('ias_chat_prompt')) {
       . "WHAT YOU CAN CHANGE: the post text" . ($has_comment ? ', the first comment' : '') . ", which pictures go with the post and in what order (at most " . ias_media_max() . "; the first one leads), and each picture's alt text. You cannot change when the post goes out, its type, or the listing's facts: say so, and that facts are changed on the listing itself.\n"
       . ias_prompt_rules()
       . ($house !== '' ? $house . "\n" : '')
+      . ias_chat_shape_line($post, $person)
       . "KEEP: the hashtag line at the end of the text, and every web address in the text" . ($has_comment ? ' and the first comment' : '') . ", exactly as they are, unless {$person} asks to change them. It stays a Facebook post: plain text, no headings, no markdown, no bold.\n"
       . ($has_comment ? "FIRST COMMENT: it carries the listing link (the whole reason for it). Keep every web address in it exactly as it is, character for character. The house rules and fair housing apply to it like the text.\n" : '')
       . "PICTURES: choose only from the PICTURES list, by key. Alt text says plainly what is in the picture for someone who cannot see it, from what the list says about it — never something the list does not say.\n"

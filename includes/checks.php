@@ -12,21 +12,52 @@
  *         says "online"; or the listing itself does not say
  *   hold  a dollar figure or a phone number that is not on the listing
  *   hold  a fair-housing phrase (fairhousing.php)
- *   hold  more than three emoji (no emoji walls)
+ *   hold  more than three emoji (no emoji walls) — eight for an emoji-led post
+ *   (a bidding way the sentence denies — "no onsite auction" — is no mention of it)
  *   fix   a web address in the text — removed (the link goes in the first comment)
  *   fix   stacked exclamation points — one is plenty
  */
 
 if (!defined('ABSPATH')) exit;
 
-/** Whether $text says bidding is by phone, in person, and/or online. */
+/**
+ * Whether $text says bidding is by phone, in person, and/or online — as what
+ * the sale IS. A mention the sentence denies ("no onsite auction", "not an
+ * in-person sale", "no online bidding") says nothing about how it works, so it
+ * does not count (DJ, Oct 13, 2026: a phone-bid post saying "no onsite
+ * auction" was held as mentioning in-person bidding — too aggressive). The
+ * prompts ask for positive words anyway.
+ */
 if (!function_exists('ias_bidding_mentions')) {
   function ias_bidding_mentions(string $text): array {
+    $said = function (string $re) use ($text): bool {
+      if (!preg_match_all($re, $text, $m, PREG_OFFSET_CAPTURE)) return false;
+      foreach ($m[0] as [$hit, $at]) if (!ias_negated_at($text, (int) $at, strlen((string) $hit))) return true;
+      return false;
+    };
     return [
-      'phone'     => (bool) preg_match('/\b(?:intel\s+)?phone[\s-]bid(?:s|ding)?\b|\bbid(?:ding)?\s+(?:by|over\s+the)\s+phone\b|\bphone\s+in\s+(?:your\s+)?bids?\b/i', $text),
-      'in_person' => (bool) preg_match('/\bin[\s-]person\s+(?:auction|bidding|sale)\b|\bbid(?:ding)?\s+in\s+person\b|\bon[\s-]site\s+(?:auction|bidding|sale)\b|\blive\s+(?:auction|bidding)\b|\bbid(?:ding)?\s+on[\s-]site\b/i', $text),
-      'online'    => (bool) preg_match('/\b(?:online|internet|web(?:cast)?)\s+(?:bid|bidding|auction)\b|\bbid(?:ding)?\s+online\b/i', $text),
+      'phone'     => $said('/\b(?:intel\s+)?phone[\s-]bid(?:s|ding)?\b|\bbid(?:ding)?\s+(?:by|over\s+the)\s+phone\b|\bphone\s+in\s+(?:your\s+)?bids?\b/i'),
+      'in_person' => $said('/\bin[\s-]person\s+(?:auction|bidding|sale)\b|\bbid(?:ding)?\s+in\s+person\b|\bon[\s-]?site\s+(?:auction|bidding|sale)\b|\blive\s+(?:auction|bidding)\b|\bbid(?:ding)?\s+on[\s-]?site\b/i'),
+      'online'    => $said('/\b(?:online|internet|web(?:cast)?)\s+(?:bid|bidding|auction)\b|\bbid(?:ding)?\s+online\b/i'),
     ];
+  }
+}
+
+/**
+ * Are the words at byte $at ($len bytes) denied by their own clause — "no",
+ * "not", "isn't", "won't be", "without", "never", "nor" in the few words
+ * before them ("no in-person or online bidding" denies both), or "is not",
+ * "isn't", "not available" straight after ("phone bidding is not available")?
+ * Within the same sentence only. Pure.
+ */
+if (!function_exists('ias_negated_at')) {
+  function ias_negated_at(string $text, int $at, int $len = 0): bool {
+    $before = substr($text, max(0, $at - 60), min(60, $at));
+    $parts = preg_split('/[.!?;:\n•]|—/u', $before);
+    $clause = (string) end($parts);
+    if (preg_match('/\b(?:no|not|never|without|nor|none)\b|n[\'’]t\b/i', $clause)) return true;
+    $after = (string) (preg_split('/[.!?;:\n•]|—/u', substr($text, $at + $len, 40))[0] ?? '');
+    return (bool) preg_match('/^\s*(?:(?:is|are|was|will\s+be|won[\'’]t\s+be)\s+not\b|(?:isn|aren|wasn|won)[\'’]t\b|(?:is|are)\s+(?:not\s+)?(?:unavailable|not\s+offered|not\s+an\s+option))/i', $after);
   }
 }
 
@@ -92,6 +123,7 @@ if (!function_exists('ias_has_verify')) {
  *   money       dollar values the listing(s) state (starting bids, sale prices, parcel bids)
  *   phones      phone numbers the post may give (the lead's, the office)
  *   fair_extra  extra fair-housing phrases from Settings
+ *   emoji_max   the most emoji allowed (3; an emoji-led post's shape gives 8)
  * Returns ['text' => fixed text, 'holds' => [reason, …], 'fixes' => [what was changed, …]].
  */
 if (!function_exists('ias_check_draft')) {
@@ -145,7 +177,8 @@ if (!function_exists('ias_check_draft')) {
       $holds[] = 'Fair housing: "' . $hit['phrase'] . '" ' . $hit['why'] . '.';
     }
 
-    if (ias_emoji_count($text) > 3) $holds[] = 'More than three emoji — no emoji walls.';
+    $emoji_max = (int) ($ctx['emoji_max'] ?? 3); // an emoji-led post (its shape) may carry more, one a line
+    if (ias_emoji_count($text) > $emoji_max) $holds[] = $emoji_max > 3 ? 'More than ' . $emoji_max . ' emoji, even for an emoji-led post.' : 'More than three emoji — no emoji walls.';
 
     return ['text' => $text, 'holds' => array_values(array_unique($holds)), 'fixes' => $fixes];
   }

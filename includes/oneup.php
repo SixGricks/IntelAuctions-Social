@@ -19,10 +19,12 @@
  * created_at (published: UTC), category_name and social_network_username.
  *
  * The endpoint names and methods live in one filterable map
- * (`ias_oneup_endpoints`). The scheduling ones are OneUp's documented ones;
- * the list, delete and edit names follow the same pattern and are what
- * **Verify OneUp** on the Settings screen checks, with a draft that never
- * publishes, before any switch is turned on. A method OneUp refuses (405) or
+ * (`ias_oneup_endpoints`). The scheduling and delete ones are OneUp's
+ * documented ones (docs.oneupapp.io — delete is POST deletescheduledpost,
+ * for posts not yet published; the guessed "deletepost" answered the live
+ * site with a 404 page, Oct 13, 2026); the list names follow the same pattern
+ * and are what **Verify OneUp** on the Settings screen checks, with a draft
+ * that never publishes, before any switch is turned on. A method OneUp refuses (405) or
  * an address too long for it (414) is retried once the other way.
  *
  * Nothing is sent unless every switch allows it (ias_push_blockers()); the
@@ -46,7 +48,7 @@ if (!function_exists('ias_oneup_endpoints')) {
       'published'      => ['GET', 'getpublishedposts'],
       'drafts'         => ['GET', 'getdraftposts'],
       'failed'         => ['GET', 'getfailedposts'],
-      'delete'         => ['GET', 'deletepost'],   // checked by Verify OneUp
+      'delete'         => ['POST', 'deletescheduledpost'], // OneUp's docs: post_id, unpublished posts only (Verify OneUp checks it on its test draft)
       'edit'           => ['GET', 'editpost'],     // not used: a changed post is deleted and scheduled again
     ]);
   }
