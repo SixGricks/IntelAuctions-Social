@@ -51,13 +51,13 @@ add_action('ias_post_view_side', function (array $p): void {
   } elseif ($p['status'] === 'waiting') {
     echo '<p class="description">A reminder goes every morning except Sunday until someone answers.</p>'; // the bar says it is waiting
   } else {
-    echo '<p class="description">Lane A: this post waits for an emailed yes from ' . esc_html(implode(' or ', ias_approvers()) ?: 'an approver (none set in Settings)') . ' once its draft is clean.</p>';
+    echo '<p class="description">This post waits for a yes from ' . esc_html(implode(' or ', array_map('ias_person_name', ias_approvers())) ?: 'an approver (none is set in Settings)') . ' — they are emailed as soon as its draft is clean.</p>';
   }
   $sent = array_reverse((array) ($a['sent'] ?? []));
   if ($sent) {
     echo '<ul style="margin:0">';
     foreach (array_slice($sent, 0, 8) as $s) {
-      echo '<li class="description">' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $s['at'])) . ' — ' . ($s['kind'] === 'reminder' ? 'reminder' : 'request') . ' to ' . implode(', ', (array) $s['to'])) . '</li>';
+      echo '<li class="description">' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $s['at'])) . ' — ' . ($s['kind'] === 'reminder' ? 'reminder' : 'asked') . ' ' . implode(' and ', array_map('ias_person_name', (array) $s['to']))) . '</li>';
     }
     echo '</ul>';
   }

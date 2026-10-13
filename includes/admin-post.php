@@ -47,39 +47,76 @@ add_action('ias_calendar_action', function (string $action): void {
 
   switch ($action) {
     case 'edit':
+      // Save changes: whatever changed on the screen — the words, the first comment, the pictures, their alt text — in one go, never approving (Save and approve does that).
       if (!ias_post_editable($p)) { $flash('This post can no longer be edited here.', 'error'); return; }
       $text = trim(str_replace("\r\n", "\n", (string) wp_unslash($_POST['ias_text'] ?? '')));
       if ($text === '') { $flash('The text cannot be empty — use Skip to drop the post.', 'error'); return; }
-      $check = ias_recheck_post($p, $text);
-      $content = $p['content'];
-      $content['text'] = $check['text'];
-      $content['opener'] = ias_first_line($check['text']);
-      if (isset($_POST['ias_comment'])) $content['first_comment'] = trim(str_replace("\r\n", "\n", (string) wp_unslash($_POST['ias_comment'])));
-      $content['generated_by'] = 'edited';
-      $flags = $p['flags'];
-      $flags['edited_by'] = $actor;
-      $flags['holds'] = $check['holds'];
-      $flags['fixes'] = $check['fixes'];
-      unset($flags['stale'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
-      $status = $check['holds'] ? 'held' : ($p['status'] === 'held' ? 'planned' : $p['status']);
-      if (in_array($p['status'], ['waiting', 'approved'], true) && !$check['holds']) $status = 'planned'; // changed words need a fresh yes
-      if (in_array($p['status'], ['waiting', 'approved'], true) && function_exists('ias_approval_void')) ias_approval_void($id); // old links must not approve new words
-      $update = ['content' => $content, 'flags' => $flags, 'status' => $status, 'note' => $check['holds'] ? 'Needs a decision: ' . $check['holds'][0] : '', 'facts_hash' => ias_facts_hash($p, ias_post_facts($p))];
-      if ($p['status'] === 'approved') $update += ['approved_at' => null, 'approved_by' => ''];
-      ias_post_update($id, $update);
-      ias_history_forget_post($id, ['opener']);
-      ias_history_add('opener', $content['opener'], (int) $p['listing_id'], $id);
-      $talked = function_exists('ias_chat_rows') ? count(array_filter(ias_chat_rows($id, true, 60), function ($r) { return $r['who'] === 'claude' && $r['proposal'] !== ''; })) : 0;
-      ias_post_trail($id, 'Text edited' . ($talked ? ' (talked over with Claude)' : '') . ($check['holds'] ? ' — still needs a decision: ' . $check['holds'][0] : ''), $actor);
-      ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Text edited' . ($check['holds'] ? '; held: ' . implode(' ', $check['holds']) : '')], $actor);
-      if (function_exists('ias_voice_record')) ias_voice_record($id, 'kept'); // the brand-voice log: Claude's draft beside the person's words
-      if (!empty($_POST['ias_and_approve']) && !$check['holds'] && $p['lane'] === 'A' && function_exists('ias_approve')) {
-        $r = ias_approve($id, $actor, 'edited and approved in WordPress');
-        $flash(esc_html('Saved. ' . $r['message']), $r['ok'] ? 'success' : 'warning');
+      $comment = isset($_POST['ias_comment']) ? trim(str_replace("\r\n", "\n", (string) wp_unslash($_POST['ias_comment']))) : null;
+      $keys = isset($_POST['ias_media']) ? array_values(array_filter(array_map('trim', explode(',', (string) wp_unslash($_POST['ias_media']))))) : null;
+      $alts = json_decode((string) wp_unslash($_POST['ias_alt'] ?? ''), true);
+      $alts = is_array($alts) ? $alts : [];
+      $was = (string) $p['status'];
+      $saved_c = (array) $p['content'];
+      $media_changed = $keys !== null && $keys !== ias_media_keys($p);
+      $cur_alt = [];
+      foreach ((array) ($saved_c['media']['images'] ?? []) as $img) if ((int) ($img['id'] ?? 0) > 0) $cur_alt['a' . (int) $img['id']] = (string) ($img['alt'] ?? '');
+      $alts = array_filter($alts, function ($v, $k) use ($cur_alt) { return !isset($cur_alt[$k]) || trim((string) $v) !== $cur_alt[$k]; }, ARRAY_FILTER_USE_BOTH);
+      $words_changed = $text !== trim((string) ($saved_c['text'] ?? '')) || ($comment !== null && $comment !== trim((string) ($saved_c['first_comment'] ?? '')));
+      // Nothing changed: nothing to save — unless the post stopped (held, or the listing changed under a person's edit), where saving
+      // the same words still counts as reading them against today's listing. Pictures alone leave the words as they were.
+      if (!$words_changed && !$media_changed && !$alts && $p['status'] !== 'held' && empty($p['flags']['stale']) && empty($_POST['ias_and_approve'])) {
+        $flash('Nothing was changed, so nothing was saved.', 'info');
         return;
       }
-      do_action('ias_post_edited', $id, $check['holds']);
-      $flash($check['holds'] ? 'Saved, but it still needs a decision: ' . esc_html(implode(' ', $check['holds'])) : 'Saved.', $check['holds'] ? 'warning' : 'success');
+      $words = $words_changed || (!$media_changed && !$alts);
+      $did = [];
+
+      $alt_done = $alts && ias_alt_save($id, $alts, $actor); // first, so pictures added now carry it
+      if ($media_changed) {
+        $r = ias_media_save($id, $keys, $actor, false);
+        if (!$r['ok']) { $flash(esc_html($r['error']), 'error'); return; }
+        $did[] = 'the pictures (' . $r['count'] . ')';
+      }
+      if ($alt_done) $did[] = 'the alt text';
+      $p = ias_post_get($id) ?: $p;
+      $holds = (array) ($p['flags']['holds'] ?? []);
+      if ($words) {
+        $check = ias_recheck_post($p, $text);
+        $holds = array_values(array_unique(array_merge($check['holds'], $comment !== null ? ias_comment_holds($p, $comment) : [])));
+        $content = $p['content'];
+        $content['text'] = $check['text'];
+        $content['opener'] = ias_first_line($check['text']);
+        if ($comment !== null) $content['first_comment'] = $comment;
+        $content['generated_by'] = 'edited';
+        $flags = $p['flags'];
+        $flags['edited_by'] = $actor;
+        $flags['holds'] = $holds;
+        $flags['fixes'] = $check['fixes'];
+        unset($flags['stale'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
+        $status = $holds ? 'held' : ($p['status'] === 'held' ? 'planned' : $p['status']);
+        if (in_array($p['status'], ['waiting', 'approved'], true) && !$holds) $status = 'planned'; // changed words need a fresh yes
+        if (in_array($p['status'], ['waiting', 'approved'], true) && function_exists('ias_approval_void')) ias_approval_void($id); // old links must not approve new words
+        $update = ['content' => $content, 'flags' => $flags, 'status' => $status, 'note' => $holds ? 'Needs a decision: ' . $holds[0] : '', 'facts_hash' => ias_facts_hash($p, ias_post_facts($p))];
+        if ($p['status'] === 'approved') $update += ['approved_at' => null, 'approved_by' => ''];
+        ias_post_update($id, $update);
+        ias_history_forget_post($id, ['opener']);
+        ias_history_add('opener', $content['opener'], (int) $p['listing_id'], $id);
+        $talked = function_exists('ias_chat_rows') ? count(array_filter(ias_chat_rows($id, true, 60), function ($r) { return $r['who'] === 'claude' && ($r['proposal'] !== '' || !empty($r['meta']['changed'])); })) : 0;
+        ias_post_trail($id, ($comment !== null && $comment !== trim((string) ($saved_c['first_comment'] ?? '')) ? 'Text and first comment edited' : 'Text edited') . ($talked ? ' (talked over with Claude)' : '') . ($holds ? ' — still needs a decision: ' . $holds[0] : ''), $actor);
+        ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Text edited' . ($holds ? '; held: ' . implode(' ', $holds) : '')], $actor);
+        if (function_exists('ias_voice_record')) ias_voice_record($id, 'kept'); // the brand-voice log: Claude's draft beside the person's words
+        $did = array_merge(['the words'], $comment !== null && $comment !== trim((string) ($saved_c['first_comment'] ?? '')) ? ['the first comment'] : [], $did);
+      }
+      $p = ias_post_get($id) ?: $p;
+      if (!empty($_POST['ias_and_approve']) && !$holds && $p['lane'] === 'A' && function_exists('ias_approve')) {
+        $r = ias_approve($id, $actor, 'edited and approved in WordPress');
+        $flash(esc_html('Saved ' . ias_chat_list($did) . '. ' . $r['message']), $r['ok'] ? 'success' : 'warning');
+        return;
+      }
+      if ($words || ($media_changed && in_array($was, ['waiting', 'approved'], true))) do_action('ias_post_edited', $id, $holds); // once, after everything: an approve-first post goes out for a fresh yes with all of it
+      $lane_a = $p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting'], true) && !$holds;
+      $stop = !$holds ? '' : ($was === 'held' ? ' It still needs a decision — the reasons are in the bar above.' : ' What you saved stops it for a decision — the reasons are in the bar above.');
+      $flash(esc_html('Saved ' . ias_chat_list($did) . '.' . $stop) . ($lane_a ? ' ' . esc_html('It is not approved — saving never approves; it goes for a yes as usual.') : ''), $holds ? 'warning' : 'success');
       return;
 
     case 'media':
@@ -146,7 +183,7 @@ add_action('ias_calendar_action', function (string $action): void {
 
     case 'release':
       if ($p['status'] !== 'held' || empty($p['content']['text'])) return;
-      if (ias_has_verify((array) $p['content'])) { $flash('Put the right fact in place of the <strong>[VERIFY: …]</strong> words and press <strong>Save text</strong> first — a marked fact never goes out as it is.', 'error'); return; }
+      if (ias_has_verify((array) $p['content'])) { $flash('Put the right fact in place of the <strong>[VERIFY: …]</strong> words and press <strong>Save changes</strong> first — a marked fact never goes out as it is.', 'error'); return; }
       $flags = $p['flags'];
       $flags['released_by'] = $actor;
       unset($flags['stale']); // the reasons it stopped include the listing having changed: kept as written over that too
@@ -177,6 +214,14 @@ if (!function_exists('ias_mark_verify')) {
   }
 }
 
+/** The question before Rewrite: whose words it throws away. */
+if (!function_exists('ias_rewrite_confirm')) {
+  function ias_rewrite_confirm(array $p): string {
+    $by = (string) ($p['flags']['edited_by'] ?? '');
+    return ($by !== '' ? 'Throw away the words ' . ias_actor_name($by) . ' edited' : 'Throw away this draft') . ' and have Claude write a new one? Pictures chosen by hand stay. (Counts against the monthly Claude cap.)';
+  }
+}
+
 /** "Skip this post…", folded: the reason and the button open on a click. */
 if (!function_exists('ias_skip_details')) {
   function ias_skip_details(array $p): string {
@@ -197,7 +242,7 @@ add_action('ias_post_view_bar', function (array $p): void {
   $text = (string) ($c['text'] ?? '');
   $form = function (string $action, string $label, string $class = 'button', string $extra = '', string $confirm = '') use ($p) { return ias_post_action_form($p, $action, $label, $class, $extra, $confirm); };
   $editable = ias_post_editable($p);
-  $rewrite = $editable && $p['status'] !== 'skipped' && $text !== '' ? $form('regenerate', 'Rewrite', 'button', '', 'Throw away this draft and have Claude write a new one? (Counts against the monthly Claude cap.)') : '';
+  $rewrite = $editable && $p['status'] !== 'skipped' && $text !== '' ? $form('regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '';
   $level = ''; $lines = ''; $buttons = '';
 
   if ($p['status'] === 'held' && !empty($flags['holds'])) {
@@ -206,8 +251,8 @@ add_action('ias_post_view_bar', function (array $p): void {
     $lines = '<p><strong>Needs a decision — this post goes nowhere until someone decides.</strong></p><ul class="ias-reasons">';
     foreach ((array) $flags['holds'] as $h) $lines .= '<li>' . ias_mark_verify((string) $h) . '</li>';
     $lines .= '</ul><p>' . ($verify
-      ? 'Put the right fact in place of the marked words and press <strong>Save text</strong> — or fix the listing, and the post is rewritten on the next hourly run.'
-      : 'Fix the text and press <strong>Save text</strong>, press <strong>Rewrite</strong> — or, if it is right as it is, <strong>Keep as written</strong>.') . '</p>';
+      ? 'Put the right fact in place of the marked words and press <strong>Save changes</strong> — or fix the listing, and the post is rewritten on the next hourly run.'
+      : 'Fix it and press <strong>Save changes</strong>, press <strong>Rewrite</strong> — or, if it is right as it is, <strong>Keep as written</strong>.') . '</p>';
     $buttons = $rewrite . ($text !== '' && !$verify ? $form('release', 'Keep as written', 'button', '', 'Keep this draft exactly as it is, despite the reasons it stopped?') : '');
   } elseif ($p['status'] === 'waiting') {
     $sent = (array) ($p['approvals']['sent'] ?? []);
@@ -245,6 +290,31 @@ add_action('ias_post_view_bar', function (array $p): void {
     . ($buttons . $skip !== '' ? '<div class="ias-actions">' . $buttons . $skip . '</div>' : '') . '</div>';
 });
 
+/** A post's pictures as the editor shows them: [['key', 'thumb', 'alt'], …] (`a<id>` or `g<n>`, as ias_media_keys()). */
+if (!function_exists('ias_pic_items')) {
+  function ias_pic_items(array $images): array {
+    $items = [];
+    foreach (array_values($images) as $n => $img) {
+      $att = (int) ($img['id'] ?? 0);
+      $items[] = ['key' => $att > 0 ? 'a' . $att : 'g' . (int) $n, 'thumb' => $att > 0 ? (string) (wp_get_attachment_image_url($att, 'medium') ?: ($img['url'] ?? '')) : (string) ($img['url'] ?? ''), 'alt' => (string) ($img['alt'] ?? '')];
+    }
+    return $items;
+  }
+}
+
+/** One picture in the editor (the script builds the same markup). */
+if (!function_exists('ias_pic_tile')) {
+  function ias_pic_tile(array $it, int $i): string {
+    $own = strpos((string) $it['key'], 'a') === 0; // a drawn graphic describes itself
+    return '<li class="ias-pic" data-key="' . esc_attr($it['key']) . '" data-alt="' . esc_attr($it['alt']) . '" data-alt0="' . esc_attr($it['alt']) . '" data-thumb="' . esc_url($it['thumb']) . '" title="' . esc_attr($it['alt']) . '"><img src="' . esc_url($it['thumb']) . '" alt="" draggable="false">'
+      . '<span class="ias-pic-n">' . ($i === 0 ? '1 · Lead' : $i + 1) . '</span>'
+      . '<button type="button" class="ias-pic-x" title="Take out of this post" aria-label="Take picture ' . ($i + 1) . ' out of this post">&times;</button>'
+      . '<span class="ias-pic-move"><button type="button" class="ias-pic-l" aria-label="Move earlier">&lsaquo;</button><button type="button" class="ias-pic-r" aria-label="Move later">&rsaquo;</button></span>'
+      . ($own ? '<button type="button" class="ias-pic-alt-edit" title="Change the alt text" aria-label="Change the alt text of picture ' . ($i + 1) . '">✎</button>' : '')
+      . '<span class="ias-pic-alt">' . esc_html($it['alt']) . '</span></li>';
+  }
+}
+
 /** The left column: the words (Edit) and the pictures (Pictures). */
 add_action('ias_post_view_main', function (array $p): void {
   $c = (array) $p['content'];
@@ -263,16 +333,17 @@ add_action('ias_post_view_main', function (array $p): void {
     $primary = !($p['lane'] === 'A' && in_array($p['status'], ['waiting', 'planned'], true)); // the bar's Approve is the one primary button there
     echo '<form method="post" id="ias-text-form">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
       . '<input type="hidden" name="ias_cal_action" value="edit"><input type="hidden" name="ias_post" value="' . (int) $p['id'] . '">'
-      . '<p><label for="ias-text"><strong>Post text</strong></label><textarea id="ias-text" name="ias_text" rows="' . $rows . '" class="large-text" data-post="' . (int) $p['id'] . '" data-nonce="' . esc_attr(wp_create_nonce('ias_post_' . (int) $p['id'])) . '" data-ajax="' . esc_url(admin_url('admin-ajax.php')) . '">' . esc_textarea($text) . '</textarea></p>';
+      . '<p><label for="ias-text"><strong>Post text</strong></label><textarea id="ias-text" name="ias_text" rows="' . $rows . '" class="large-text" data-recheck="' . ($p['status'] === 'held' || !empty($flags['stale']) ? '1' : '') . '" data-post="' . (int) $p['id'] . '" data-nonce="' . esc_attr(wp_create_nonce('ias_post_' . (int) $p['id'])) . '" data-ajax="' . esc_url(admin_url('admin-ajax.php')) . '">' . esc_textarea($text) . '</textarea></p>';
     if (!empty($c['first_comment'])) {
       echo '<p><label for="ias-comment"><strong>First comment</strong></label><textarea id="ias-comment" name="ias_comment" rows="3" class="large-text">' . esc_textarea((string) $c['first_comment']) . '</textarea></p>';
     }
     if (!empty($flags['fixes'])) echo '<p class="description">' . esc_html(implode(' ', (array) $flags['fixes'])) . '</p>';
-    echo '<p class="description">Saving checks the text again (bidding, figures, fair housing).' . ($p['lane'] === 'A' ? ' Changed words need a new yes.' : '') . (ias_channels_extra_on() ? ' Instagram, X and LinkedIn follow these words.' : '') . '</p></form>';
+    echo '<p class="description"><strong>Save changes</strong> saves everything changed here — the words, the first comment, the pictures and their alt text — and never approves. It checks them again (bidding, figures, fair housing, the listing link in the comment).' . ($p['lane'] === 'A' ? ' Changed words or pictures need a new yes.' : '') . (ias_channels_extra_on() ? ' Instagram, X and LinkedIn follow these words.' : '') . '</p></form>';
     // The foot sits outside the form (Save points at it with form="…"), so Rewrite and Skip post their own forms.
-    echo '<div class="ias-foot"><div class="ias-actions"><button form="ias-text-form" class="button' . ($primary ? ' button-primary' : '') . '">Save text</button>'
-      . ($p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting', 'held'], true) ? ' <button form="ias-text-form" class="button" name="ias_and_approve" value="1">Save and approve</button>' : '') . '</div>'
-      . ($bar_owns ? '' : '<div class="ias-actions">' . ($p['status'] !== 'skipped' ? ias_post_action_form($p, 'regenerate', 'Rewrite', 'button', '', 'Throw away this draft and have Claude write a new one? (Counts against the monthly Claude cap.)') : '') . ias_skip_details($p) . '</div>') . '</div>';
+    echo '<div class="ias-foot"><div class="ias-actions"><button form="ias-text-form" class="button ias-save' . ($primary ? ' button-primary' : '') . '" data-ia-busy="Saving…">Save changes</button>'
+      . ($p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting', 'held'], true) ? ' <button form="ias-text-form" class="button" name="ias_and_approve" value="1">Save and approve</button>' : '')
+      . ' <span class="ias-unsaved" hidden>Not saved yet</span></div>'
+      . ($bar_owns ? '' : '<div class="ias-actions">' . ($p['status'] !== 'skipped' ? ias_post_action_form($p, 'regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '') . ias_skip_details($p) . '</div>') . '</div>';
   } else {
     $why = !empty($p['locked']) ? 'A person moved or edited this post in OneUp, so it is changed there now — the plugin leaves their version as it is.'
       : (in_array(ias_post_shown_status($p), ['pushed', 'published'], true) ? 'This post has gone to OneUp. Live posts are never edited — editing resets their reach — so a correction is posted as a comment.' : 'This post cannot be edited now.');
@@ -285,30 +356,22 @@ add_action('ias_post_view_main', function (array $p): void {
   if (!$editable) return;
   $media = (array) ($c['media'] ?? []);
   $max = ias_media_max();
-  $items = [];
-  foreach ((array) ($media['images'] ?? []) as $n => $img) {
-    $att = (int) ($img['id'] ?? 0);
-    $items[] = ['key' => $att > 0 ? 'a' . $att : 'g' . (int) $n, 'thumb' => $att > 0 ? (string) (wp_get_attachment_image_url($att, 'medium') ?: $img['url']) : (string) $img['url'], 'alt' => (string) ($img['alt'] ?? '')];
-  }
-  $tile = function (array $it, int $i) {
-    return '<li class="ias-pic" data-key="' . esc_attr($it['key']) . '" title="' . esc_attr($it['alt']) . '"><img src="' . esc_url($it['thumb']) . '" alt="" draggable="false">'
-      . '<span class="ias-pic-n">' . ($i === 0 ? '1 · Lead' : $i + 1) . '</span>'
-      . '<button type="button" class="ias-pic-x" title="Take out of this post" aria-label="Take picture ' . ($i + 1) . ' out of this post">&times;</button>'
-      . '<span class="ias-pic-move"><button type="button" class="ias-pic-l" aria-label="Move earlier">&lsaquo;</button><button type="button" class="ias-pic-r" aria-label="Move later">&rsaquo;</button></span>'
-      . '<span class="ias-pic-alt">' . esc_html($it['alt']) . '</span></li>';
-  };
+  $items = ias_pic_items((array) ($media['images'] ?? []));
+  $one_form = $text !== ''; // with words to save, one Save changes saves the pictures with them
   echo '<div class="ias-card" id="ias-pictures"><h2>Pictures <span class="description">(<span id="ias-pic-count">' . count($items) . ' of ' . $max . '</span> — the first one leads)</span></h2>';
   if (($media['kind'] ?? '') === 'video') echo '<p class="description">This post shows the property video. Add pictures to use them instead.</p>';
-  echo '<form method="post" id="ias-pic-form">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
-    . '<input type="hidden" name="ias_cal_action" value="media"><input type="hidden" name="ias_post" value="' . (int) $p['id'] . '">'
-    . '<input type="hidden" name="ias_media" id="ias-media-order" value="' . esc_attr(implode(',', array_column($items, 'key'))) . '">'
-    . '<ul class="ias-pics" id="ias-pics" data-max="' . (int) $max . '" aria-label="Pictures, in the order they post">';
-  foreach ($items as $i => $it) echo $tile($it, $i);
-  echo '</ul></form>';
-  echo '<div class="ias-foot"><div class="ias-actions"><button type="button" class="button" id="ias-pic-add">+ Add pictures</button> <button form="ias-pic-form" class="button" id="ias-pic-save" disabled>Save pictures</button> <span class="ias-pic-dirty" id="ias-pic-dirty" hidden>Not saved yet</span>'
+  $order = '<input type="hidden" name="ias_media" id="ias-media-order" value="' . esc_attr(implode(',', array_column($items, 'key'))) . '"' . ($one_form ? ' form="ias-text-form"' : '') . '>'
+    . '<input type="hidden" name="ias_alt" id="ias-alt-json" value=""' . ($one_form ? ' form="ias-text-form"' : '') . '>';
+  echo $one_form ? $order : '<form method="post" id="ias-pic-form">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
+    . '<input type="hidden" name="ias_cal_action" value="media"><input type="hidden" name="ias_post" value="' . (int) $p['id'] . '">' . $order;
+  echo '<ul class="ias-pics" id="ias-pics" data-max="' . (int) $max . '" aria-label="Pictures, in the order they post">';
+  foreach ($items as $i => $it) echo ias_pic_tile($it, $i);
+  echo '</ul>' . ($one_form ? '' : '</form>');
+  $save = $one_form ? '<button form="ias-text-form" class="button ias-save" data-ia-busy="Saving…">Save changes</button>' : '<button form="ias-pic-form" class="button" id="ias-pic-save" disabled>Save pictures</button>';
+  echo '<div class="ias-foot"><div class="ias-actions"><button type="button" class="button" id="ias-pic-add">+ Add pictures</button> ' . $save . ' <span class="ias-unsaved ias-pic-dirty" id="ias-pic-dirty" hidden>Not saved yet</span>'
     . '<span class="description" id="ias-pic-full"' . (count($items) >= $max ? '' : ' hidden') . '>' . (int) $max . ' is the most a post can carry — take one out first.</span></div>'
     . '<div class="ias-actions">' . (!empty($flags['media_by']) ? ias_post_action_form($p, 'media_reset', 'Let the plugin choose again', 'button-link', '', 'Throw away the pictures chosen by hand and let the plugin pick again?') : '') . '</div></div>';
-  echo '<p class="description">Drag a picture to move it, or use ‹ ›. The first one leads the post. × takes it out of this post, not out of the Media Library. Up to ' . (int) $max . ' go with the post'
+  echo '<p class="description">Drag a picture to move it, or use ‹ ›. The first one leads the post. × takes it out of this post, not out of the Media Library; ✎ changes its alt text (what a screen reader says). Up to ' . (int) $max . ' go with the post'
     . (!empty($flags['media_by']) ? ' — chosen by ' . esc_html(ias_actor_name((string) $flags['media_by'])) . '; a rewrite keeps them.' : ' — chosen by the plugin; once you save, your choice holds through rewrites.') . '</p></div>';
 });
 
@@ -437,51 +500,139 @@ add_action('ias_calendar_after_grid', function (array $posts_in_range): void {
   echo '</div></div>';
 });
 
-/* ---------------- The picture editor's script ---------------- */
+/* ---------------- The post editor's script ---------------- */
 
-/** On a post's view: the Media Library, drag to reorder (jQuery UI sortable), and the editor's few lines of script. */
+/**
+ * On a post's view: the Media Library, drag to reorder (jQuery UI sortable),
+ * and the editor that holds the post on the screen — the words, the first
+ * comment, the pictures and their alt text — with what is not saved yet, the
+ * Save changes buttons (every one submits the Edit form, carrying the
+ * pictures in `ias_media` and the alt text in `ias_alt`), and `window.iasPost`
+ * for Talk it over (chat.php) to read and change the screen through.
+ */
 add_action('admin_enqueue_scripts', function (): void {
   if (($_GET['page'] ?? '') !== IAS_PAGE_CALENDAR || empty($_GET['post']) || !current_user_can('manage_options')) return;
   wp_enqueue_media();
   wp_enqueue_script('jquery-ui-sortable');
+  wp_enqueue_script('jquery-touch-punch'); // a finger drags a picture too
   wp_add_inline_script('jquery-ui-sortable', <<<'JS'
 jQuery(function ($) {
-  // The preview's network tabs.
-  $(document).on('click', '.ias-nets .ias-net', function () { // delegated: the preview is redrawn as the text changes
+  // The preview's network tabs (delegated: the preview is redrawn as the post changes).
+  $(document).on('click', '.ias-nets .ias-net', function () {
     var net = $(this).data('net'), $card = $(this).closest('.ias-card');
     $card.find('.ias-net').removeClass('is-on').attr('aria-selected', 'false');
     $(this).addClass('is-on').attr('aria-selected', 'true');
     $card.find('.ias-net-panel').each(function () { this.hidden = $(this).data('net') !== net; });
   });
 
-  // Leaving with unsaved words or pictures asks first (every other button reloads the page).
-  var dirtyText = false, dirtyPics = false, $text = $('#ias-text, #ias-comment'), textStart = $text.map(function () { return this.value; }).get().join('\u0000');
-  $text.on('input', function () { dirtyText = $text.map(function () { return this.value; }).get().join('\u0000') !== textStart; });
-  $(window).on('beforeunload', function () { if (dirtyText || dirtyPics) return 'Leave without saving?'; });
-  $('#ias-text-form').on('submit', function () { dirtyText = false; });
-  $('#ias-pic-form').on('submit', function () { dirtyPics = false; });
+  var $form = $('#ias-text-form'), $text = $('#ias-text'), $comment = $('#ias-comment'), $list = $('#ias-pics');
+  if (!$text.length && !$list.length) return;
+  var max = parseInt($list.data('max'), 10) || 10, frame, leaving = false;
+  if (!$form.length) $list.find('.ias-pic-alt-edit').remove(); // alt text is saved with the words
 
-  var $list = $('#ias-pics');
-  if (!$list.length) return;
-  var max = parseInt($list.data('max'), 10) || 10, start = $('#ias-media-order').val(), frame;
-  function sync() {
-    var keys = $list.children('li').map(function () { return $(this).attr('data-key'); }).get(), clean = keys.join(',') === start;
-    $('#ias-media-order').val(keys.join(','));
-    $('#ias-pic-count').text(keys.length + ' of ' + max);
+  function tile(t) {
+    var $li = $('<li class="ias-pic"/>').attr({ 'data-key': t.key, 'data-alt': t.alt || '', 'data-alt0': t.alt0 === undefined ? (t.alt || '') : t.alt0, 'data-thumb': t.thumb || '', title: t.alt || '' })
+      .append($('<img/>').attr({ src: t.thumb, alt: '', draggable: 'false' }))
+      .append('<span class="ias-pic-n"></span><button type="button" class="ias-pic-x" title="Take out of this post">&times;</button>'
+        + '<span class="ias-pic-move"><button type="button" class="ias-pic-l" aria-label="Move earlier">&lsaquo;</button><button type="button" class="ias-pic-r" aria-label="Move later">&rsaquo;</button></span>');
+    if (/^a/.test(t.key) && $form.length) $li.append($('<button type="button" class="ias-pic-alt-edit" title="Change the alt text"/>').text('✎'));
+    return $li.append($('<span class="ias-pic-alt"/>').text(t.alt || ''));
+  }
+  function pics() {
+    return $list.children('li').map(function () { var $li = $(this); return { key: $li.attr('data-key'), thumb: $li.attr('data-thumb') || $li.find('img').attr('src'), alt: $li.attr('data-alt') || '', alt0: $li.attr('data-alt0') || '' }; }).get();
+  }
+  function state() { return { text: $text.val(), comment: $comment.length ? $comment.val() : null, pics: pics() }; }
+  function sig(st) { return JSON.stringify([st.text, st.comment, $.map(st.pics, function (p) { return p.key + '\u0001' + p.alt; })]); }
+  var startState = state(), startSig = sig(startState), recheck = $text.attr('data-recheck') === '1';
+  function dirty() { return sig(state()) !== startSig; }
+  $('.ias-save').each(function () { $(this).data('rest', $(this).hasClass('button-primary')); });
+  // The bar's Approve approves the saved post: while other words are on the screen it waits (Save and approve does both).
+  var $approve = $('.ias-bar input[name="ias_cal_action"][value="approve"]').closest('form').find('button');
+  $approve.after($('<span class="description ias-approve-wait" hidden/>').text('Save your changes first — or use Save and approve.'));
+  var $andApprove = $('button[name="ias_and_approve"]');
+
+  // Everything that follows a change: the numbers on the tiles, the order to save, Not saved yet, and the preview (chat.php).
+  function changed(now) {
+    var keys = $.map(pics(), function (p) { return p.key; }), alts = {}, d = dirty();
     $list.children('li').each(function (i) {
       $(this).find('.ias-pic-n').text(i === 0 ? '1 · Lead' : i + 1);
       $(this).find('.ias-pic-x').attr('aria-label', 'Take picture ' + (i + 1) + ' out of this post');
+      $(this).find('.ias-pic-alt-edit').attr('aria-label', 'Change the alt text of picture ' + (i + 1));
+      if (/^a/.test($(this).attr('data-key')) && ($(this).attr('data-alt') || '') !== ($(this).attr('data-alt0') || '')) alts[$(this).attr('data-key')] = $(this).attr('data-alt') || ''; // only what a person or Claude changed
     });
+    $('#ias-media-order').val(keys.join(','));
+    $('#ias-alt-json').val(JSON.stringify(alts));
+    $('#ias-pic-count').text(keys.length + ' of ' + max);
     $('#ias-pic-add').prop('disabled', keys.length >= max);
     $('#ias-pic-full').prop('hidden', keys.length < max);
-    $('#ias-pic-dirty').prop('hidden', clean);
-    $('#ias-pic-save').prop('disabled', clean).toggleClass('button-primary', !clean);
-    dirtyPics = !clean;
+    $('.ias-unsaved').prop('hidden', !d);
+    $('.ias-save').prop('disabled', !d && !recheck).toggleClass('button-primary', d); // nothing to save, nothing to press — except a stopped post, which saving as it is checks again against today's listing
+    $andApprove.prop('hidden', !d);
+    $approve.prop('disabled', d);
+    $('.ias-approve-wait').prop('hidden', !d);
+    $('#ias-pic-save').prop('disabled', !d).toggleClass('button-primary', d); // a post with no words yet saves its pictures alone
+    $(document).trigger('ias:changed', [d, !!now]);
   }
-  $list.sortable({ items: '> li', tolerance: 'pointer', placeholder: 'ias-pic-hole', update: sync });
-  $list.on('click', '.ias-pic-x', function () { $(this).closest('li').remove(); sync(); });
-  $list.on('click', '.ias-pic-l', function () { var $li = $(this).closest('li'); $li.prev().before($li); sync(); $li.find('.ias-pic-l').trigger('focus'); });
-  $list.on('click', '.ias-pic-r', function () { var $li = $(this).closest('li'); $li.next().after($li); sync(); $li.find('.ias-pic-r').trigger('focus'); });
+
+  // The screen, for Talk it over: read it, put a version on it, and what to send with a request.
+  window.iasPost = {
+    state: state,
+    saved: function () { return startState; },
+    dirty: dirty,
+    restore: function (st, now) {
+      if (st.text !== null && st.text !== undefined) {
+        $text.val(st.text).attr('rows', Math.min(30, Math.max(8, st.text.split('\n').length + Math.ceil(st.text.length / 80))));
+        $text.addClass('ias-flash'); setTimeout(function () { $text.removeClass('ias-flash'); }, 1200);
+      }
+      if ($comment.length && st.comment !== null && st.comment !== undefined) { $comment.val(st.comment).addClass('ias-flash'); setTimeout(function () { $comment.removeClass('ias-flash'); }, 1200); }
+      if (st.pics) { $list.empty(); $.each(st.pics, function (i, t) { $list.append(tile(t)); }); $list.addClass('ias-flash'); setTimeout(function () { $list.removeClass('ias-flash'); }, 1200); }
+      changed(now);
+    },
+    payload: function () {
+      var st = state(), alts = {};
+      $.each(st.pics, function (i, p) { if (/^a/.test(p.key) && p.alt !== p.alt0) alts[p.key] = p.alt; });
+      var out = { text: st.text, media: $.map(st.pics, function (p) { return p.key; }).join(','), alt: JSON.stringify(alts) };
+      if (st.comment !== null) out.comment = st.comment;
+      return out;
+    }
+  };
+
+  // Leaving with anything unsaved asks first; any Save changes (or Save pictures) is the way out.
+  $text.add($comment).on('input', function () { changed(); });
+  $(window).on('beforeunload', function () { if (!leaving && dirty()) return 'Leave without saving?'; });
+  $form.add('#ias-pic-form').on('submit', function () { changed(true); leaving = true; });
+  $(document).on('click', '.ias-discard', function () {
+    if (!window.confirm('Throw away the changes that are not saved yet?')) return;
+    leaving = true; window.location.reload();
+  });
+
+  if (!$list.length) { changed(); return; }
+  $list.sortable({ items: '> li', tolerance: 'pointer', placeholder: 'ias-pic-hole', update: function () { changed(); } });
+  $list.on('click', '.ias-pic-x', function () { $(this).closest('li').remove(); changed(); });
+  $list.on('click', '.ias-pic-l', function () { var $li = $(this).closest('li'); $li.prev().before($li); changed(); $li.find('.ias-pic-l').trigger('focus'); });
+  $list.on('click', '.ias-pic-r', function () { var $li = $(this).closest('li'); $li.next().after($li); changed(); $li.find('.ias-pic-r').trigger('focus'); });
+  // Alt text, edited in the tile itself (the full text shows there, which a phone's tooltip cannot).
+  $list.on('click', '.ias-pic-alt-edit', function () {
+    var $li = $(this).closest('li');
+    if ($li.hasClass('is-editing')) return;
+    $li.addClass('is-editing');
+    var $ed = $('<div class="ias-pic-alt-ed"/>'), $ta = $('<textarea rows="4" maxlength="250"/>').attr('aria-label', 'Alt text — what a screen reader says for this picture').val($li.attr('data-alt') || '');
+    var close = function (save) {
+      if (save) {
+        var alt = $.trim($ta.val()).slice(0, 250); // blank goes back to the plugin's own alt text (sent as blank; the site puts it back)
+        $li.attr({ 'data-alt': alt, title: alt }).find('.ias-pic-alt').text(alt || 'The plugin\'s alt text, once saved');
+      }
+      $ed.remove(); $li.removeClass('is-editing');
+      if (save) changed();
+      $li.find('.ias-pic-alt-edit').trigger('focus');
+    };
+    $ed.append($ta).append($('<div class="ias-pic-alt-btns"/>')
+      .append($('<button type="button" class="button button-small"/>').text('Done').on('click', function () { close(true); })).append(' ')
+      .append($('<button type="button" class="button-link"/>').text('Cancel').on('click', function () { close(false); })));
+    $ta.on('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); close(true); } if (e.key === 'Escape') { e.preventDefault(); close(false); } });
+    $li.append($ed);
+    $ta.trigger('focus');
+  });
   $('#ias-pic-add').on('click', function (e) {
     e.preventDefault();
     if (!window.wp || !wp.media) return;
@@ -492,20 +643,14 @@ jQuery(function ($) {
         frame.state().get('selection').each(function (a) {
           var j = a.toJSON(), key = 'a' + j.id;
           if ($list.children('li[data-key="' + key + '"]').length || $list.children('li').length >= max) return;
-          var src = (j.sizes && (j.sizes.medium || j.sizes.thumbnail) || j).url, alt = j.alt || j.title || '';
-          $('<li class="ias-pic"/>').attr({ 'data-key': key, title: alt })
-            .append($('<img/>').attr({ src: src, alt: '', draggable: 'false' }))
-            .append('<span class="ias-pic-n"></span><button type="button" class="ias-pic-x" title="Take out of this post">&times;</button>'
-              + '<span class="ias-pic-move"><button type="button" class="ias-pic-l" aria-label="Move earlier">&lsaquo;</button><button type="button" class="ias-pic-r" aria-label="Move later">&rsaquo;</button></span>')
-            .append($('<span class="ias-pic-alt"/>').text(alt))
-            .appendTo($list);
+          $list.append(tile({ key: key, thumb: (j.sizes && (j.sizes.medium || j.sizes.thumbnail) || j).url, alt: j.alt || j.title || '' }));
         });
-        sync();
+        changed();
       });
     }
     frame.open();
   });
-  sync();
+  changed();
 });
 JS
   );

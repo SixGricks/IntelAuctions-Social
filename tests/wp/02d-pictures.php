@@ -68,7 +68,7 @@ $errors = [];
 set_error_handler(function ($no, $str, $file, $line) use (&$errors) { $errors[] = "{$str} at " . basename($file) . ":{$line}"; return true; });
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $id];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
-t_ok(strpos($html, 'id="ias-pics"') !== false && strpos($html, 'Add pictures') !== false && strpos($html, 'Save pictures') !== false, 'the post view has the picture editor');
+t_ok(strpos($html, 'id="ias-pics"') !== false && strpos($html, 'Add pictures') !== false && strpos($html, 'Save changes') !== false, 'the post view has the picture editor, saved with Save changes');
 t_ok(strpos($html, 'data-key="a' . $extra . '"') !== false && strpos($html, 'Let the plugin choose again') !== false, '…with the chosen pictures, and the way to hand them back');
 ias_post_update($id, ['locked' => 1]);
 ob_start(); ias_calendar_render(); $html = ob_get_clean();

@@ -70,7 +70,7 @@ if (!function_exists('ias_voice_clean_rules')) {
       $key = mb_strtolower($r);
       if (isset($seen[$key])) continue;
       $hits = function_exists('ias_fair_housing_check') ? ias_fair_housing_check($r, function_exists('ias_setting') ? (string) ias_setting('fair_housing_extra', '') : '') : [];
-      if ($hits) { $refused[] = [$r, 'it would put "' . $hits[0]['phrase'] . '" in posts (' . $hits[0]['why'] . ')']; continue; }
+      if ($hits) { $refused[] = [$r, 'it would put "' . $hits[0]['phrase'] . '" in posts — ' . $hits[0]['why']]; continue; }
       if (count($kept) >= $lim['rules']) { $refused[] = [$r, 'there are already ' . $lim['rules'] . ' rules']; continue; }
       $seen[$key] = true;
       $kept[] = $r;

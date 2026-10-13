@@ -28,8 +28,8 @@ it, and the spec stays verbatim, so they are recorded here:
 - **Talk it over and the brand voice** (Oct 13, 2026: "a little AI chatbot I
   can discuss the post with and have it edit real time, then keep a log of
   final posts to learn the brand voice over time"). The chat (`chat.php`)
-  only ever changes the words on the person's screen — **Save text is the one
-  way a post's words change**, through the same edit path and checks. Every
+  only ever changes the post on the person's screen — **Save changes is the one
+  way a post changes**, through the same edit path and checks. Every
   turn is one `ia_ai_generate()` call (`social.chat`), behind
   `ias_ai_blocker()`, a per-post lock, the repeat guard and the per-post cap
   (`chat_turns`). The brand voice (`voice.php`) is **learned only from what a
@@ -41,6 +41,19 @@ it, and the spec stays verbatim, so they are recorded here:
   the changes made over time"): `ias_voice_prune()` keeps 120 days of posts
   (starred kept, 400 at most) and 45 of chat, `ias_voice_auto_learn()` reads
   the log at most weekly; nothing sent to Claude may grow with the log.
+- **The chat edits the whole post; saving never approves** (Oct 13, 2026: "give
+  the AI agent a way to edit first comments and anything else about the
+  post" and "this needs a way to save changes without approving"). Talk it
+  over changes the text, the first comment, the pictures (only the post's and
+  the property's own, by key) and their alt text (`flags.alt`, kept through
+  rewrites) — never the time, the type or the facts. Every **Save changes**
+  submits the one Edit form (`ias_media`, `ias_alt` ride along) and never
+  approves; an approve-first post is sent for its yes once per save
+  (`ias_media_save(..., false)`), and pictures or alt text alone never turn
+  the words into a person's edit. A first comment is checked on save
+  (`ias_comment_holds()`: fair housing, `[VERIFY]`, the listing link). The
+  first comment's lead-ins are a setting (`comment_leads`); Results says
+  "View the full listing", never "how it sold".
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

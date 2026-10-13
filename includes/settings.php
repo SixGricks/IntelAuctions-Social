@@ -56,6 +56,14 @@ if (!function_exists('ias_settings_defaults')) {
       'oneup_account_name' => '',   // how OneUp's lists name that page (filled in by Check connection / Verify OneUp)
       'oneup_calendar_url' => 'https://www.oneupapp.io/',
       'link_in_comment'    => true, // false = OneUp cannot post first comments; the link ends the post instead
+      // The words before the listing link in the first comment (DJ, Oct 13, 2026: never "How it sold" — "View full listing").
+      'comment_leads'      => [
+        'listing'    => 'Photos, terms and the full listing:',
+        'open_house' => 'Photos, directions and the full listing:',
+        'results'    => 'View the full listing:',
+        'several'    => 'Photos, terms and details:',
+        'roundup'    => 'Every new sale, with dates as they are set:',
+      ],
 
       // Links back to the site.
       'utm_source' => 'facebook',
@@ -81,7 +89,7 @@ if (!function_exists('ias_settings')) {
     $out = ias_settings_defaults();
     foreach ($saved as $key => $value) {
       if (!array_key_exists($key, $out)) continue; // a key a later release dropped
-      if (in_array($key, ['types', 'weights'], true) && is_array($value)) {
+      if (in_array($key, ['types', 'weights', 'comment_leads'], true) && is_array($value)) {
         $out[$key] = array_merge($out[$key], array_intersect_key($value, $out[$key]));
       } elseif ($key === 'networks' && is_array($value)) {
         foreach ($out['networks'] as $ch => $def) if (isset($value[$ch]) && is_array($value[$ch])) $out['networks'][$ch] = array_merge($def, array_intersect_key($value[$ch], $def));

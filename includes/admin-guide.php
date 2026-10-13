@@ -27,6 +27,7 @@ if (!function_exists('ias_guide_render')) {
     }
     [$html, $toc] = ia_docs_md_to_html($md, 'docs');
     echo '<style>
+      .ias-docs table{display:block;overflow-x:auto;max-width:100%}
       .ias-docs{max-width:920px;background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:8px 32px 32px;line-height:1.65}
       .ias-docs h1{font-size:1.7em;margin:1em 0 .4em}
       .ias-docs h2{font-size:1.35em;margin:1.6em 0 .4em;padding-top:.6em;border-top:1px solid #f0f0f1}
