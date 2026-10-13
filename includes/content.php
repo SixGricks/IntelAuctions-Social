@@ -512,6 +512,22 @@ if (!function_exists('ias_media_person')) {
 }
 
 /**
+ * Record which of the properties' photos this post now uses (`image` rows in
+ * the history, which the property's other posts avoid): the old rows go, the
+ * new ones come in. Called whenever a post's pictures change outside a rewrite.
+ */
+if (!function_exists('ias_media_history')) {
+  function ias_media_history(int $post_id, array $images, array $facts_list): void {
+    ias_history_forget_post($post_id, ['image']);
+    foreach ($images as $img) {
+      $att = (int) ($img['id'] ?? 0);
+      if ($att <= 0) continue;
+      foreach ($facts_list as $f) if (in_array($att, array_map('intval', (array) $f['photos']), true) || $att === (int) $f['brochure']) ias_history_add('image', (string) $att, (int) $f['id'], $post_id);
+    }
+  }
+}
+
+/**
  * A person chooses a post's pictures: $keys in order, each `a<attachment id>`
  * (any image in the Media Library) or `g<n>` (the post's own drawn graphic n,
  * so no address can be typed in). Returns ['ok', 'error', 'count'].
@@ -555,12 +571,7 @@ if (!function_exists('ias_media_save')) {
       $update += ['status' => 'planned', 'approved_at' => null, 'approved_by' => ''];
     }
     ias_post_update($post_id, $update);
-    ias_history_forget_post($post_id, ['image']);
-    foreach ($images as $img) {
-      $att = (int) $img['id'];
-      if ($att <= 0) continue;
-      foreach ($facts_list as $f) if (in_array($att, array_map('intval', (array) $f['photos']), true) || $att === (int) $f['brochure']) ias_history_add('image', (string) $att, (int) $f['id'], $post_id);
-    }
+    ias_media_history($post_id, $images, $facts_list);
     $what = count($images) ? count($images) . ' picture' . (count($images) === 1 ? '' : 's') : 'no pictures';
     ias_post_trail($post_id, 'Pictures chosen by hand: ' . $what, $actor);
     ias_log('edited', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Pictures chosen by hand: ' . $what], $actor);
@@ -587,6 +598,7 @@ if (!function_exists('ias_media_reset')) {
       $update += ['status' => 'planned', 'approved_at' => null, 'approved_by' => ''];
     }
     ias_post_update($post_id, $update);
+    ias_media_history($post_id, (array) $media['images'], $facts_list); // the property's other posts avoid what this one now uses
     ias_post_trail($post_id, 'Pictures handed back to the plugin', $actor);
     ias_log('edited', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Pictures handed back to the plugin'], $actor);
     return true;

@@ -83,5 +83,11 @@ $act('media_reset', ['ias_post' => $id]);
 $p = ias_post_get($id);
 t_ok(empty($p['flags']['media_by']) && count($ids()) >= 3, 'handed back: the plugin chooses the pictures again');
 t_ok(!in_array($extra, $ids(), true), '…from the property\'s own photos');
+global $wpdb;
+$hist = array_map('intval', $wpdb->get_col($wpdb->prepare('SELECT value FROM ' . ias_table('history') . " WHERE kind = 'image' AND post_id = %d", $id)));
+sort($hist);
+$now = array_values(array_intersect($ids(), $gal));
+sort($now);
+t_eq($now, $hist, '…and the history the property\'s other posts avoid is the new pictures, not the hand-picked ones (Codex, PR #2)');
 
 ias_t_claude_off();

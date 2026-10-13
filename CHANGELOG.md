@@ -6,7 +6,9 @@ From DJ's first look at a real draft and the UI review that followed:
   picture from the Media Library, drag (or ‹ ›) to reorder, × to take one out,
   up to 10; the first leads. A person's choice holds through rewrites and
   listing changes (`flags.media_by`); "Let the plugin choose again" hands it
-  back; an approved roundup or Results post needs a fresh yes.
+  back (and the property's record of pictures used follows it, so its other
+  posts avoid the right ones); an approved roundup or Results post needs a
+  fresh yes.
 - **Never the same view twice.** Narvon Country Home's post opened with two
   near-identical front exteriors. Every photo now gets a difference-hash
   fingerprint (`_ias_dhash`); two shots of one view never share a post, an
