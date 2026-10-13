@@ -367,6 +367,9 @@ if (!function_exists('ias_review_email')) {
     $fixes = function_exists('ias_corrections_waiting') ? ias_corrections_waiting() : [];
     if ($fixes) $html .= $h('Corrections to post as a comment (' . count($fixes) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</span></li>'; }, $fixes)) . '</ul><p style="font-size:13px;color:#646970">A post that has gone out is never edited (that resets its reach): post the correction as a comment on it, then press Comment posted on the Social Calendar.</p>';
 
+    $voice = function_exists('ias_voice_review_html') ? ias_voice_review_html() : '';
+    if ($voice !== '') $html .= $h('House rules: Claude suggested changes') . $voice;
+
     $new = array_filter(ias_posts_query(['order' => 'id', 'limit' => 300]), function ($p) use ($since) { return (string) $p['created_at'] >= $since && $p['type'] !== 'human'; });
     $counts = array_count_values(array_map(function ($p) { return ias_post_type((string) $p['type'])['label']; }, $new));
     $html .= $h('New since last week (' . count($new) . ')');

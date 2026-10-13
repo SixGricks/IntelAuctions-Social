@@ -136,6 +136,29 @@ delete_option('ias_voice_learned');
 t_ok(!ias_voice_learn('admin')['ok'] && ias_t_claude_calls() - $calls === 1, 'with no Claude key, nothing is tried');
 update_option('ia_anthropic_api_key', 'test-key');
 
+// ---- Claude reads the log on its own: weekly at most, after enough new posts, a person still decides ----
+delete_option('ias_voice_suggest');
+update_option('ias_voice_learned', ['ts' => ias_now()->getTimestamp() - 8 * DAY_IN_SECONDS, 'at' => '2026-10-01 00:00:00'], false);
+add_filter('ias_voice_auto_after', function () { return 2; });
+$calls = ias_t_claude_calls();
+ias_settings_update(['voice_auto' => false]);
+t_eq('', ias_voice_auto_learn(), 'Learn on its own off: nothing');
+ias_settings_update(['voice_auto' => true]);
+$line = ias_voice_auto_learn();
+t_ok(strpos($line, 'suggested house rules') !== false && ias_voice_suggestion() && ias_t_claude_calls() - $calls === 1, 'on: with enough new posts and a week gone, Claude reads the log once (' . $line . ')');
+t_eq([], ias_voice_notes(), '…and the rules wait for a person');
+t_eq('', ias_voice_auto_learn(), 'not again while its suggestion waits for a person');
+delete_option('ias_voice_suggest');
+t_eq('', ias_voice_auto_learn(), '…nor within a week of the last read');
+t_eq(1, ias_t_claude_calls() - $calls, '…so one call in all');
+update_option('ias_voice_learned', ['ts' => ias_now()->getTimestamp() - DAY_IN_SECONDS, 'at' => '2026-10-01 00:00:00'], false);
+ias_voice_learn('admin'); // a suggestion waiting, for the calendar, the email and the screen
+ob_start(); do_action('ias_calendar_attention'); $attn = (string) ob_get_clean();
+t_ok(strpos($attn, 'House rules: Claude suggested changes') !== false, 'the calendar says a suggestion is waiting');
+[, $mail] = ias_review_email();
+t_ok(strpos($mail, 'House rules: Claude suggested changes') !== false && strpos($mail, '+ Never use the word nestled.') !== false, '…and so does the weekly email, with the changes');
+remove_all_filters('ias_voice_auto_after');
+
 // ---- The screen ----
 $errors = [];
 set_error_handler(function ($no, $str, $file, $line) use (&$errors) { $errors[] = "{$str} at " . basename($file) . ":{$line}"; return true; });
@@ -154,6 +177,27 @@ t_ok(strpos($html, 'name="ias[chat_turns]"') !== false && strpos($html, 'name="i
 $_GET = [];
 restore_error_handler();
 t_eq([], $errors, 'no PHP notices');
+
+// ---- The log is a window, the rules are what lasts ----
+$voice = ias_table('voice');
+$wpdb->query($wpdb->prepare("UPDATE {$voice} SET updated_at = %s WHERE post_id IN (%d, %d)", '2026-06-01 00:00:00', (int) $a['id'], (int) $c['id']));
+ias_voice_flag((int) $c['id'], 'star', true);
+$wpdb->insert(ias_table('chat'), ['post_id' => (int) $a['id'], 'who' => 'person', 'actor' => 'admin', 'message' => 'Old ask', 'created_at' => '2026-08-01 00:00:00']);
+$wpdb->insert(ias_table('chat'), ['post_id' => (int) $a['id'], 'who' => 'person', 'actor' => 'admin', 'message' => 'Fresh ask', 'created_at' => '2026-11-01 00:00:00']);
+$pr = ias_voice_prune(true);
+t_eq(null, ias_voice_get((int) $a['id']), 'a post older than 120 days leaves the log');
+t_ok(ias_voice_get((int) $c['id']) !== null, '…a starred one stays');
+t_ok(ias_voice_get((int) $b['id']) !== null, '…and a recent one stays');
+t_eq(['Fresh ask'], ias_chat_asks((int) $a['id']), 'chat messages older than 45 days go');
+t_eq(['voice' => 1, 'chat' => 1], $pr, '…counted for the run summary');
+t_eq(['voice' => 0, 'chat' => 0], ias_voice_prune(), 'once a day: the next hourly run does nothing');
+add_filter('ias_voice_keep_rows', function () { return 50; });
+for ($i = 0; $i < 52; $i++) $wpdb->insert($voice, ['post_id' => 900000 + $i, 'type' => 'listing', 'final_text' => 'x', 'touched' => 1, 'created_at' => ias_now_sql(), 'updated_at' => date('Y-m-d H:i:s', strtotime('2026-10-20') + $i)]);
+ias_voice_prune(true);
+t_eq(50, (int) $wpdb->get_var("SELECT COUNT(*) FROM {$voice} WHERE star = 0"), 'past its cap, the oldest posts go first');
+t_ok(ias_voice_get(900000) === null && ias_voice_get(900051) !== null && ias_voice_get((int) $c['id']) !== null, '…never a starred one');
+$wpdb->query("DELETE FROM {$voice} WHERE post_id >= 900000");
+remove_all_filters('ias_voice_keep_rows');
 
 remove_all_filters('pre_wp_mail');
 ias_t_claude_off();

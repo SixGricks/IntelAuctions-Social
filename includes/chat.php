@@ -19,9 +19,11 @@
  * (`ias_prompt_rules()`) plus the house voice, and may use a fact the person
  * gives it — saying the listing lacks it — but never one of its own.
  *
- * The conversation is kept in {prefix}ias_chat: what the person asked is the
- * best evidence of the brand voice there is, so the brand-voice log
- * (voice.php) carries it, and a rewrite of the post follows it.
+ * The conversation is kept in {prefix}ias_chat for 45 days (voice.php
+ * prunes it): what the person asked is the best evidence of the brand voice
+ * there is, so the brand-voice log carries it, and a rewrite of the post
+ * follows it. Only Claude's versions are kept as text; a person's message
+ * keeps a fingerprint of the words it was about, for the repeat guard.
  */
 
 if (!defined('ABSPATH')) exit;
@@ -40,7 +42,7 @@ if (!function_exists('ias_chat_decode')) {
   }
 }
 
-/** Add one message. $who 'person' (proposal = the text as it stood when they spoke) or 'claude' (proposal = its new text, '' = unchanged). */
+/** Add one message. $who 'person' (meta 'was' = a fingerprint of the words as they stood) or 'claude' (proposal = its new text, '' = unchanged). */
 if (!function_exists('ias_chat_add')) {
   function ias_chat_add(int $post_id, string $who, string $actor, string $message, string $proposal = '', array $meta = []): int {
     global $wpdb;
@@ -156,7 +158,7 @@ if (!function_exists('ias_chat_repeat')) {
     global $wpdb;
     $rows = array_map('ias_chat_decode', (array) $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . ias_table('chat') . ' WHERE post_id = %d ORDER BY id DESC LIMIT 2', $post_id), ARRAY_A));
     if (count($rows) < 2 || $rows[0]['who'] !== 'claude' || $rows[1]['who'] !== 'person') return null;
-    if ($rows[1]['message'] !== $message || $rows[1]['proposal'] !== $current) return null;
+    if ($rows[1]['message'] !== $message || (string) ($rows[1]['meta']['was'] ?? '') !== md5($current)) return null;
     if (strtotime((string) $rows[0]['created_at']) < strtotime(ias_now_sql()) - 120) return null;
     $m = $rows[0]['meta'];
     return ['ok' => true, 'repeat' => true, 'reply' => $rows[0]['message'], 'text' => $rows[0]['proposal'] !== '' ? $rows[0]['proposal'] : null,
@@ -229,7 +231,7 @@ if (!function_exists('ias_chat_send')) {
         $rule = '';
       }
 
-      ias_chat_add($post_id, 'person', $actor, $message, $current);
+      ias_chat_add($post_id, 'person', $actor, $message, '', ['was' => md5($current)]); // a fingerprint, not a second copy of the words
       $id = ias_chat_add($post_id, 'claude', 'claude', $reply, $text, ['holds' => $holds, 'fixes' => $fixes, 'rule' => $rule]);
       ias_log('chat', (int) $p['listing_id'], ['post' => $post_id, 'type' => $p['type'],
         'summary' => 'Talked it over: "' . mb_substr($message, 0, 140) . '" — ' . ($text !== '' ? 'Claude changed the text (not saved)' : 'Claude answered')], $actor);

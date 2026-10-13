@@ -38,6 +38,8 @@ t_eq('Cut it down to the sale and the call.', $r['reply'], '…and says what it 
 t_eq([], $r['holds'], '…and nothing in them would stop the post');
 t_eq($saved, (string) ias_post_get($id)['content']['text'], 'the saved post is unchanged: only Save text changes it');
 t_eq(1, ias_t_claude_calls() - $calls, 'one turn is one Claude call');
+$person = $wpdb->get_row($wpdb->prepare('SELECT proposal, meta FROM ' . ias_table('chat') . " WHERE post_id = %d AND who = 'person' ORDER BY id DESC LIMIT 1", $id), ARRAY_A);
+t_ok($person['proposal'] === '' && json_decode($person['meta'], true)['was'] === md5($saved), 'the person\'s message keeps a fingerprint of the words, not a second copy');
 t_eq(1, $usage('social.chat') - $metered, '…metered against the monthly cap as social.chat');
 t_eq([1, 30], [$r['used'], $r['max']], '…and counted: 1 of 30 answers on this post');
 $last = $GLOBALS['ias_t_claude_last'];

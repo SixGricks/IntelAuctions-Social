@@ -68,6 +68,7 @@ if (!function_exists('ias_settings_defaults')) {
       'generate_per_run'     => 8,       // most Claude drafts written in one hourly run
       'chat_turns'           => 30,      // Talk it over: Claude's answers a post can have at most (0 = no chat)
       'voice_examples'       => 3,       // posts a person wrote or approved, shown to Claude in each new draft (0 = none)
+      'voice_auto'           => true,    // Claude reads the brand-voice log on its own (at most weekly, after 8 new posts) and suggests rules for a person to save
     ];
   }
 }

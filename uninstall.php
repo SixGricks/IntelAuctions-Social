@@ -26,7 +26,7 @@ foreach ([
   'ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_live_since',
   'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review',
   'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
-  'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', // Brand voice: the house rules, Claude's unsaved suggestion, when it last read the log
+  'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', // Brand voice: the house rules, Claude's unsaved suggestion, when it last read the log, the day the log was last pruned
 ] as $key) {
   delete_option($key);
 }

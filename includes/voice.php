@@ -3,7 +3,13 @@
  * Intel Auctions Social — the brand voice (0.7.0).
  *
  * DJ, Oct 13, 2026: "keep a log of final posts to learn the brand voice over
- * time." Three parts:
+ * time" — and then, that it should "write short rules and guides based on the
+ * changes made over time" rather than pile up posts. So the house rules are
+ * the long-term memory, and the log is a rolling window of raw material:
+ * Claude reads it (on its own at most weekly, or when a person asks) and
+ * suggests rules; once a person settles the suggestion those posts are
+ * learned, and the log forgets posts after 120 days (starred ones stay;
+ * Talk it over's messages after 45). Three parts:
  *
  *   The log      {prefix}ias_voice, one row per post: Claude's draft beside
  *                the final words, who changed or approved them, and what they
@@ -413,7 +419,8 @@ if (!function_exists('ias_voice_learn')) {
     $why = ias_ai_blocker();
     if ($why !== '') return ['ok' => false, 'error' => $why];
     $learned = (array) get_option('ias_voice_learned', []);
-    if ((int) ($learned['ts'] ?? 0) > time() - 600 && ias_voice_new_since_learned() === 0) {
+    $now = ias_now()->getTimestamp();
+    if ((int) ($learned['ts'] ?? 0) > $now - 600 && ias_voice_new_since_learned() === 0) {
       return ['ok' => false, 'error' => 'Claude read the log less than 10 minutes ago and nothing new has come in since.'];
     }
     global $wpdb;
@@ -421,7 +428,7 @@ if (!function_exists('ias_voice_learn')) {
     if (!$rows) return ['ok' => false, 'error' => 'Nothing to learn from yet: no post in the log was written, edited, approved or starred by a person.'];
     [$system, $user] = ias_voice_learn_prompt(ias_voice_notes(), $rows);
     $raw = ia_ai_generate($system, $user, 1500, 'social.voice');
-    update_option('ias_voice_learned', ['ts' => time(), 'at' => ias_now_sql()], false);
+    update_option('ias_voice_learned', ['ts' => $now, 'at' => ias_now_sql(), 'by' => $actor], false);
     if (is_wp_error($raw)) return ['ok' => false, 'error' => $raw->get_error_message()];
     $json = ias_json_object_from_text((string) $raw);
     if (!is_array($json) || !isset($json['rules']) || !is_array($json['rules'])) return ['ok' => false, 'error' => 'Claude did not answer with a list of rules. Try again later.'];
@@ -455,6 +462,99 @@ if (!function_exists('ias_json_object_from_text')) {
 if (!function_exists('ias_array_is_list')) {
   function ias_array_is_list(array $a): bool {
     return $a === [] || array_keys($a) === range(0, count($a) - 1);
+  }
+}
+
+/* ---------------- Keeping it small ---------------- */
+
+/** How long the log keeps a post (a starred one stays), the most posts it keeps, and how long chats are kept. Filterable. */
+if (!function_exists('ias_voice_keep')) {
+  function ias_voice_keep(): array {
+    return [
+      'days'      => max(30, (int) apply_filters('ias_voice_keep_days', 120)),
+      'rows'      => max(50, (int) apply_filters('ias_voice_keep_rows', 400)),
+      'chat_days' => max(7, (int) apply_filters('ias_chat_keep_days', 45)),
+    ];
+  }
+}
+
+/**
+ * Once a day (the hourly job): the log forgets posts older than its window
+ * and the oldest past its cap — never a starred one — and Talk it over's
+ * messages go after their window (what was asked is already on the post's
+ * log row). The house rules are what lasts. Returns ['voice' => n, 'chat' => n].
+ */
+if (!function_exists('ias_voice_prune')) {
+  function ias_voice_prune(bool $force = false): array {
+    $out = ['voice' => 0, 'chat' => 0];
+    if (!ias_db_ready()) return $out;
+    $today = ias_now()->format('Y-m-d');
+    if (!$force && get_option('ias_voice_pruned') === $today) return $out;
+    update_option('ias_voice_pruned', $today, false);
+    global $wpdb;
+    $k = ias_voice_keep();
+    $voice = ias_table('voice');
+    $out['voice'] = (int) $wpdb->query($wpdb->prepare("DELETE FROM {$voice} WHERE star = 0 AND updated_at < %s", ias_now()->modify('-' . $k['days'] . ' days')->format('Y-m-d H:i:s')));
+    $over = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$voice} WHERE star = 0") - $k['rows'];
+    if ($over > 0) {
+      $ids = array_map('intval', (array) $wpdb->get_col($wpdb->prepare("SELECT id FROM {$voice} WHERE star = 0 ORDER BY updated_at ASC, id ASC LIMIT %d", $over)));
+      if ($ids) $out['voice'] += (int) $wpdb->query("DELETE FROM {$voice} WHERE id IN (" . implode(',', $ids) . ')');
+    }
+    $out['chat'] = (int) $wpdb->query($wpdb->prepare('DELETE FROM ' . ias_table('chat') . ' WHERE created_at < %s', ias_now()->modify('-' . $k['chat_days'] . ' days')->format('Y-m-d H:i:s')));
+    return $out;
+  }
+}
+
+/** How many new posts that teach set Claude reading the log on its own (Settings: Learn on its own). */
+if (!function_exists('ias_voice_auto_after')) {
+  function ias_voice_auto_after(): int {
+    return max(1, (int) apply_filters('ias_voice_auto_after', 8));
+  }
+}
+
+/**
+ * The hourly job's turn: when enough new posts teach (8) and Claude last read
+ * the log a week or more ago, it reads it again and suggests rules — one
+ * metered call a week at most, never while the last suggestion waits for a
+ * person, never without Claude. Returns a line for the run summary ('' = not now).
+ */
+if (!function_exists('ias_voice_auto_learn')) {
+  function ias_voice_auto_learn(): string {
+    if (!ias_setting('voice_auto', true) || ias_voice_suggestion() || ias_ai_blocker() !== '') return '';
+    $learned = (array) get_option('ias_voice_learned', []);
+    if ((int) ($learned['ts'] ?? 0) > ias_now()->getTimestamp() - 7 * DAY_IN_SECONDS) return '';
+    $new = ias_voice_new_since_learned();
+    if ($new < ias_voice_auto_after()) return '';
+    $r = ias_voice_learn('system');
+    return $r['ok'] ? 'Claude read ' . $new . ' new posts and suggested house rules (waiting on Brand voice)' : 'house rules not suggested: ' . $r['error'];
+  }
+}
+
+add_filter('ias_job_run', function (array $result): array {
+  $pruned = ias_voice_prune();
+  if ($pruned['voice'] || $pruned['chat']) $result['parts'][] = 'brand voice: forgot ' . $pruned['voice'] . ' old posts and ' . $pruned['chat'] . ' old chat messages';
+  $learned = ias_voice_auto_learn();
+  if ($learned !== '') $result['parts'][] = $learned;
+  return $result;
+}, 40);
+
+/** On the calendar, while it waits: Claude's suggested rules. */
+add_action('ias_calendar_attention', function (): void {
+  $s = ias_voice_suggestion();
+  if (!$s) return;
+  echo '<div class="ias-card"><h3>House rules: Claude suggested changes</h3><p>From ' . (int) $s['rows'] . ' post' . ((int) $s['rows'] === 1 ? '' : 's') . ' the team wrote or approved. Nothing changes until someone saves them. <a href="' . esc_url(ias_admin_url(IAS_PAGE_VOICE)) . '">Review them on Brand voice</a></p></div>';
+}, 30);
+
+/** The suggestion as a few lines for the Monday email ('' with none). */
+if (!function_exists('ias_voice_review_html')) {
+  function ias_voice_review_html(): string {
+    $s = ias_voice_suggestion();
+    if (!$s) return '';
+    $rules = ias_voice_notes();
+    $lines = array_merge(array_map(function ($r) { return '+ ' . $r; }, array_values(array_diff($s['rules'], $rules))), array_map(function ($r) { return '− ' . $r; }, array_values(array_diff($rules, $s['rules']))));
+    return '<p>Claude read ' . (int) $s['rows'] . ' post' . ((int) $s['rows'] === 1 ? '' : 's') . ' the team wrote or approved and suggests these changes to the house rules. Nothing changes until someone saves them on Brand voice.</p>'
+      . ($lines ? '<ul>' . implode('', array_map(function ($l) { return '<li>' . esc_html($l) . '</li>'; }, array_slice($lines, 0, 12))) . '</ul>' : '')
+      . '<p><a href="' . esc_url(ias_admin_url(IAS_PAGE_VOICE)) . '">Review the house rules</a></p>';
   }
 }
 

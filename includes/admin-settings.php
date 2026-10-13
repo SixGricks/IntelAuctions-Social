@@ -43,7 +43,7 @@ if (!function_exists('ias_settings_sanitize')) {
       $out[$key] = $v;
     };
 
-    foreach (['master', 'dry_run', 'paused', 'link_in_comment'] as $key) $out[$key] = !empty($in[$key]);
+    foreach (['master', 'dry_run', 'paused', 'link_in_comment', 'voice_auto'] as $key) $out[$key] = !empty($in[$key]);
     $networks = [];
     foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
       $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
@@ -306,6 +306,7 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row">Drafts per run</th><td>' . $num('ias[generate_per_run]', $s['generate_per_run'], 0, 30, 'drafts an hour at most') . '<br><span class="description">Each is one Claude call against the toolkit\'s monthly cap. 0 stops new drafts.</span></td></tr>';
     echo '<tr><th scope="row">Talk it over</th><td>' . $num('ias[chat_turns]', $s['chat_turns'], 0, 100, 'answers from Claude per post at most') . '<br><span class="description">The chat beside each post\'s text. Every message is one Claude call against the monthly cap; nothing changes until you press Save text. 0 takes the chat away.</span></td></tr>';
     echo '<tr><th scope="row">Examples in each draft</th><td>' . $num('ias[voice_examples]', $s['voice_examples'], 0, 6, 'posts') . '<br><span class="description">The newest posts a person wrote, approved or starred on <a href="' . esc_url(ias_admin_url(IAS_PAGE_VOICE)) . '">Brand voice</a>, shown to Claude as how the team sounds (about 250 tokens each). 0 shows none.</span></td></tr>';
+    echo '<tr><th scope="row">Learn on its own</th><td><label><input type="checkbox" name="ias[voice_auto]" value="1" ' . checked(!empty($s['voice_auto']), true, false) . '> Claude reads the brand-voice log by itself and suggests house rules</label><br><span class="description">At most once a week, once ' . (int) (function_exists('ias_voice_auto_after') ? ias_voice_auto_after() : 8) . ' new posts a person wrote, approved or starred have come in: one Claude call. The suggestion waits on Brand voice (and in the weekly email) until someone saves or discards it.</span></td></tr>';
     echo '</table>';
 
     /** Later phases add their sections here. */

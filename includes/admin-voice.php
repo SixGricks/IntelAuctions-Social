@@ -2,10 +2,11 @@
 /**
  * Intel Auctions Social — Auctions → Social Calendar → Brand voice (0.7.0).
  *
- * The house rules (a person's to write; Claude only suggests), the log of
- * final posts with Claude's draft beside the final words, and the switches
- * that decide which posts teach: Learn from this, and a star for a post that
- * is a good example. See voice.php.
+ * The house rules (a person's to write; Claude only suggests) — the long-term
+ * memory — and the log of final posts they are learned from (a rolling
+ * window), with Claude's draft beside the final words and the switches that
+ * decide which posts teach: Learn from this, and a star for a post that is a
+ * good example (a starred post is never forgotten). See voice.php.
  */
 
 if (!defined('ABSPATH')) exit;
@@ -124,7 +125,7 @@ if (!function_exists('ias_voice_render')) {
 
     // The log.
     $filters = ['all' => 'All', 'edited' => 'Edited by a person', 'approved' => 'Approved', 'written' => 'Went out as Claude wrote it', 'starred' => 'Starred', 'off' => 'Not learned from'];
-    echo '<div class="ias-card"><h2>The log of final posts</h2><p class="description">Every post a person saved or approved, and every post that went out (in the dry run too). The ones a person wrote, approved or starred teach Claude; a post that went out unread does not, unless you star it.</p><p class="ias-filters">';
+    echo '<div class="ias-card"><h2>The log of final posts</h2><p class="description">Every post a person saved or approved, and every post that went out (in the dry run too), for ' . (int) ias_voice_keep()['days'] . ' days — a starred one for good. The ones a person wrote, approved or starred teach Claude; a post that went out unread does not, unless you star it.</p><p class="ias-filters">';
     $links = [];
     foreach ($filters as $k => $label) {
       $n = (int) ($counts[$k] ?? 0);
@@ -182,8 +183,10 @@ if (!function_exists('ias_voice_render')) {
       . '<tr><th>Posts that teach</th><td>' . (int) ($counts['teaching'] ?? 0) . ' <span class="description">written, approved or starred by a person</span></td></tr>'
       . '<tr><th>In each new draft</th><td>' . ($examples > 0 ? 'the house rules and up to ' . $examples . ' example post' . ($examples === 1 ? '' : 's') : 'the house rules (examples are off)') . ' <a href="' . esc_url(ias_admin_url(IAS_PAGE_SETTINGS)) . '">Settings</a></td></tr>'
       . '<tr><th>In Talk it over</th><td>the house rules, and the Remember button when you ask for something that should hold for every post</td></tr>'
+      . '<tr><th>Kept</th><td>the house rules for good; posts in the log for ' . (int) ias_voice_keep()['days'] . ' days (starred ones for good); chat messages for ' . (int) ias_voice_keep()['chat_days'] . ' days</td></tr>'
       . '</table>';
-    echo '<h3>Suggest updates</h3><p>Claude reads the newest posts that teach — what was changed and what was asked for — and suggests house rules. You see them first; nothing changes until you save.</p>';
+    echo '<h3>Suggest updates</h3><p>Claude reads the newest posts that teach — what was changed and what was asked for — and suggests house rules. You see them first; nothing changes until you save. The rules are what lasts: the log is the raw material, and old posts leave it.</p>';
+    echo '<p class="description">' . (ias_setting('voice_auto', true) ? 'It also does this on its own: at most once a week, once ' . (int) ias_voice_auto_after() . ' new posts teach (Settings → Learn on its own).' : 'Learning on its own is off (Settings → Learn on its own).') . '</p>';
     $learned = (array) get_option('ias_voice_learned', []);
     if (!empty($learned['at'])) echo '<p class="description">Last read ' . esc_html(date_i18n('M j, g:i a', strtotime((string) $learned['at']))) . '; ' . (int) $new . ' new since.</p>';
     else echo '<p class="description">' . (int) $new . ' post' . ($new === 1 ? '' : 's') . ' to read.</p>';

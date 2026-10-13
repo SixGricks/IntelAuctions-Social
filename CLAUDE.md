@@ -36,7 +36,11 @@ it, and the spec stays verbatim, so they are recorded here:
   person wrote, approved or starred**; house rules are a person's to save —
   Claude's suggestions (`social.voice`) change nothing until then, and a rule
   never overrules facts, bidding or fair housing (`ias_prompt_rules()` comes
-  first in every prompt, drafts and chat alike).
+  first in every prompt, drafts and chat alike). **The rules are the long-term
+  memory and the log is a window** (DJ: "write short rules and guides based on
+  the changes made over time"): `ias_voice_prune()` keeps 120 days of posts
+  (starred kept, 400 at most) and 45 of chat, `ias_voice_auto_learn()` reads
+  the log at most weekly; nothing sent to Claude may grow with the log.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

@@ -26,10 +26,17 @@ brand voice over time."
   the same listing's, a held one or a marked one); a post that went out
   unread teaches nothing unless starred. **Suggest updates from the log**:
   one `social.voice` call; Claude's rules wait for a person to save them.
+- **The rules are what lasts; the log is a window** (DJ: it "should write
+  short rules and guides based on the changes made over time"). Claude reads
+  the log on its own once 8 new posts teach, at most weekly (Settings → Learn
+  on its own), and the suggestion waits on Brand voice, the calendar and the
+  weekly email. Once a day the log forgets posts after 120 days (starred ones
+  stay; 400 at most) and chat messages after 45; a person's chat message
+  keeps a fingerprint of the words, not a second copy.
 - Each draft now keeps Claude's words as written (`content.claude_text`).
 - Guide: §3 named the old place for the Anthropic key; it is Services &
   Budgets from toolkit 4.67.0.
-- DB 0.2.0 (two new tables); uninstall removes them, the three `ias_voice_*`
+- DB 0.2.0 (two new tables); uninstall removes them, the four `ias_voice_*`
   options and the chat locks.
 
 ## 0.6.0 (2026-10-13) — More networks, pictures by hand, a cleaner post view (every switch still off)
