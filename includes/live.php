@@ -469,6 +469,7 @@ if (!function_exists('ias_readback_run')) {
       ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'published_at' => $at !== '' ? $at : $now, 'note' => $note]);
       ias_post_trail((int) $p['id'], 'Published on Facebook' . ($at !== '' ? ' ' . date_i18n('D M j, g:i a', strtotime($at)) : '') . ($note !== '' ? ' — although it was ' . $was : ''));
       ias_log('readback', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Published on Facebook (OneUp #' . $oid . ').' . ($note !== '' ? ' ' . $note : '')]);
+      if (function_exists('ias_voice_record')) ias_voice_record((int) $p['id'], 'out');
       $count['published']++;
     }
 

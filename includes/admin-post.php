@@ -5,6 +5,9 @@
  * first comment), edit the text, have it rewritten, skip it or bring it back,
  * and decide on a draft that stopped for a person ("Keep as written").
  *
+ * Talk it over (chat.php) sits under the Edit card and the brand-voice log
+ * (voice.php) records each saved edit.
+ *
  * Also the lists under the calendar grid — posts needing a decision, listings
  * waiting for photos, drafts not written yet — and the "Write drafts now"
  * button. Every action is a nonce-checked POST that redirects back.
@@ -66,8 +69,10 @@ add_action('ias_calendar_action', function (string $action): void {
       ias_post_update($id, $update);
       ias_history_forget_post($id, ['opener']);
       ias_history_add('opener', $content['opener'], (int) $p['listing_id'], $id);
-      ias_post_trail($id, 'Text edited' . ($check['holds'] ? ' — still needs a decision: ' . $check['holds'][0] : ''), $actor);
+      $talked = function_exists('ias_chat_rows') ? count(array_filter(ias_chat_rows($id, true, 60), function ($r) { return $r['who'] === 'claude' && $r['proposal'] !== ''; })) : 0;
+      ias_post_trail($id, 'Text edited' . ($talked ? ' (talked over with Claude)' : '') . ($check['holds'] ? ' — still needs a decision: ' . $check['holds'][0] : ''), $actor);
       ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Text edited' . ($check['holds'] ? '; held: ' . implode(' ', $check['holds']) : '')], $actor);
+      if (function_exists('ias_voice_record')) ias_voice_record($id, 'kept'); // the brand-voice log: Claude's draft beside the person's words
       if (!empty($_POST['ias_and_approve']) && !$check['holds'] && $p['lane'] === 'A' && function_exists('ias_approve')) {
         $r = ias_approve($id, $actor, 'edited and approved in WordPress');
         $flash(esc_html('Saved. ' . $r['message']), $r['ok'] ? 'success' : 'warning');
@@ -258,7 +263,7 @@ add_action('ias_post_view_main', function (array $p): void {
     $primary = !($p['lane'] === 'A' && in_array($p['status'], ['waiting', 'planned'], true)); // the bar's Approve is the one primary button there
     echo '<form method="post" id="ias-text-form">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
       . '<input type="hidden" name="ias_cal_action" value="edit"><input type="hidden" name="ias_post" value="' . (int) $p['id'] . '">'
-      . '<p><label for="ias-text"><strong>Post text</strong></label><textarea id="ias-text" name="ias_text" rows="' . $rows . '" class="large-text">' . esc_textarea($text) . '</textarea></p>';
+      . '<p><label for="ias-text"><strong>Post text</strong></label><textarea id="ias-text" name="ias_text" rows="' . $rows . '" class="large-text" data-post="' . (int) $p['id'] . '" data-nonce="' . esc_attr(wp_create_nonce('ias_post_' . (int) $p['id'])) . '" data-ajax="' . esc_url(admin_url('admin-ajax.php')) . '">' . esc_textarea($text) . '</textarea></p>';
     if (!empty($c['first_comment'])) {
       echo '<p><label for="ias-comment"><strong>First comment</strong></label><textarea id="ias-comment" name="ias_comment" rows="3" class="large-text">' . esc_textarea((string) $c['first_comment']) . '</textarea></p>';
     }
@@ -274,6 +279,8 @@ add_action('ias_post_view_main', function (array $p): void {
     echo '<p class="description">' . esc_html($why) . '</p><div class="ias-preview">' . esc_html($text) . '</div>';
   }
   echo '</div>';
+  /** Under the words: Talk it over (chat.php). */
+  do_action('ias_post_view_after_edit', $p);
 
   if (!$editable) return;
   $media = (array) ($c['media'] ?? []);
@@ -440,7 +447,7 @@ add_action('admin_enqueue_scripts', function (): void {
   wp_add_inline_script('jquery-ui-sortable', <<<'JS'
 jQuery(function ($) {
   // The preview's network tabs.
-  $('.ias-nets').on('click', '.ias-net', function () {
+  $(document).on('click', '.ias-nets .ias-net', function () { // delegated: the preview is redrawn as the text changes
     var net = $(this).data('net'), $card = $(this).closest('.ias-card');
     $card.find('.ias-net').removeClass('is-on').attr('aria-selected', 'false');
     $(this).addClass('is-on').attr('aria-selected', 'true');

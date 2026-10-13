@@ -66,6 +66,8 @@ if (!function_exists('ias_settings_defaults')) {
       'fair_housing_extra'   => '',      // more phrases to stop, one per line
       'grade_size'           => 'medium', // image size Claude grades photos at (tokens grow with pixels)
       'generate_per_run'     => 8,       // most Claude drafts written in one hourly run
+      'chat_turns'           => 30,      // Talk it over: Claude's answers a post can have at most (0 = no chat)
+      'voice_examples'       => 3,       // posts a person wrote or approved, shown to Claude in each new draft (0 = none)
     ];
   }
 }

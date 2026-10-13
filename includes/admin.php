@@ -2,9 +2,9 @@
 /**
  * Intel Auctions Social — where the screens live.
  *
- * Four pages under the Auctions menu, shown as one menu item, **Social
- * Calendar**, whose page carries tabs for the other three (the toolkit's page
- * groups, `ia_ui_page_groups`): Calendar, Settings, Log, Guide. The slugs
+ * Five pages under the Auctions menu, shown as one menu item, **Social
+ * Calendar**, whose page carries tabs for the other four (the toolkit's page
+ * groups, `ia_ui_page_groups`): Calendar, Brand voice, Settings, Log, Guide. The slugs
  * start with `ia-` so the toolkit's admin stylesheet and double-submit guard
  * load on them, and simple mode keeps the calendar in the menu.
  */
@@ -15,6 +15,7 @@ if (!defined('IAS_PAGE_CALENDAR')) define('IAS_PAGE_CALENDAR', 'ia-social-calend
 if (!defined('IAS_PAGE_SETTINGS')) define('IAS_PAGE_SETTINGS', 'ia-social-settings');
 if (!defined('IAS_PAGE_LOG'))      define('IAS_PAGE_LOG', 'ia-social-log');
 if (!defined('IAS_PAGE_GUIDE'))    define('IAS_PAGE_GUIDE', 'ia-social-guide');
+if (!defined('IAS_PAGE_VOICE'))    define('IAS_PAGE_VOICE', 'ia-social-voice');
 
 /** The Auctions menu's parent slug. */
 if (!function_exists('ias_menu_parent')) {
@@ -40,6 +41,7 @@ if (!function_exists('ias_register_admin')) {
   function ias_register_admin(): void {
     $parent = ias_menu_parent();
     add_submenu_page($parent, 'Social Calendar', 'Social Calendar', 'manage_options', IAS_PAGE_CALENDAR, 'ias_calendar_render');
+    add_submenu_page($parent, 'Brand voice', 'Social Brand Voice', 'manage_options', IAS_PAGE_VOICE, 'ias_voice_render');
     add_submenu_page($parent, 'Social Settings', 'Social Settings', 'manage_options', IAS_PAGE_SETTINGS, 'ias_settings_render');
     add_submenu_page($parent, 'Social Log', 'Social Log', 'manage_options', IAS_PAGE_LOG, 'ias_log_render');
     add_submenu_page($parent, 'Social Guide', 'Social Guide', 'manage_options', IAS_PAGE_GUIDE, 'ias_guide_render');
@@ -56,6 +58,7 @@ add_filter('ia_ui_page_groups', function ($groups) {
     'menu_parent' => ias_menu_parent(),
     'items'       => [
       ['slug' => IAS_PAGE_CALENDAR, 'label' => 'Calendar'],
+      ['slug' => IAS_PAGE_VOICE,    'label' => 'Brand voice'],
       ['slug' => IAS_PAGE_SETTINGS, 'label' => 'Settings'],
       ['slug' => IAS_PAGE_LOG,      'label' => 'Log'],
       ['slug' => IAS_PAGE_GUIDE,    'label' => 'Guide'],
@@ -185,6 +188,35 @@ if (!function_exists('ias_admin_styles')) {
       .ias-pic-hole{border:2px dashed #2271b1;border-radius:6px;background:#f0f6fc;min-height:140px}
       .ias-pic-dirty{color:#996800}
       .ias-summary-scroll{overflow-x:auto}
+      /* Talk it over: the chat under the words. */
+      .ias-chat-log{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px 2px 8px}
+      .ias-msg{max-width:88%;border-radius:12px;padding:7px 11px;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+      .ias-msg b{display:block;font-size:11px;color:#50575e;font-weight:600;margin-bottom:1px}
+      .ias-msg-t{white-space:pre-wrap}
+      .ias-msg.me{align-self:flex-end;background:#e5effa;border-bottom-right-radius:3px}
+      .ias-msg.ai{align-self:flex-start;background:#f0f0f1;border-bottom-left-radius:3px}
+      .ias-msg.is-wait .ias-msg-t{color:#50575e;font-style:italic}
+      .ias-msg.err{align-self:flex-start;background:#fcf0f1;color:#8a2424}
+      .ias-msg-acts{margin-top:4px;font-size:12px}.ias-msg-note{color:#50575e}
+      .ias-msg-warn{margin-top:4px;font-size:12px;color:#8a2424}
+      .ias-msg-rule{margin-top:6px;font-size:12px;border-top:1px solid #dcdcde;padding-top:6px}
+      .ias-chat-quick{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+      .ias-chat-chip{border:1px solid #c3c4c7;background:#fff;border-radius:14px;padding:3px 10px;font-size:12px;cursor:pointer;color:#1d2327}
+      .ias-chat-chip:hover:not(:disabled){border-color:#2271b1;color:#2271b1}.ias-chat-chip:disabled{opacity:.5;cursor:default}
+      .ias-chat-row{display:flex;gap:8px;align-items:flex-end}
+      .ias-chat-row textarea{flex:1;min-width:0;resize:vertical;font-size:14px}
+      .ias-edit textarea.ias-flash{animation:iasflash 1.2s ease-out}
+      @keyframes iasflash{from{background:#fcf9e8;box-shadow:0 0 0 2px #dba617}to{background:#fff;box-shadow:none}}
+      .ias-post-preview.is-updating .ias-fb{opacity:.6;transition:opacity .2s}
+      /* Brand voice. */
+      .ias-diff{white-space:normal;overflow-wrap:anywhere;background:#f6f7f7;border:1px solid #dcdcde;border-radius:6px;padding:10px;margin:8px 0;font-size:13px;line-height:1.5;max-width:720px}
+      .ias-diff del,.ias-rule-diff del{background:#fcf0f1;color:#8a2424}.ias-diff ins,.ias-rule-diff ins{background:#edfaef;color:#00631a;text-decoration:underline}
+      .ias-rule-diff{list-style:none;margin:8px 0;padding:0}.ias-rule-diff li{margin:0 0 4px}
+      .ias-voice-table td{vertical-align:top}.ias-voice-table details summary{cursor:pointer;color:#2271b1}
+      .ias-voice-table form.ias-act{display:flex;margin:4px 0 0}
+      .ias-asks{list-style:disc;margin:0 0 0 20px}
+      .ias-suggest{border-color:#72aee6;background:#f0f6fc}
+      .ias-filters{line-height:2}
       @media (max-width:600px){.ias-pics{grid-template-columns:repeat(3,minmax(0,1fr))}.ias-cal{grid-template-columns:minmax(0,1fr)}.ias-day{min-height:0}.ias-day.sun{display:none}}
       @media (max-width:1100px){.ias-cols{grid-template-columns:minmax(0,1fr)}.ias-cal{grid-template-columns:repeat(2,minmax(0,1fr))}.ias-cal-head{display:none}.ias-day.blank{display:none}}
     </style>';

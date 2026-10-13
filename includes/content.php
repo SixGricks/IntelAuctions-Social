@@ -412,15 +412,28 @@ if (!function_exists('ias_pick_cta_kind')) {
   }
 }
 
+/**
+ * The rules every post is written under — voice, facts, bidding, fair
+ * housing — shared by the drafts and Talk it over (chat.php), so a chat can
+ * never write what a draft may not.
+ */
+if (!function_exists('ias_prompt_rules')) {
+  function ias_prompt_rules(): string {
+    return "VOICE: plainspoken and local, the way Intel talks at a sale. Short sentences. No stock marketing gloss (never \"don't miss out\", \"dream home\", \"nestled\", \"boasts\", \"stunning\", \"won't last\", \"opportunity of a lifetime\"). At most one emoji, and none is fine. Never two exclamation points in a row. No words in all caps except abbreviations.\n"
+      . "FACTS: use ONLY the facts in the FACTS block. Never invent or round acreage, prices, features, dates, times, names, phone numbers or history. If the post needs something the facts do not have, write [VERIFY: what is missing] in its place.\n"
+      . "BIDDING: when the facts say how bidding works, state it once, exactly as given — an in-person auction, or Intel Phone Bidding. Never imply buyers can choose between them, and never mention online or internet bidding.\n"
+      . "FAIR HOUSING: describe the property, never who should buy it or who the neighbours are. Never write things like \"perfect for families\", \"family-friendly\", \"safe neighborhood\", \"great for retirees\", or anything about race, religion, national origin, sex, disability or familial status.\n";
+  }
+}
+
 /** [system, user] for one post. $avoid: recent openers and CTA wordings not to repeat. */
 if (!function_exists('ias_prompt')) {
   function ias_prompt(array $post, array $facts_list, array $media, string $template, string $cta_kind, array $avoid): array {
+    $house = function_exists('ias_voice_rules_block') ? ias_voice_rules_block() : '';
     $system = ia_ai_brand_context() . "\n\n"
       . "You now write Facebook posts for Intel Auctions' own Facebook page.\n"
-      . "VOICE: plainspoken and local, the way Intel talks at a sale. Short sentences. No stock marketing gloss (never \"don't miss out\", \"dream home\", \"nestled\", \"boasts\", \"stunning\", \"won't last\", \"opportunity of a lifetime\"). At most one emoji, and none is fine. Never two exclamation points in a row. No words in all caps except abbreviations.\n"
-      . "FACTS: use ONLY the facts in the FACTS block. Never invent or round acreage, prices, features, dates, times, names, phone numbers or history. If the post needs something the facts do not have, write [VERIFY: what is missing] in its place.\n"
-      . "BIDDING: when the facts say how bidding works, state it once, exactly as given — an in-person auction, or Intel Phone Bidding. Never imply buyers can choose between them, and never mention online or internet bidding.\n"
-      . "FAIR HOUSING: describe the property, never who should buy it or who the neighbours are. Never write things like \"perfect for families\", \"family-friendly\", \"safe neighborhood\", \"great for retirees\", or anything about race, religion, national origin, sex, disability or familial status.\n"
+      . ias_prompt_rules()
+      . ($house !== '' ? $house . "\n" : '')
       . "LINKS AND TAGS: no URL or web address anywhere (the link goes in a comment), and no hashtags (they are added separately).\n"
       . "OUTPUT: JSON only, no code fences: {\"opener\": \"the first line, one sentence\", \"body\": \"the rest of the post before the call to action\", \"cta\": \"the call to action, one or two sentences\"}";
 
@@ -441,6 +454,11 @@ if (!function_exists('ias_prompt')) {
     foreach ((array) $media['images'] as $img) $pics[] = $img['kind'] === 'graphic' ? 'a graphic' : ($img['kind'] !== '' ? $img['kind'] : 'photo');
     if ($media['kind'] === 'video') $user .= "MEDIA: the property's video tour is attached.\n\n";
     elseif ($pics) $user .= 'MEDIA: ' . count($pics) . ' picture(s) attached (' . implode(', ', $pics) . "). Do not describe them as \"see the photos below\".\n\n";
+    // What a person asked for on this post in Talk it over holds through a rewrite.
+    $asks = function_exists('ias_chat_asks') && !empty($post['id']) ? ias_chat_asks((int) $post['id'], 8) : [];
+    if ($asks) $user .= "THE TEAM ASKED FOR THESE CHANGES TO THIS POST EARLIER — follow them where the facts allow:\n- " . implode("\n- ", array_map(function ($a) { return mb_substr((string) $a, 0, 300); }, $asks)) . "\n\n";
+    $examples = function_exists('ias_voice_examples_block') ? ias_voice_examples_block($post) : '';
+    if ($examples !== '') $user .= $examples . "\n\n";
     $user .= "FACTS:\n" . wp_json_encode($facts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     return [$system, $user];
   }
@@ -727,6 +745,7 @@ if (!function_exists('ias_generate_post')) {
       'media'         => $media,
       'sale_day'      => (string) (ias_post_meta($post)['sale_day'] ?? ''),
       'generated_by'  => 'claude',
+      'claude_text'   => $check['text'], // Claude's words as written: the brand-voice log compares a person's final words with them
     ];
 
     unset($flags['gen_error_at'], $flags['gen_error'], $flags['stale'], $flags['edited_by'], $flags['released_by']);

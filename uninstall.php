@@ -3,8 +3,9 @@
  * Intel Auctions Social — uninstall cleanup (and the catalog of everything
  * the plugin stores; a new option, meta key or file goes on this list).
  *
- * The spec asks for the two tables to be "removed cleanly on uninstall", so
- * deleting the plugin removes all of it: both tables, the settings and state
+ * The spec asks for the tables to be "removed cleanly on uninstall", so
+ * deleting the plugin removes all of it: every table (posts, history, and from
+ * 0.7.0 the Talk it over chat and the brand-voice log), the settings and state
  * options, the dispatcher's bookkeeping for this plugin's job, the per-image
  * photo grades and crops, the per-listing markers, the generated pictures in
  * uploads/intel-social/, and this plugin's entries in the toolkit's event log.
@@ -16,7 +17,7 @@ if (!defined('WP_UNINSTALL_PLUGIN')) exit;
 global $wpdb;
 
 // Tables.
-foreach (['posts', 'history'] as $name) {
+foreach (['posts', 'history', 'chat', 'voice'] as $name) {
   $wpdb->query('DROP TABLE IF EXISTS ' . $wpdb->prefix . 'ias_' . $name); // phpcs:ignore WordPress.DB.PreparedSQL
 }
 
@@ -25,9 +26,12 @@ foreach ([
   'ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_live_since',
   'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review',
   'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
+  'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', // Brand voice: the house rules, Claude's unsaved suggestion, when it last read the log
 ] as $key) {
   delete_option($key);
 }
+// Talk it over's per-post locks (ias_chat_lock_<post id>, written straight to the table like the push lock).
+$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
 // The toolkit dispatcher's bookkeeping for this plugin's job ids (ias_*).
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ia\\_job\\_last\\_run\\_ias\\_%' OR option_name LIKE 'ia\\_job\\_last\\_duration\\_ias\\_%' OR option_name LIKE 'ia\\_job\\_last\\_issue\\_ias\\_%' OR option_name LIKE 'ia\\_job\\_lock\\_ias\\_%'");
 

@@ -1,6 +1,6 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.6.0.** The canonical user documentation, rendered inside
+> **Documented version: 0.7.0.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
@@ -25,13 +25,14 @@ The plugin is built in phases. Each ships with publishing off and is checked bef
 | 4. Approval | The approval emails and their links, morning reminders, the Monday email | 0.4.0 |
 | 5. OneUp live | Pushing to OneUp, reading back, cancelling, Verify OneUp, corrections, the monthly summary | 0.5.0–0.5.2 |
 | More networks, pictures by hand | Instagram, X and LinkedIn planned and dry-run (not sent yet); add, reorder and remove a post's pictures; the keys in Settings; a cleaner post view | 0.6.0 |
+| Talk it over, brand voice | A chat on each post that rewrites its words as you talk; the log of final posts, house rules and examples that teach Claude the team's voice | 0.7.0 |
 | 6. The rest | Each post type switched on in turn | — |
 
 This version is **phase 5, built and switched off**: every current listing's posts are drafted, checked and planned to the minute every morning; the roundup and Results posts are emailed to DJ and Jacob for a yes; the Monday email goes out; and the pushes to OneUp, the hourly read-back, cancelling, corrections and the monthly summary are all in place. With the switches as they ship, what would go to OneUp is written to the log as a dry run and nothing reaches Facebook. Phase 5 is done when one week of Listing posts publishes as planned — **Going live** (§7) is the checklist for starting that week.
 
 ## 3. Installing it
 
-1. Make sure the **Intel Auctions Toolkit** is active at **4.66.0** or newer, with its **Anthropic API key** set (Auctions → AI Content): every draft and photo grade is a Claude call through the toolkit, and without the key nothing is written (§6).
+1. Make sure the **Intel Auctions Toolkit** is active at **4.66.0** or newer, with its **Anthropic API key** set (Intel SEO → Settings & Data → Services & Budgets from toolkit 4.67.0; Auctions → AI Content before it): every draft, photo grade and Talk it over answer is a Claude call through the toolkit, and without the key nothing is written (§6).
 2. Plugins → Add New → Upload Plugin, choose `intel-auctions-social.zip` from the latest release at github.com/SixGricks/IntelAuctions-Social/releases, then **Activate**. A zip of the repository's `main` branch (Code → Download ZIP) installs too, as `IntelAuctions-Social-main`; updates keep whichever folder it is in. Updates then arrive through WordPress like any plugin's: the updater takes the latest release that is not a pre-release (its tag with or without a `v`), installs the release file named exactly `intel-auctions-social.zip`, and falls back to the release's source zip when there is none.
 3. Paste the OneUp API key (from oneupapp.io → API access) into **Settings → OneUp → API key**. It is kept for this site only, never shown again or written to the log. Or define `INTEL_ONEUP_API_KEY` in `wp-config.php`, which wins over the one in Settings.
 4. In **Settings**, press **Check connection**, copy in the OneUp category id and the Facebook page's account id (for Intel: category **Intel**, page **Intel Auctions (Narvon)**), save, and press **Verify OneUp** (§7). Everything stays off until you turn it on.
@@ -40,7 +41,7 @@ If the toolkit is missing, too old, or failed to load part of itself, a yellow n
 
 ## 4. The screens
 
-Everything is under **Auctions → Social Calendar**, one menu item with four tabs. It stays in the menu in simple mode.
+Everything is under **Auctions → Social Calendar**, one menu item with five tabs: Calendar, Brand voice, Settings, Log and Guide. It stays in the menu in simple mode.
 
 ### Calendar
 
@@ -65,11 +66,12 @@ Click a post to open it. Under the title, one line says where it stands: its sta
 
 - **A bar across the top** when the post waits for something — a decision (with the reasons, any `[VERIFY: …]` marker picked out in red), an approval, a rewrite after the listing changed, photos, or a person who skipped it — with the buttons that settle it right beside the reason. A post that waits for nothing has no bar.
 - **Edit** (left): the post text and the first comment, full width, and **Save text**.
+- **Talk it over** (left, under Edit): a chat with Claude about this post — see below.
 - **Pictures** (left, under Edit): the post's pictures in posting order, square, each with its alt text underneath; the first one is marked **Lead**. Drag a picture to move it (or use ‹ ›), × takes it out of this post (not out of the Media Library), **+ Add pictures** opens the Media Library — any picture there, not only the listing's gallery. **Save pictures** lights up once something changed; a post carries at most 10. Pictures chosen by hand hold: a rewrite, or the listing changing, keeps them, and **Let the plugin choose again** hands the choice back. A roundup or Results post needs approving again with new pictures. Leaving the page with unsaved words or pictures asks first.
 - **Preview** (middle): the post as Facebook shows it — the page's name and time, the words with any `[VERIFY]` marked, up to five pictures as Facebook lays them out, and the first comment as a comment. With Instagram, X or LinkedIn switched on (§7), a tab for each shows the post as that network would get it.
 - **About this post**, **What would go to OneUp** (the request for each network, folded), **Approval** for a roundup or Results post, and **History** (newest first, with people's names) on the right.
 
-On a wide screen these are three columns; on a laptop, two (the preview over the details); on a phone, one, with the preview first. From the bar and the Edit card:
+On a wide screen these are three columns; on a laptop, two (the preview over the details); on a phone, one, with the preview first. The preview follows the words as they are typed — or as Claude changes them — before anything is saved. From the bar and the Edit card:
 
 - **Save text** — change the words (and the first comment). The new text is checked again like a fresh draft, and saving it counts as checking it against the listing as it is now. Once a person has edited a post, the plugin never rewrites it behind their back: if the listing changes afterwards, the post stops (**Needs a decision**, even if it was already approved) until you save it again, keep it as written, or press **Rewrite**.
 - **Rewrite** — have Claude write it again (at most once an hour per post; it counts against the monthly Claude cap). **Write it now** does the same for a post with no draft yet.
@@ -78,9 +80,33 @@ On a wide screen these are three columns; on a laptop, two (the preview over the
 - For a roundup or Results post: **Approve**, **Send for approval now** (before the hourly run would), **Send a reminder now**, and **Save and approve** beside Save text. Its **Approval** box shows who was emailed when and who said yes.
 - A post on OneUp shows its **On OneUp** box: its OneUp post id and time, and whether a person moved or edited it there. A post a person changed in OneUp is no longer edited here — change it in OneUp; the plugin keeps their version and never replaces it.
 
+#### Talk it over
+
+Say what you don't like about the post — "shorter", "less salesy", "lead with the acreage", "the auction starts at 10" — and Claude rewrites the text in the Edit box there and then; the preview follows. Press Enter (or **Send**) to send; the chips under the chat (**Shorter**, **Plainer — less salesy**, **Warmer**, **Lead with the auction date**, **Fix grammar only**) send themselves. Claude reads the words as they stand on your screen, your own unsaved edits included, and the conversation so far.
+
+- **Nothing is saved until you press Save text.** Then the words are checked like any edit (bidding, figures, fair housing, `[VERIFY]`), the post becomes a person's edit, and a roundup or Results post needs a fresh yes. The history notes it was talked over with Claude.
+- **Undo the last change** puts back the words from before Claude's last change; **Use this version** on any of Claude's answers brings that version back.
+- When a version would stop for a decision if saved (a fair-housing phrase, a wrong bidding method, a figure the listing doesn't have), Claude's answer says so under it — before you save.
+- Claude keeps to the same rules as a draft: the listing's facts, how bidding works, fair housing, the house rules. It will use a fact you give it that the listing lacks (and say the listing doesn't have it, so it can be fixed there too), but never one of its own, and not one the listing contradicts.
+- When you ask for something that should hold for every post ("never say nestled"), the answer offers **Add to the house voice** — one click puts it in the house rules (Brand voice, below).
+- **Start over** clears the conversation on screen; what you asked for stays with the post, a **Rewrite** of the post is told it, and Brand voice keeps it.
+- Each message is one Claude call against the monthly cap. A post gets at most **30 answers** (Settings → Talk it over; 0 takes the chat away); a double click is answered once, and one message at a time is answered per post. Without Claude (no key, or the cap spent) the chat is there but cannot send, and says why. A post that has gone to OneUp, or that a person changed in OneUp, has no chat.
+
 Above the grid, when the plan last ran and what it did; beside **Pause**, **Plan now**. Then, only when there is any, what waits on a person: **Needs a decision** (drafts that stopped and posts that failed, with why), **Waiting for approval** (roundup and Results posts emailed for a yes, how long ago and how many emails) and **Corrections to post as a comment** (§7). Under the grid: **Drafts** (how many planned posts have no draft yet, and **Write drafts now**, which writes up to four on the spot), **Waiting for photos** (Upcoming listings whose Listing post waits for a gallery), **Dropped in the last 30 days** (with each reason) and **Running late or squeezed** — one line when there are none.
 
 Across the top of every screen, the **switches strip** shows the master switch, dry run, pause, each post type and any other network switched on (always "dry run only" for now), so it is always plain whether anything can reach Facebook. **Pause all pushes** on the calendar stops every new post going to OneUp at once without deactivating the plugin; **Resume pushes** undoes it. Planning, drafting and the read-back carry on while paused, a cancelled listing's post is still taken off OneUp, and Facebook stays with this plugin (a pause must not let the toolkit's webhook post what this plugin posts on resume).
+
+### Brand voice
+
+How Claude learns to sound like Intel, in three parts.
+
+- **House rules** — short rules about style, one per line, up to 30: "Never use the word nestled.", "Open with the place, not with us." They go into every draft and every Talk it over answer, after the rules on facts, bidding and fair housing, which they never overrule. A rule that would put a fair-housing phrase in a post is not kept. They are a person's to write: type them here, or add one from the chat.
+- **The log of final posts** — every post a person saved or approved, and every post that went out (in the dry run too): whose words they are ("Edited by …", "Approved as written by …", "As Claude wrote it"), what was changed (open it for Claude's draft with the words taken out struck through and the words put in underlined) and what was asked for in Talk it over. Filter it to the posts edited, approved, gone out as Claude wrote them, starred, or not learned from.
+- **Examples** — the newest posts a person wrote, approved or starred are shown to Claude in each new draft as how the team sounds (Settings → Examples in each draft: 3; 0 for none), one of them as Claude's draft beside what the team changed it to. Never a post about the same listing, never one that stopped for a decision, never one with a `[VERIFY]` marker, and Claude is told never to take a fact or phrase from them.
+
+**The voice is learned only from what a person wrote or said yes to.** A post that went out as Claude wrote it is in the log but teaches nothing — unless you press **Star as a good example**. **Don't learn from this** takes any post out of the examples and out of Suggest updates.
+
+**Suggest updates from the log** has Claude read the newest posts that teach — what was changed and what was asked for — and suggest house rules. The suggestion appears above the rules with what it would add and take out, in a box you can edit; nothing changes until you press **Use these rules** (or **Discard the suggestion**). It is one Claude call; pressed again within 10 minutes with nothing new in the log, it says so instead of paying twice.
 
 ### Settings
 
@@ -91,13 +117,13 @@ Across the top of every screen, the **switches strip** shows the master switch, 
 - **Approvals and the weekly email**: who approves (dj@ and jacob@intelauctions.com), and when the weekly review email goes (Monday 7:00; any day but Sunday). Below the form: **Send the weekly email now**, **Check connection** and **Verify OneUp** (both need the master switch on; Verify OneUp shows the result of its last run and **passed for this page** once it has, §7), and when the read-back last ran and what it found.
 - **More networks**: Instagram, X and LinkedIn — a switch and the OneUp account id for each (§7). Off at install.
 - **Links back to the site**: the tracking tags on every link.
-- **Copy and pictures**: the brand font for the graphics, more fair-housing phrases to stop on, the size photos are graded at (bigger costs more), and how many drafts are written an hour — with **Claude**'s state beside them: ready, or stopped and why (no Anthropic key in the toolkit, or the month's cap spent), the tokens used this month against the toolkit's cap, and a link to where the toolkit keeps both (Intel SEO → Settings & Data → Services & Budgets, from toolkit 4.67.0).
+- **Copy and pictures**: the brand font for the graphics, more fair-housing phrases to stop on, the size photos are graded at (bigger costs more), how many drafts are written an hour, **Talk it over** (the most answers from Claude a post can have, 30; 0 takes the chat away) and **Examples in each draft** (3; 0 for none) — with **Claude**'s state beside them: ready, or stopped and why (no Anthropic key in the toolkit, or the month's cap spent), the tokens used this month against the toolkit's cap, and a link to where the toolkit keeps both (Intel SEO → Settings & Data → Services & Budgets, from toolkit 4.67.0).
 
 A second **Save settings** button sits under the safety switches, so the top of the page saves without scrolling.
 
 ### Log
 
-It opens with the **monthly summary** (§8) — this month so far and last month. Then everything the plugin did, newest first: each plan, draft, approval, push, read-back, drop and cancel, and every settings change. Each entry says what happened in words, who did it (by name; "the plugin" for the hourly run) and which post. **Show** narrows it to one kind; *Dry run* shows the exact requests that would have gone to OneUp, each one expandable, marked with the network for Instagram, X and LinkedIn. The log lives in the toolkit's event log, which keeps the newest 5,000 entries across both plugins.
+It opens with the **monthly summary** (§8) — this month so far and last month. Then everything the plugin did, newest first: each plan, draft, approval, push, read-back, drop and cancel, every Talk it over message (what was asked, and whether Claude changed the text), every change to the house rules, and every settings change. Each entry says what happened in words, who did it (by name; "the plugin" for the hourly run) and which post. **Show** narrows it to one kind; *Dry run* shows the exact requests that would have gone to OneUp, each one expandable, marked with the network for Instagram, X and LinkedIn. The log lives in the toolkit's event log, which keeps the newest 5,000 entries across both plugins.
 
 ### Guide
 
@@ -150,7 +176,9 @@ On top of the post type's brief go:
 - **one of five templates**, rotating: place first, date first, person first, question first, numbers first (never the template this property's last post used, and the least used this month first);
 - **the division's voice**: Farm & Home, Investment & Recreation, or Intel general (liquidations, equipment), from the listing's Auction Category;
 - **a call to action**, rotating: call the lead, join the email or call list, comment with a question, tag someone who'd want it, reply for the brochure (each where it fits the post type);
-- **the house style**: plainspoken and local, no stock marketing gloss, at most one emoji, never two exclamation points in a row, no links, no hashtags — and how bidding works stated once, exactly: an in-person auction or Intel Phone Bidding, never both, never online.
+- **the house style**: plainspoken and local, no stock marketing gloss, at most one emoji, never two exclamation points in a row, no links, no hashtags — and how bidding works stated once, exactly: an in-person auction or Intel Phone Bidding, never both, never online;
+- **the house rules and examples** from Brand voice (§4): the team's own rules after the ones above, and the newest posts a person wrote or approved, as how the team sounds;
+- **what the team asked for on this post** in Talk it over, when the post is rewritten.
 
 **No opening line, call to action or hashtag set repeats within 30 days.** The plugin keeps every one it has used (`{prefix}ias_history`), hands Claude the recent ones to avoid, and asks once more if one repeats anyway; a second repeat stops the post for a decision. Hashtags are chosen by the plugin, not Claude: `#IntelAuctions` plus two of the town, the county, the post type and the division, in a combination not used in 30 days.
 
@@ -189,6 +217,8 @@ Two things are fixed without asking: a web address in the text is removed (the l
 The plugin's job runs every hour on the toolkit's dispatcher (`ias_social`, listed with the toolkit's jobs): it updates the plan, then writes up to **8 drafts** (Settings), approve-first posts (Results, the roundup) first and then by day, for the next 30 days. The roundup is written on its Friday, once the week's announcements are in. Each draft is one Claude call (two if the first answer was unusable or repeated itself), each photo batch another, all counted against the toolkit's monthly Claude cap — when the cap is reached, drafting stops until next month or until the cap is raised.
 
 Nothing is paid for twice: a draft is rewritten only when the listing's facts behind it change (and nobody has edited it) — on the next run, at most once an hour — or when a person presses **Rewrite** (at most hourly). A failed call waits 6 hours before trying again. Until a draft whose facts changed has been rewritten, it is never pushed.
+
+**Talk it over** costs one call per message (the post, its facts and the conversation so far: a few thousand tokens), at most 30 a post; **Suggest updates** one call per press. The examples add roughly 250 tokens per example to each draft. All of it is counted against the same monthly cap, under its own feature name in the toolkit's usage (`social.chat`, `social.voice`).
 
 **Without Claude** — the toolkit has no Anthropic key, or the month's cap is spent — nothing is tried: no draft, no photo grade, no post marked failed. A notice under the switches on every Social screen says **Drafts are stopped** and why, and **Settings → Claude** shows it too, with the month's tokens against the cap. The plan carries on (posts without words are never pushed), and the next hourly run after the key is back, or the cap raised, writes the drafts.
 
@@ -304,14 +334,16 @@ Which post types and divisions earn their slots: for each, how many posts went o
 
 - `{prefix}ias_posts` — one row per post: its listing(s), type, status, priority, window, scheduled time, OneUp post id, content, the images it used, approvals and its history.
 - `{prefix}ias_history` — the openers, calls to action, hashtag sets, templates and images already used, for the no-repeat rules.
-- The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it); `ias_last_plan` and `ias_last_plan_summary` (the morning plan's day and counts); `ias_last_review` (the day the weekly email last went); `ias_live_since` (the day Listing posts first went to OneUp live), `ias_push_mode` (dry run or live, to notice the switch), `ias_readback_last` (the last read-back), `ias_oneup_verify` (the last Verify OneUp, its steps, and the page and key fingerprint it was run with), `ias_oneup_api_key` (the OneUp key when it is saved in Settings; not autoloaded) and, while a push run is going, `ias_push_lock`. Site visits for the monthly summary are cached for six hours (`ias_visits_*` transients).
-- On each post: its approvals — the hashed links (approver, round, expiry, used), the emails sent, and who approved it; once on OneUp, its OneUp post id and what was sent (the request's fingerprint, the text and time, the facts it carried — for corrections), an attempt whose answer has not come back yet, whether a person moved or edited it there, and any correction drafted for it; who chose its pictures by hand; and, for Instagram, X and LinkedIn, what the dry run logged.
+- `{prefix}ias_chat` — Talk it over: each message a person sent about a post (with the words as they stood) and each answer Claude gave (with the version it offered, and what would stop it).
+- `{prefix}ias_voice` — the log of final posts: one row per post a person saved or approved or that went out, with Claude's draft, the final words, who wrote or approved them, what they asked for, and its Learn from this and star switches.
+- The option `ias_settings` (every setting) and `ias_db_version`; `ias_installed_at` (the day it first ran — Results go back only a week before it); `ias_last_plan` and `ias_last_plan_summary` (the morning plan's day and counts); `ias_last_review` (the day the weekly email last went); `ias_live_since` (the day Listing posts first went to OneUp live), `ias_push_mode` (dry run or live, to notice the switch), `ias_readback_last` (the last read-back), `ias_oneup_verify` (the last Verify OneUp, its steps, and the page and key fingerprint it was run with), `ias_oneup_api_key` (the OneUp key when it is saved in Settings; not autoloaded), `ias_voice_notes` (the house rules), `ias_voice_suggest` (Claude's suggested rules, until saved or discarded) and `ias_voice_learned` (when Claude last read the log) and, while a push run or a Talk it over answer is going, `ias_push_lock` and `ias_chat_lock_<post id>`. Site visits for the monthly summary are cached for six hours (`ias_visits_*` transients).
+- On each post: its approvals — the hashed links (approver, round, expiry, used), the emails sent, and who approved it; once on OneUp, its OneUp post id and what was sent (the request's fingerprint, the text and time, the facts it carried — for corrections), an attempt whose answer has not come back yet, whether a person moved or edited it there, and any correction drafted for it; who chose its pictures by hand; Claude's words as it wrote them (for the brand-voice log) and where Talk it over last started over; and, for Instagram, X and LinkedIn, what the dry run logged.
 - On each listing: `_ias_announced_at` and `_ias_promoted_at` (the days it entered Recently Announced and Upcoming), `_ias_photos_at` (the day its photos were first seen), the panel's `_ias_sale_kind`, `_ias_parcels` and `_ias_brochure_cover`, and `_ias_posts_cancelled` while Cancel posts is on.
 - On each photo: `_ias_photo` (its grade, kind and alt text), `_ias_crops` (the three crops) and `_ias_dhash` (its fingerprint, for telling the same view twice).
 - Pictures in `uploads/intel-social/` (`graphics/` and `crops/`).
 - Its log entries in the toolkit's `{prefix}ia_events` table, as `ias.*` events.
 
-**Deleting the plugin removes all of it** — both tables, the options, its log entries, its per-image and per-listing data and its generated pictures. The listings themselves and anything already on Facebook are untouched. The full list is `uninstall.php`.
+**Deleting the plugin removes all of it** — its four tables, the options, its log entries, its per-image and per-listing data and its generated pictures. The listings themselves and anything already on Facebook are untouched. The full list is `uninstall.php`.
 
 ## 10. Requirements
 

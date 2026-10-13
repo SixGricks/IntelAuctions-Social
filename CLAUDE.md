@@ -25,6 +25,18 @@ it, and the spec stays verbatim, so they are recorded here:
   hash is what was sent.
 - **A person chooses pictures by hand** (Oct 13, 2026) and that holds
   (`flags.media_by`), like their edited words.
+- **Talk it over and the brand voice** (Oct 13, 2026: "a little AI chatbot I
+  can discuss the post with and have it edit real time, then keep a log of
+  final posts to learn the brand voice over time"). The chat (`chat.php`)
+  only ever changes the words on the person's screen — **Save text is the one
+  way a post's words change**, through the same edit path and checks. Every
+  turn is one `ia_ai_generate()` call (`social.chat`), behind
+  `ias_ai_blocker()`, a per-post lock, the repeat guard and the per-post cap
+  (`chat_turns`). The brand voice (`voice.php`) is **learned only from what a
+  person wrote, approved or starred**; house rules are a person's to save —
+  Claude's suggestions (`social.voice`) change nothing until then, and a rule
+  never overrules facts, bidding or fair housing (`ias_prompt_rules()` comes
+  first in every prompt, drafts and chat alike).
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude
@@ -123,8 +135,10 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   Keep as written, not by any other release of a hold — push readiness says no.
 - **The post view** (`ias_calendar_render_post()`): the bar
   (`ias_post_view_bar`) speaks for what the post waits for and carries its
-  buttons; Edit and Pictures (`ias_post_view_main`), the preview per network
-  (`ias_post_view_preview`), the details (`ias_post_view_side`). One primary
+  buttons; Edit and Pictures (`ias_post_view_main`, with Talk it over between
+  them on `ias_post_view_after_edit`), the preview per network
+  (`ias_post_view_preview`, redrawn unsaved through `ias_preview_html()`),
+  the details (`ias_post_view_side`). One primary
   button at rest. Show people by name (`ias_actor_name()`), never a login.
   Screens print `ias_header_end()` after the header so notices land under it.
 - **Never post on Sunday, never send an approval email or reminder on Sunday.**

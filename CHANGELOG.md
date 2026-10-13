@@ -1,5 +1,37 @@
 # Intel Auctions Social changelog
 
+## 0.7.0 (2026-10-13) — Talk it over, and the brand voice (every switch still off)
+DJ, after reading more previews: "a little AI chatbot I can discuss the post
+with and have it edit real time, then keep a log of final posts to learn the
+brand voice over time."
+- **Talk it over.** A chat under each post's text: say what you don't like and
+  Claude rewrites the words in the editor as you talk, with the preview
+  following unsaved. Undo, Use this version, quick asks (Shorter, Plainer,
+  Warmer, Lead with the auction date, Fix grammar only), and a warning when a
+  version would stop for a decision if saved. Nothing is saved until Save
+  text, which checks it like any edit. Claude works under the drafts' rules
+  (now shared, `ias_prompt_rules()`) and the house rules; it may use a fact
+  the person gives it — saying the listing lacks it — never one of its own.
+  One metered `social.chat` call per message, behind the no-Claude check, a
+  per-post lock, a repeat guard (a double click is answered once) and at most
+  30 answers a post (Settings → Talk it over). Kept in `{prefix}ias_chat`;
+  what was asked follows the post into a Rewrite.
+- **Brand voice** (new tab). House rules, up to 30, in every draft and chat
+  after facts, bidding and fair housing (a fair-housing phrase is refused as a
+  rule); **Add to the house voice** from the chat. The log of final posts
+  (`{prefix}ias_voice`): every post a person saved or approved and every post
+  that went out, Claude's draft beside the final words with a word-by-word
+  diff, and what was asked in the chat. The newest posts a person wrote,
+  approved or starred go into each new draft as examples (Settings: 3; never
+  the same listing's, a held one or a marked one); a post that went out
+  unread teaches nothing unless starred. **Suggest updates from the log**:
+  one `social.voice` call; Claude's rules wait for a person to save them.
+- Each draft now keeps Claude's words as written (`content.claude_text`).
+- Guide: §3 named the old place for the Anthropic key; it is Services &
+  Budgets from toolkit 4.67.0.
+- DB 0.2.0 (two new tables); uninstall removes them, the three `ias_voice_*`
+  options and the chat locks.
+
 ## 0.6.0 (2026-10-13) — More networks, pictures by hand, a cleaner post view (every switch still off)
 From DJ's first look at a real draft and the UI review that followed:
 - **Pictures by hand.** Each post's page has a picture editor: add any

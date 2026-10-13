@@ -27,6 +27,8 @@ if (!function_exists('ias_log_events')) {
       'skipped'    => 'A person skipped a post',
       'edited'     => 'A person changed a post\'s text',
       'approved'   => 'A person approved a post',
+      'chat'       => 'A person talked a post over with Claude (Talk it over)',
+      'voice'      => 'The house voice rules changed, or Claude suggested some',
       'emailed'    => 'An approval email or reminder went out',
       'review'     => 'The Monday review email went out',
       'dryrun'     => 'Dry run: the exact payload that would have gone to OneUp',

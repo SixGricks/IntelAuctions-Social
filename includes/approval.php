@@ -129,6 +129,7 @@ if (!function_exists('ias_approve')) {
     ias_post_update($post_id, ['status' => 'approved', 'approvals' => $a, 'approved_by' => mb_substr($by, 0, 100), 'approved_at' => ias_now_sql(), 'note' => '']);
     ias_post_trail($post_id, 'Approved by ' . $by . ' (' . $via . ')', $by);
     ias_log('approved', (int) $p['listing_id'], ['post' => $post_id, 'type' => $p['type'], 'summary' => 'Approved by ' . $by . ' (' . $via . ')'], $by);
+    if (function_exists('ias_voice_record')) ias_voice_record($post_id, 'kept'); // a person said yes to these words: the brand-voice log keeps them
 
     // On the plan straight away — the approval was the yes, so no 48-hour wait.
     if (function_exists('ias_plan_run')) {

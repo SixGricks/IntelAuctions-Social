@@ -84,6 +84,8 @@ if (!function_exists('ias_settings_sanitize')) {
     $int('jitter_minutes', 0, 59);
     $int('review_day', 1, 6); // never on Sunday
     $int('review_hour', 0, 23);
+    $int('chat_turns', 0, 100);
+    $int('voice_examples', 0, 6);
     $int('generate_per_run', 0, 30);
 
     // Posting windows: rows of start–end, each a real time with start before end.
@@ -302,6 +304,8 @@ if (!function_exists('ias_settings_render')) {
       . (function_exists('ia_ai_key_settings_url') ? ' <a href="' . esc_url(ia_ai_key_settings_url()) . '">' . ($why === '' ? 'Change the key or the cap' : 'Set the key and the cap') . '</a>' : '')
       . ($month !== null ? '<br><span class="description">Drafts and photo grading use the toolkit\'s Anthropic key and its monthly cap (Intel SEO → Settings & Data → Services & Budgets): ' . esc_html(number_format($month)) . ' tokens used this month' . ($cap > 0 ? ' of ' . esc_html(number_format($cap)) : ', no cap') . ', across every feature.</span>' : '') . '</td></tr>';
     echo '<tr><th scope="row">Drafts per run</th><td>' . $num('ias[generate_per_run]', $s['generate_per_run'], 0, 30, 'drafts an hour at most') . '<br><span class="description">Each is one Claude call against the toolkit\'s monthly cap. 0 stops new drafts.</span></td></tr>';
+    echo '<tr><th scope="row">Talk it over</th><td>' . $num('ias[chat_turns]', $s['chat_turns'], 0, 100, 'answers from Claude per post at most') . '<br><span class="description">The chat beside each post\'s text. Every message is one Claude call against the monthly cap; nothing changes until you press Save text. 0 takes the chat away.</span></td></tr>';
+    echo '<tr><th scope="row">Examples in each draft</th><td>' . $num('ias[voice_examples]', $s['voice_examples'], 0, 6, 'posts') . '<br><span class="description">The newest posts a person wrote, approved or starred on <a href="' . esc_url(ias_admin_url(IAS_PAGE_VOICE)) . '">Brand voice</a>, shown to Claude as how the team sounds (about 250 tokens each). 0 shows none.</span></td></tr>';
     echo '</table>';
 
     /** Later phases add their sections here. */

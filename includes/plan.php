@@ -221,6 +221,7 @@ if (!function_exists('ias_push_run_locked')) {
           ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'published_at' => $at, 'note' => '']);
           ias_post_trail((int) $p['id'], 'Its time came on OneUp');
         }
+        if (function_exists('ias_voice_record')) ias_voice_record((int) $p['id'], 'out'); // the log of final posts
         $out['published']++;
         continue;
       }
