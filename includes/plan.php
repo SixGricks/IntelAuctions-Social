@@ -196,7 +196,17 @@ if (!function_exists('ias_push_run_locked')) {
     $mode = ias_push_mode();
     if (function_exists('ias_push_mode_changed')) ias_push_mode_changed($mode);
     // What a person did in OneUp since the last run comes first: their delete or edit is never overwritten.
+    unset($GLOBALS['ias_readback_lists']); // this run's lists only
     if (function_exists('ias_readback_run') && !ias_oneup_blockers(false)) $out['readback'] = ias_readback_run();
+    // Google's own read-back, on the same lists (gbp.php): its posts a person changed in OneUp first, too.
+    if (function_exists('ias_gbp_readback')) {
+      ias_gbp_mode_changed(ias_gbp_mode());
+      $g = ias_gbp_readback();
+      if ($g) {
+        if (is_array($out['readback']) && $out['readback']['ok']) { $out['readback']['changes'] = array_merge($out['readback']['changes'], $g); ias_readback_note($out['readback']); }
+        else $out['readback'] = ['ok' => true, 'error' => '', 'changes' => $g];
+      }
+    }
     $now = ias_now();
     $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
     $nowsql = $now->format('Y-m-d H:i:s');
@@ -278,7 +288,12 @@ if (!function_exists('ias_push_run_locked')) {
         $out['deleted']++;
       }
     }
-    if (function_exists('ias_push_channels_run')) $out['dryrun'] += ias_push_channels_run(); // Instagram, X, LinkedIn: the dry run only, for now
+    if (function_exists('ias_gbp_run')) { // Google, sent for real once its own switches allow (gbp.php)
+      $g = ias_gbp_run();
+      foreach (['pushed', 'deleted', 'failed'] as $k) $out[$k] += $g[$k];
+      $out['skipped'] = array_merge($out['skipped'], $g['skipped']);
+    }
+    if (function_exists('ias_push_channels_run')) $out['dryrun'] += ias_push_channels_run(); // Instagram, X, LinkedIn — and Google until it is live: the dry run
     return $out;
   }
 }

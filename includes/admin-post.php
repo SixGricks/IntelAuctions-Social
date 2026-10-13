@@ -338,7 +338,7 @@ add_action('ias_post_view_main', function (array $p): void {
       echo '<p><label for="ias-comment"><strong>First comment</strong></label><textarea id="ias-comment" name="ias_comment" rows="3" class="large-text">' . esc_textarea((string) $c['first_comment']) . '</textarea></p>';
     }
     if (!empty($flags['fixes'])) echo '<p class="description">' . esc_html(implode(' ', (array) $flags['fixes'])) . '</p>';
-    echo '<p class="description"><strong>Save changes</strong> saves everything changed here — the words, the first comment, the pictures and their alt text — and never approves. It checks them again (bidding, figures, fair housing, the listing link in the comment).' . ($p['lane'] === 'A' ? ' Changed words or pictures need a new yes.' : '') . (ias_channels_extra_on() ? ' Instagram, X and LinkedIn follow these words.' : '') . '</p></form>';
+    echo '<p class="description"><strong>Save changes</strong> saves everything changed here — the words, the first comment, the pictures and their alt text — and never approves. It checks them again (bidding, figures, fair housing, the listing link in the comment).' . ($p['lane'] === 'A' ? ' Changed words or pictures need a new yes.' : '') . (ias_channels_extra_on() ? ' ' . implode(', ', array_map(function ($ch) { return (string) (ias_channel($ch)['short'] ?? ias_channel($ch)['label']); }, ias_channels_extra_on())) . ' follow' . (count(ias_channels_extra_on()) === 1 ? 's' : '') . ' these words.' : '') . '</p></form>';
     // The foot sits outside the form (Save points at it with form="…"), so Rewrite and Skip post their own forms.
     echo '<div class="ias-foot"><div class="ias-actions"><button form="ias-text-form" class="button ias-save' . ($primary ? ' button-primary' : '') . '" data-ia-busy="Saving…">Save changes</button>'
       . ($p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting', 'held'], true) ? ' <button form="ias-text-form" class="button" name="ias_and_approve" value="1">Save and approve</button>' : '')
@@ -401,10 +401,11 @@ add_action('ias_post_view_preview', function (array $p): void {
     $urls = !empty($req['params']['image_url']) ? explode('~~', (string) $req['params']['image_url']) : [];
     $alts = (array) ($req['alt'] ?? []);
     echo '<div class="ias-net-panel" data-net="' . esc_attr($ch) . '"' . ($i === 0 ? '' : ' hidden') . '>';
-    echo '<div class="ias-fb ias-fb-' . esc_attr($ch) . '"><div class="ias-fb-head">' . $avatar() . '<div><div class="ias-fb-name">' . esc_html($ch === 'instagram' ? 'intelauctions' : 'Intel Auctions') . '</div><div class="ias-fb-time">' . esc_html($when) . ($ch === 'facebook' ? ' · Public' : '') . '</div></div></div>';
+    $at = $ch === 'gbp' && !empty($req['params']['scheduled_date_time']) ? date_i18n('D M j, g:i a', strtotime((string) $req['params']['scheduled_date_time'])) : $when; // Google: a minute after Facebook
+    echo '<div class="ias-fb ias-fb-' . esc_attr($ch) . '"><div class="ias-fb-head">' . $avatar() . '<div><div class="ias-fb-name">' . esc_html($ch === 'instagram' ? 'intelauctions' : 'Intel Auctions') . '</div><div class="ias-fb-time">' . esc_html($at) . ($ch === 'facebook' ? ' · Public' : '') . '</div></div></div>';
     $photos = '';
     if ($urls) {
-      $show = $ch === 'facebook' ? 5 : ($ch === 'instagram' ? 1 : count($urls));
+      $show = $ch === 'facebook' ? 5 : (in_array($ch, ['instagram', 'gbp'], true) ? 1 : count($urls));
       foreach (array_slice($urls, 0, $show) as $k => $u) {
         $more = ($ch === 'facebook' && $k === $show - 1 && count($urls) > $show) ? '<span class="more">+' . (count($urls) - $show) . '</span>' : ''; // Instagram says "1 of N" instead
         $photos .= '<a href="' . esc_url($u) . '" target="_blank" rel="noopener"><img src="' . esc_url($u) . '" alt="' . esc_attr((string) ($alts[$k] ?? '')) . '">' . $more . '</a>';
@@ -414,7 +415,11 @@ add_action('ias_post_view_preview', function (array $p): void {
       $photos = '<div class="ias-fb-text"><a href="' . esc_url((string) $c['media']['video_url']) . '" target="_blank" rel="noopener">▶ ' . esc_html((string) $c['media']['video_url']) . '</a></div>';
     }
     $words = '<div class="ias-fb-text">' . ias_mark_verify($body) . '</div>';
-    echo $ch === 'instagram' ? $photos . $words : $words . $photos; // Instagram: the picture first, the caption under it
+    if ($ch === 'gbp') { // Google: the picture, the words, then its button
+      echo $photos . $words . (!empty($req['params']['cta_button_url']) ? '<div class="ias-gbp-cta"><a href="' . esc_url((string) $req['params']['cta_button_url']) . '" target="_blank" rel="noopener">Learn more</a></div>' : '');
+    } else {
+      echo $ch === 'instagram' ? $photos . $words : $words . $photos; // Instagram: the picture first, the caption under it
+    }
     if ($ch === 'facebook' && !empty($req['params']['first_comment'])) {
       echo '<div class="ias-fb-comment">' . $avatar() . '<div class="ias-fb-bubble"><b>Intel Auctions</b>' . ias_mark_verify((string) $req['params']['first_comment']) . '</div></div><div class="ias-fb-label">First comment</div>';
     }
@@ -423,7 +428,9 @@ add_action('ias_post_view_preview', function (array $p): void {
       $len = ias_x_length($body);
       echo '<p class="description">' . (int) $len . ' of 280 characters (a web address counts as 23).</p>';
     }
-    if ($ch !== 'facebook') {
+    if ($ch === 'gbp') {
+      echo ias_gbp_post_line($p, $req);
+    } elseif ($ch !== 'facebook') {
       $problems = ias_channel_problems($req, $ch);
       echo '<p class="description">Made from the Facebook words' . ($ch === 'x' ? ' and the listing\'s facts' : '') . '. Not sent — ' . esc_html((string) ias_channel($ch)['label']) . ' is in the dry run only.' . ($problems ? ' <strong>' . esc_html(ucfirst(implode('; ', $problems))) . '.</strong>' : '') . '</p>';
     }

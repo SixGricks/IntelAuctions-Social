@@ -139,8 +139,12 @@ t_eq(0, count(array_filter($mail(), function ($x) { return strpos((string) $x['s
 $errors = [];
 set_error_handler(function ($no, $str, $file, $line) use (&$errors) { $errors[] = "{$str} at " . basename($file) . ":{$line}"; return true; });
 $_GET = ['page' => IAS_PAGE_CALENDAR];
+ias_post_update($pid2, ['status' => 'waiting']);
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
-t_ok(strpos($html, 'Waiting for approval') !== false, 'the calendar lists the posts waiting for approval');
+ias_post_update($pid2, ['status' => 'approved']);
+t_ok(strpos($html, '<h3>Waiting for approval <span class="description">(1)</span></h3>') !== false, 'the calendar lists the posts waiting for approval');
+ob_start(); ias_calendar_render(); $html2 = ob_get_clean();
+t_ok(strpos($html2, '<h3>Waiting for approval') === false, '…and has no such list (nor that key) when none is waiting');
 t_ok(stripos($html, 'Facebook Event') === false && strpos($html, 'FB Events') === false, '…and offers no Facebook Events (DJ dropped them)');
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $pid];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();

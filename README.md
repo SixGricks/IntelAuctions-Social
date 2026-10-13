@@ -1,8 +1,8 @@
 # Intel Auctions Social
 
-A WordPress plugin (**v0.8.0**) for intelauctions.com, the sister of the
+A WordPress plugin (**v0.9.0**) for intelauctions.com, the sister of the
 [Intel Auctions Toolkit](https://github.com/SixGricks/IntelAuction). It turns
-each auction into a set of Facebook posts, plans them three a day through OneUp, and keeps
+each auction into a set of Facebook posts (and Google Business Profile posts, once switched on), plans them three a day through OneUp, and keeps
 a person in the loop on the posts that carry hard facts.
 
 - **What it is built to do:** [`docs/build-spec.md`](docs/build-spec.md) — DJ's spec, verbatim.
@@ -11,13 +11,13 @@ a person in the loop on the posts that carry hard facts.
 - **What changed:** [`CHANGELOG.md`](CHANGELOG.md).
 - **Working on it:** [`CLAUDE.md`](CLAUDE.md) (conventions) and [`tests/README.md`](tests/README.md).
 
-**Needs** the Intel Auctions Toolkit 4.66.0 or newer with its Anthropic API key set (every draft is a Claude call through it), PHP 7.4+ and WordPress 5.3+. Without
+**Needs** the Intel Auctions Toolkit 4.66.0 or newer (4.68.0 for Google posts to be sent) with its Anthropic API key set (every draft is a Claude call through it), PHP 7.4+ and WordPress 5.3+. Without
 the toolkit it shows a notice and does nothing.
 
 **Install:** upload `intel-auctions-social.zip` from the latest GitHub release (Plugins → Add
 New → Upload) and activate. Updates then arrive through WordPress (`includes/updater.php`,
-from this repo's latest non-prerelease). Put the OneUp API key in wp-config as
-`INTEL_ONEUP_API_KEY`.
+from this repo's latest non-prerelease). Put the OneUp API key in Settings → OneUp (or in
+wp-config as `INTEL_ONEUP_API_KEY`), then **Look up accounts** and choose the page from the list.
 
 **Safe by default:** the master switch and every post type are off
 at install and dry run is on, so nothing can reach Facebook until DJ turns a switch on.
@@ -43,9 +43,10 @@ at install and dry run is on, so nothing can reach Facebook until DJ turns a swi
 | `includes/checks.php`, `fairhousing.php` | What every draft is checked for (pure) |
 | `includes/scheduler.php` | The scheduler: days and minutes for every post (pure) |
 | `includes/plan.php` | The morning plan, the pushes (dry run or live), cancelling at once, Cancel posts |
-| `includes/oneup.php` | The Facebook renderer, the OneUp client, the switches that gate it |
-| `includes/channels.php` | Instagram, X and LinkedIn: their rules, renderers and dry run (provisioned, not sent yet) |
-| `includes/live.php` | Phase 5: sending to OneUp, taking back, the hourly read-back, Verify OneUp, corrections |
+| `includes/oneup.php` | The Facebook renderer, the OneUp client, the switches that gate it, the directory Look up accounts keeps |
+| `includes/channels.php` | Google, Instagram, X and LinkedIn: their rules, words, renderers and dry run |
+| `includes/live.php` | Phase 5: sending to OneUp, taking back, the hourly read-back, Verify OneUp (and for Google), corrections |
+| `includes/gbp.php` | Google Business Profile sent for real: its switches, record, sends, take-backs and read-back |
 | `includes/summary.php` | The monthly summary (with site visits from Google Analytics through the toolkit) |
 | `includes/approval.php` | Lane A approval emails, the signed one-time links and their page, reminders, the Monday email |
 | `includes/admin*.php` | The Social Calendar (and each post's view), Brand voice, Settings, Log and Guide screens, and the listing panel |

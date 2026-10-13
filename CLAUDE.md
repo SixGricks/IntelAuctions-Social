@@ -54,6 +54,18 @@ it, and the spec stays verbatim, so they are recorded here:
   (`ias_comment_holds()`: fair housing, `[VERIFY]`, the listing link). The
   first comment's lead-ins are a setting (`comment_leads`); Results says
   "View the full listing", never "how it sold".
+- **Google Business Profile is sent from here, and ids are chosen, not typed**
+  (Oct 13, 2026: "why … am i entering the data rather then just having the
+  system call, respond, and give me a choice" and "I want to be able to
+  schedule GBM posts from here"). Look up accounts keeps OneUp's directory
+  (`ias_oneup_directory`) and Settings offers lists from it. Google
+  (`includes/gbp.php`) is the second live network: its own switch, its own
+  Verify (`ias_gbp_verify`), its own record (`flags.gbp`, `gbp_sending`,
+  `gbp_off`, `gbp_locked`) — never Facebook's — and every Facebook rule on
+  those books. It is sent only with toolkit 4.68.0+, and answers
+  `ia_social_gbp_managed` so the toolkit's own Google post stands down; the
+  two must never both post Google. Google's words come from Facebook's
+  (`ias_channel_text()`: no hashtags, no phone numbers), never a Claude call.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

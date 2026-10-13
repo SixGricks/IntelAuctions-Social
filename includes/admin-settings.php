@@ -47,6 +47,14 @@ if (!function_exists('ias_settings_sanitize')) {
     $networks = [];
     foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
       $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
+      if ($ch === 'gbp') {
+        $networks[$ch]['live'] = !empty($in['networks'][$ch]['live']);
+        $all = array_keys(ias_settings_defaults()['types']);
+        $networks[$ch]['types'] = isset($in['networks'][$ch]['types']) ? array_values(array_intersect($all, array_map('strval', (array) $in['networks'][$ch]['types']))) : [];
+        // The location's name in OneUp's lists (the read-back finds its posts by it): from the directory, never typed.
+        $acct = function_exists('ias_oneup_directory_account') ? ias_oneup_directory_account($networks[$ch]['account']) : null;
+        $networks[$ch]['name'] = $acct ? (string) $acct['name'] : ($networks[$ch]['account'] === (string) ($old['networks'][$ch]['account'] ?? '') ? (string) ($old['networks'][$ch]['name'] ?? '') : '');
+      }
     }
     $out['networks'] = $networks;
     $types = [];
@@ -112,8 +120,17 @@ if (!function_exists('ias_settings_sanitize')) {
 
     $out['oneup_category_id']  = sanitize_text_field((string) ($in['oneup_category_id'] ?? ''));
     $out['oneup_account_id']   = sanitize_text_field((string) ($in['oneup_account_id'] ?? ''));
-    // The page's name in OneUp's lists is looked up (Check connection, Verify OneUp), never typed: a new id forgets it.
-    $out['oneup_account_name'] = $out['oneup_account_id'] === (string) ($old['oneup_account_id'] ?? '') ? (string) ($old['oneup_account_name'] ?? '') : '';
+    // The page's name in OneUp's lists is looked up (Look up accounts, Verify OneUp), never typed: a new id forgets it.
+    $acct = function_exists('ias_oneup_directory_account') ? ias_oneup_directory_account($out['oneup_account_id'], $out['oneup_category_id']) : null;
+    $out['oneup_account_name'] = $acct ? (string) $acct['name'] : ($out['oneup_account_id'] === (string) ($old['oneup_account_id'] ?? '') ? (string) ($old['oneup_account_name'] ?? '') : '');
+    // An account OneUp lists under another category than the one chosen would be refused (a post names both).
+    if (function_exists('ias_oneup_directory') && ias_oneup_directory() && $out['oneup_category_id'] !== '') {
+      $where = ['Facebook page' => $out['oneup_account_id']];
+      foreach (($out['networks'] ?? []) as $ch => $n) if ((string) $n['account'] !== '') $where[(string) ias_channel($ch)['label'] . ' account'] = (string) $n['account'];
+      foreach ($where as $label => $id) {
+        if ($id !== '' && ias_oneup_directory_account($id) && !ias_oneup_directory_account($id, $out['oneup_category_id'])) $problems[] = 'The ' . $label . ' chosen is not in the chosen OneUp category — choose them again after picking the category.';
+      }
+    }
     $out['oneup_calendar_url'] = esc_url_raw((string) ($in['oneup_calendar_url'] ?? ''));
     $out['utm_source'] = sanitize_key((string) ($in['utm_source'] ?? 'facebook')) ?: 'facebook';
     $out['utm_medium'] = sanitize_key((string) ($in['utm_medium'] ?? 'social')) ?: 'social';
@@ -142,6 +159,84 @@ if (!function_exists('ias_settings_sanitize')) {
       $problems[] = 'Dry run is off, but nothing is sent to OneUp until Verify OneUp (below) passes for this page.';
     }
     return [$out, $problems];
+  }
+}
+
+/**
+ * The choices for the OneUp fields, from the directory Look up accounts
+ * keeps: field id => <option>s. $chosen: 'category', and each network's
+ * account id ('facebook', 'instagram', …) — what is selected. An account is
+ * offered only to the network of its type, grouped by category (the page
+ * hides the other categories'); a saved id OneUp did not list stays, marked;
+ * a category with exactly one account of a network's type offers it ready
+ * chosen when nothing is saved — still only saved by Save settings.
+ */
+if (!function_exists('ias_oneup_pick_options')) {
+  function ias_oneup_pick_options(array $chosen): array {
+    $dir = ias_oneup_directory();
+    $cats = (array) ($dir['categories'] ?? []);
+    $cat = (string) ($chosen['category'] ?? '');
+    $opt = function (string $value, string $label, bool $sel, string $extra = '') {
+      return '<option value="' . esc_attr($value) . '"' . ($sel ? ' selected' : '') . $extra . '>' . esc_html($label) . '</option>';
+    };
+    $out = [];
+    $html = $opt('', $cats ? '— choose the category —' : '— look up accounts first —', $cat === '');
+    $known = false;
+    foreach ($cats as $c) {
+      $types = array_values(array_unique(array_filter(array_map(function ($a) { return (string) $a['type']; }, (array) $c['accounts']))));
+      $html .= $opt((string) $c['id'], ($c['name'] !== '' ? $c['name'] : 'Category ' . $c['id']) . ' — ' . count((array) $c['accounts']) . ' account' . (count((array) $c['accounts']) === 1 ? '' : 's') . ($types ? ': ' . implode(', ', $types) : ''), (string) $c['id'] === $cat);
+      if ((string) $c['id'] === $cat) $known = true;
+    }
+    if ($cat !== '' && !$known) $html .= $opt($cat, 'Category ' . $cat . ' (saved — not in OneUp\'s list)', true);
+    $out['ias-cat'] = $html;
+
+    foreach (array_keys(ias_channels()) as $ch) {
+      $id = (string) ($chosen[$ch] ?? '');
+      $label = (string) ias_channel($ch)['label'];
+      $groups = '';
+      $found = false;
+      $sole = '';
+      foreach ($cats as $c) {
+        $mine = array_values(array_filter((array) $c['accounts'], function ($a) use ($ch) { return ias_oneup_type_is($ch, (string) $a['type']); }));
+        if (!$mine) continue;
+        if ((string) $c['id'] === $cat && count($mine) === 1) $sole = (string) $mine[0]['id'];
+        $items = '';
+        foreach ($mine as $a) {
+          $items .= $opt((string) $a['id'], (string) ($a['name'] !== '' ? $a['name'] : $a['id']), false);
+          if ((string) $a['id'] === $id && ((string) $c['id'] === $cat || $cat === '')) $found = true;
+        }
+        $groups .= '<optgroup label="' . esc_attr($c['name'] !== '' ? $c['name'] : 'Category ' . $c['id']) . '" data-cat="' . esc_attr((string) $c['id']) . '">' . $items . '</optgroup>';
+      }
+      $pick = $id !== '' ? $id : $sole;
+      // Mark the one chosen inside its own category's group (the same account can sit in two categories).
+      if ($pick !== '') {
+        $groups = preg_replace_callback('~(<optgroup [^>]*data-cat="([^"]*)">)(.*?)</optgroup>~s', function ($m) use ($pick, $cat) {
+          if ($cat !== '' && $m[2] !== esc_attr($cat)) return $m[0];
+          return $m[1] . str_replace('<option value="' . esc_attr($pick) . '">', '<option value="' . esc_attr($pick) . '" selected>', $m[3]) . '</optgroup>';
+        }, $groups);
+      }
+      $none = $ch === 'facebook' ? '— choose the Facebook page —' : '— none —';
+      $html = $opt('', $none, $pick === '');
+      if ($id !== '' && !$found) {
+        $acct = ias_oneup_directory_account($id);
+        $html .= $opt($id, ($acct ? $acct['name'] . ' (in another category)' : $label . ' account ' . $id . ' (saved — not in OneUp\'s list)'), true);
+      }
+      $out[$ch === 'facebook' ? 'ias-acct' : 'ias-net-' . $ch] = $html . $groups;
+    }
+    return $out;
+  }
+}
+
+/** A line about the last lookup, for under the OneUp fields. */
+if (!function_exists('ias_oneup_directory_line')) {
+  function ias_oneup_directory_line(): string {
+    $dir = ias_oneup_directory();
+    if (!$dir) return 'Not looked up yet: press <strong>Look up accounts</strong> and OneUp\'s categories and accounts appear in the lists to choose from.';
+    $n = 0;
+    foreach ((array) $dir['categories'] as $c) $n += count((array) $c['accounts']);
+    $line = 'From OneUp ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $dir['at']))) . ': ' . count((array) $dir['categories']) . ' categor' . (count((array) $dir['categories']) === 1 ? 'y' : 'ies') . ', ' . $n . ' account' . ($n === 1 ? '' : 's') . '.';
+    if (!empty($dir['problems'])) $line .= ' <strong>' . esc_html(ucfirst(implode('; ', (array) $dir['problems']))) . '.</strong>';
+    return $line;
   }
 }
 
@@ -225,17 +320,41 @@ if (!function_exists('ias_settings_render')) {
         . '<br><span class="description">From oneupapp.io → API access. Saved for this site only, never shown again or written to the log. A new key means pressing <strong>Verify OneUp</strong> again before anything is sent. (Or set <code>INTEL_ONEUP_API_KEY</code> in wp-config.php, which wins.)</span>';
     }
     echo '</td></tr>';
-    echo '<tr><th scope="row"><label for="ias-cat">Category id</label></th><td><input id="ias-cat" type="text" name="ias[oneup_category_id]" value="' . esc_attr((string) $s['oneup_category_id']) . '" class="regular-text"><br><span class="description">The OneUp category that holds the Intel Facebook page.</span></td></tr>';
-    echo '<tr><th scope="row"><label for="ias-acct">Facebook account id</label></th><td><input id="ias-acct" type="text" name="ias[oneup_account_id]" value="' . esc_attr((string) $s['oneup_account_id']) . '" class="regular-text">'
-      . ((string) $s['oneup_account_name'] !== '' ? ' ' . ia_ui_badge((string) $s['oneup_account_name'], 'ok') : '')
-      . '<br><span class="description">The page\'s <code>social_network_id</code> in that category. Facebook is the only channel at launch; the category\'s other accounts (Google Business Profile, YouTube) are left alone.</span></td></tr>';
+    $chosen = ['category' => (string) $s['oneup_category_id'], 'facebook' => (string) $s['oneup_account_id']];
+    foreach (array_keys(ias_channels()) as $ch) if ($ch !== 'facebook') $chosen[$ch] = ias_channel_settings($ch)['account'];
+    $pick = ias_oneup_pick_options($chosen);
+    $can = (bool) ias_setting('master', false) && ias_oneup_key() !== '';
+    echo '<tr><th scope="row">Accounts</th><td id="ias-oneup-pick"><button type="submit" form="ias-oneup-lookup-form" class="button" id="ias-lookup"' . ($can ? '' : ' disabled title="' . esc_attr(!ias_setting('master', false) ? 'Turn the master switch on and save first — while it is off, the plugin never calls OneUp' : 'Add the OneUp key and save first') . '"') . ' data-ia-busy="Asking OneUp…">Look up accounts</button>'
+      . ' <span class="description" id="ias-oneup-found">' . ias_oneup_directory_line() . '</span>'
+      . '<br><span class="description">Asks OneUp for its categories and the accounts in each — read only, nothing changes there. Then choose below and press <strong>Save settings</strong>.' . ($can ? '' : ' <strong>' . esc_html(!ias_setting('master', false) ? 'The master switch must be on (dry run can stay on).' : 'The OneUp key is needed.') . '</strong>') . '</span></td></tr>';
+    echo '<tr><th scope="row"><label for="ias-cat">Category</label></th><td><select id="ias-cat" name="ias[oneup_category_id]" class="ias-pick">' . $pick['ias-cat'] . '</select><br><span class="description">The OneUp category that holds the Intel Facebook page — and the other accounts posts go to.</span></td></tr>';
+    echo '<tr><th scope="row"><label for="ias-acct">Facebook page</label></th><td><select id="ias-acct" name="ias[oneup_account_id]" class="ias-pick ias-acct-pick">' . $pick['ias-acct'] . '</select>'
+      . ((string) $s['oneup_account_name'] !== '' && !ias_oneup_directory_account((string) $s['oneup_account_id']) ? ' ' . ia_ui_badge((string) $s['oneup_account_name'], 'ok') : '') // the list names it already
+      . '<br><span class="description">A different page (or category) means pressing <strong>Verify OneUp</strong> again before anything is sent.</span></td></tr>';
     echo '<tr><th scope="row"><label for="ias-calurl">Calendar link</label></th><td><input id="ias-calurl" type="url" name="ias[oneup_calendar_url]" value="' . esc_attr((string) $s['oneup_calendar_url']) . '" class="regular-text"><br><span class="description">Where the Monday email\'s "Open the OneUp calendar" button goes.</span></td></tr>';
     echo '<tr><th scope="row">Listing link</th><td>' . $check('ias[link_in_comment]', !empty($s['link_in_comment']), 'Put the link in the first comment', 'Facebook shows posts with a link in them to fewer people. Untick only if OneUp cannot post first comments: the link then goes at the end of the post.') . '</td></tr>';
     echo '</table>';
 
-    echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram, X and LinkedIn are set up but not sent to yet. Switch one on and every post is also planned for it: its words and pictures show on each post, and what would go to OneUp is written to the log as a dry run. Nothing reaches these networks until a later release gives each one its own Verify. Their account ids are on <strong>Check connection</strong> (below), in the same OneUp category as the Facebook page.</p><table class="form-table" role="presentation">';
+    // Google Business Profile: planned like the others, and sent for real once its own Verify has passed.
+    $g = ias_channel_settings('gbp');
+    $gstate = function_exists('ias_gbp_blockers') ? ias_gbp_blockers() : [];
+    echo '<h2 id="ias-gbp">Google Business Profile</h2><p class="description" style="max-width:760px">Each post can also go to the Intel profile on Google, through OneUp: the Facebook words without hashtags or phone numbers (Google refuses a post with a phone number in it — the profile has its own Call button), at most 1,500 characters, one picture and a <strong>Learn more</strong> button to the listing. It goes out a minute after the Facebook post. Until <strong>Send to Google</strong> is on and Verify for Google has passed, Google posts are a dry run in the log.</p><table class="form-table" role="presentation">';
+    echo '<tr><th scope="row">Google posts</th><td>' . $check('ias[networks][gbp][on]', $g['on'], 'Plan posts for Google Business Profile') . '</td></tr>';
+    echo '<tr><th scope="row"><label for="ias-net-gbp">Location</label></th><td><select id="ias-net-gbp" name="ias[networks][gbp][account]" class="ias-pick ias-acct-pick">' . $pick['ias-net-gbp'] . '</select>'
+      . ((string) ($g['name'] ?? '') !== '' && !ias_oneup_directory_account($g['account']) ? ' ' . ia_ui_badge((string) $g['name'], 'ok') : '') . '<br><span class="description">The Google Business Profile location in the category above.</span></td></tr>';
+    echo '<tr><th scope="row">Which posts</th><td>';
+    foreach (ias_post_types() as $type => $def) {
+      if ($type === 'human') continue;
+      echo '<label style="display:inline-block;margin:0 14px 6px 0"><input type="checkbox" name="ias[networks][gbp][types][]" value="' . esc_attr($type) . '" ' . checked(in_array($type, $g['types'], true), true, false) . '> ' . esc_html($def['short']) . '</label>';
+    }
+    echo '<br><span class="description">Each type still needs its own switch on (Safety switches, above) before it goes anywhere.</span></td></tr>';
+    echo '<tr><th scope="row">Send to Google</th><td>' . $check('ias[networks][gbp][live]', $g['live'], '<strong>On</strong> — schedule the Google posts on OneUp for real',
+      'Needs the master switch on, dry run off and <a href="#ias-verify-gbp">Verify for Google</a> passed for this location. ' . ($g['on'] && $g['live'] && !$gstate ? ia_ui_badge('Sending', 'ok') : ($g['on'] && $g['live'] ? ia_ui_badge('Not yet', 'warn') . ' ' . esc_html(ucfirst(implode('; ', $gstate))) . '.' : ''))) . '</td></tr>';
+    echo '</table>';
+
+    echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram, X and LinkedIn are set up but not sent to yet. Switch one on and every post is also planned for it: its words and pictures show on each post, and what would go to OneUp is written to the log as a dry run. Nothing reaches these networks until a later release gives each one its own Verify. Choose each one\'s account from the OneUp category above.</p><table class="form-table" role="presentation">';
     foreach (ias_channels() as $ch => $rules) {
-      if ($ch === 'facebook') continue;
+      if (in_array($ch, ['facebook', 'gbp'], true)) continue;
       $n = (array) (($s['networks'] ?? [])[$ch] ?? []);
       $what = [
         'instagram' => 'The Facebook words with “link in our bio” (Instagram captions carry no links), square pictures, up to 10.',
@@ -244,7 +363,7 @@ if (!function_exists('ias_settings_render')) {
       ][$ch] ?? '';
       echo '<tr><th scope="row">' . esc_html((string) $rules['label']) . '</th><td>'
         . $check('ias[networks][' . $ch . '][on]', !empty($n['on']), 'Plan posts for ' . esc_html((string) $rules['label']) . ' <span class="description">(dry run only)</span>')
-        . '<br><label>OneUp account id <input type="text" name="ias[networks][' . esc_attr($ch) . '][account]" value="' . esc_attr((string) ($n['account'] ?? '')) . '" class="regular-text" placeholder="' . esc_attr($ch === 'linkedin' ? 'urn:li:organization:…' : 'social_network_id') . '"></label>'
+        . '<br><label>Account <select id="ias-net-' . esc_attr($ch) . '" name="ias[networks][' . esc_attr($ch) . '][account]" class="ias-pick ias-acct-pick">' . $pick['ias-net-' . $ch] . '</select></label>'
         . '<br><span class="description">' . esc_html($what) . '</span></td></tr>';
     }
     echo '</table>';

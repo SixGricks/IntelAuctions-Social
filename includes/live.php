@@ -388,6 +388,7 @@ if (!function_exists('ias_readback_run')) {
     if (!$sched['ok']) { $out['error'] = $sched['error']; return ias_readback_note($out); }
     $pub = ias_oneup_list('published', 4);
     $fail = ias_oneup_list('failed', 2);
+    $GLOBALS['ias_readback_lists'] = ['published' => $pub, 'failed' => $fail]; // Google's read-back, next, reads the same lists
     $now = ias_now_sql();
     $count = ['moved' => 0, 'edited' => 0, 'deleted' => 0, 'published' => 0, 'failed' => 0];
 
@@ -563,6 +564,8 @@ if (!function_exists('ias_readback_note')) {
  * deleted; the scheduled, published and failed lists read. Each step is
  * recorded in `ias_oneup_verify`, with the page it was run for; nothing is
  * written to OneUp for real until it has passed for the page set now.
+ * $ch 'gbp' runs the same round trip for the Google location (Verify for
+ * Google, recorded in `ias_gbp_verify`) — Google's own, never Facebook's.
  *
  * It needs the master switch on (off means the plugin never calls OneUp),
  * not dry run off: the one thing it writes is the draft. Should OneUp ignore
@@ -571,19 +574,20 @@ if (!function_exists('ias_readback_note')) {
  * there is time to delete it by hand if even that fails).
  */
 if (!function_exists('ias_oneup_verify')) {
-  function ias_oneup_verify(string $by): array {
+  function ias_oneup_verify(string $by, string $ch = 'facebook'): array {
     $steps = [];
     $step = function (string $label, ?bool $ok, string $detail) use (&$steps) { $steps[] = ['label' => $label, 'ok' => $ok, 'detail' => $detail]; return $ok; };
+    $gbp = $ch === 'gbp';
     $cat = (string) ias_setting('oneup_category_id', '');
-    $acct = (string) ias_setting('oneup_account_id', '');
+    $acct = $gbp ? ias_channel_settings('gbp')['account'] : (string) ias_setting('oneup_account_id', '');
     $tz_offset = null;
-    $block = ias_oneup_blockers(false);
+    $block = $gbp ? ias_gbp_blockers_read() : ias_oneup_blockers(false);
     if ($block) {
       $step('Ready to call OneUp', false, 'Not yet: ' . implode('; ', $block) . '. (The master switch must be on — dry run can stay on.)');
-      return ias_oneup_verify_save($steps, $by, null);
+      return ias_oneup_verify_save($steps, $by, null, $ch);
     }
 
-    // 1. The page.
+    // 1. The page (or, for Google, the location).
     $accts = ias_oneup_get('accounts', ['category_id' => $cat]);
     $name = '';
     $type = '';
@@ -592,17 +596,24 @@ if (!function_exists('ias_oneup_verify')) {
         if ((string) $aid === $acct) { $name = $aname; $type = (string) ($row['social_network_type'] ?? $row['type'] ?? ''); }
       }
     }
-    if (!$step('The Facebook page', $name !== '' && strcasecmp($type, 'facebook') === 0,
+    $right = $gbp ? ias_oneup_type_is('gbp', $type) : strcasecmp($type, 'facebook') === 0;
+    if (!$step($gbp ? 'The Google Business Profile location' : 'The Facebook page', $name !== '' && $right,
       is_wp_error($accts) ? 'OneUp did not list the category\'s accounts: ' . $accts->get_error_message()
-      : ($name === '' ? 'Account ' . $acct . ' is not in category ' . $cat . '.' : $name . ' (' . ($type !== '' ? $type : 'type not given') . ')' . (strcasecmp($type, 'facebook') === 0 ? '' : ' — that is not a Facebook page.')))) {
-      return ias_oneup_verify_save($steps, $by, null);
+      : ($name === '' ? 'Account ' . $acct . ' is not in category ' . $cat . '.' : $name . ' (' . ($type !== '' ? $type : 'type not given') . ')' . ($right ? '' : ($gbp ? ' — that is not a Google Business Profile.' : ' — that is not a Facebook page.'))))) {
+      return ias_oneup_verify_save($steps, $by, null, $ch);
     }
-    ias_settings_update(['oneup_account_name' => $name]);
+    if ($gbp) {
+      $nets = (array) ias_setting('networks', []);
+      $nets['gbp']['name'] = $name;
+      ias_settings_update(['networks' => $nets]);
+    } else {
+      ias_settings_update(['oneup_account_name' => $name]);
+    }
 
-    // 2. A draft.
+    // 2. A draft (for Google, an "update" — the kind of post it will be sent).
     $when = ias_now()->modify('+30 days')->setTime(9, 17)->format('Y-m-d H:i');
     $text = 'Intel Auctions Social connection test ' . wp_generate_password(6, false) . ' — a draft: it never publishes, and the plugin deletes it straight away.';
-    $r = ias_oneup_call('schedule_text', ['category_id' => $cat, 'social_network_id' => $acct, 'scheduled_date_time' => $when, 'content' => $text, 'isDraftPost' => 'true']);
+    $r = ias_oneup_call('schedule_text', ['category_id' => $cat, 'social_network_id' => $acct, 'scheduled_date_time' => $when, 'content' => $text, 'isDraftPost' => 'true'] + ($gbp ? ['google_post_type' => 'update'] : []));
     ias_oneup_scheduled_forget();
     if (!$step('Save a draft (scheduletextpost, as a draft)', $r['ok'], $r['ok'] ? 'OneUp accepted it' . ($r['id'] !== '' ? ' as post #' . $r['id'] : ' (its answer carried no post id — found below by its text)') . '.' : $r['error'])) {
       // No answer is not "no post": look on the scheduled list (and among the drafts) before giving up.
@@ -620,7 +631,7 @@ if (!function_exists('ias_oneup_verify')) {
             . ($d['ok'] ? 'it has been deleted.' : 'it could not be deleted: DELETE IT IN ONEUP NOW.'));
         }
       }
-      return ias_oneup_verify_save($steps, $by, null);
+      return ias_oneup_verify_save($steps, $by, null, $ch);
     }
 
     // 3. Read it back: among the drafts — and make sure it is not on the scheduled list as a real post.
@@ -633,7 +644,7 @@ if (!function_exists('ias_oneup_verify')) {
       ias_oneup_scheduled_forget();
       $step('Saved as a draft, not a post', false, 'OneUp did not save it as a draft: it scheduled it as a real post (#' . $real . ') for ' . $when . '. '
         . ($d['ok'] ? 'It has been deleted. Nothing can be sent until OneUp keeps drafts as drafts.' : 'It could not be deleted (' . $d['error'] . '): DELETE IT IN ONEUP NOW.'));
-      return ias_oneup_verify_save($steps, $by, null);
+      return ias_oneup_verify_save($steps, $by, null, $ch);
     }
     $draft_id = $r['id'] !== '' ? $r['id'] : (string) ($found['post_id'] ?? '');
     if ($found) {
@@ -664,17 +675,18 @@ if (!function_exists('ias_oneup_verify')) {
       $l = ias_oneup_list($ep, 1);
       $step('Read the ' . $ep . ' posts (' . $path . ')', $l['ok'], $l['ok'] ? count($l['rows']) . ' on the first page.' : $l['error']);
     }
-    return ias_oneup_verify_save($steps, $by, $tz_offset);
+    return ias_oneup_verify_save($steps, $by, $tz_offset, $ch);
   }
 }
 
 if (!function_exists('ias_oneup_verify_save')) {
-  function ias_oneup_verify_save(array $steps, string $by, ?int $tz_offset): array {
+  function ias_oneup_verify_save(array $steps, string $by, ?int $tz_offset, string $ch = 'facebook'): array {
     $ok = (bool) $steps && !in_array(false, array_column($steps, 'ok'), true) && !in_array(null, array_column($steps, 'ok'), true) && $tz_offset === 0;
+    $gbp = $ch === 'gbp';
     $result = ['at' => ias_now_sql(), 'by' => $by, 'ok' => $ok, 'steps' => $steps, 'tz_offset' => $tz_offset,
-      'category' => (string) ias_setting('oneup_category_id', ''), 'account' => (string) ias_setting('oneup_account_id', ''), 'key' => ias_oneup_key_print()];
-    update_option('ias_oneup_verify', $result, false);
-    ias_log('readback', 0, ['summary' => 'Verify OneUp: ' . ($ok ? 'every step passed' : 'a step failed — see Settings')], $by);
+      'category' => (string) ias_setting('oneup_category_id', ''), 'account' => $gbp ? ias_channel_settings('gbp')['account'] : (string) ias_setting('oneup_account_id', ''), 'key' => ias_oneup_key_print()];
+    update_option($gbp ? 'ias_gbp_verify' : 'ias_oneup_verify', $result, false);
+    ias_log('readback', 0, ['summary' => ($gbp ? 'Verify for Google: ' : 'Verify OneUp: ') . ($ok ? 'every step passed' : 'a step failed — see Settings')], $by);
     return $result;
   }
 }

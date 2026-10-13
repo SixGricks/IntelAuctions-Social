@@ -60,7 +60,7 @@ $v = ias_oneup_verify('admin');
 t_ok(!$v['ok'] && strpos((string) $v['steps'][0]['detail'], 'master switch is off') !== false, 'Verify OneUp refuses while the master switch is off, saying why');
 t_eq([], ias_t_oneup_calls(), '…without one call to OneUp');
 $html = $screen(IAS_PAGE_SETTINGS);
-t_ok(preg_match('/disabled title="Turn the master switch on first"[^>]*>Check connection/', $html) === 1, 'Settings disables Check connection while the master switch is off');
+t_ok(preg_match('/id="ias-lookup" disabled title="Turn the master switch on[^"]*"[^>]*>Look up accounts/', $html) === 1, 'Settings disables Look up accounts while the master switch is off');
 t_ok(preg_match('/disabled title="[^"]*master switch is off[^"]*"[^>]*>Verify OneUp/', $html) === 1, '…and Verify OneUp');
 
 // ---- 2. Everything on but Verify OneUp: still nothing is written ----
