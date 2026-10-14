@@ -26,7 +26,8 @@ function ias_t_reset(): void {
     wp_delete_post((int) $id, true);
   }
   unset($GLOBALS['ias_youtube_index']); // every file runs in one process: nothing read before this reset may carry over
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_youtube_verify', 'ias_youtube_playlists'] as $o) delete_option($o);
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_youtube_verify', 'ias_youtube_playlists', 'ias_youtube_route'] as $o) delete_option($o);
+  if (function_exists('ias_youtube_tmp_dir') && ($tmpdir = ias_youtube_tmp_dir()) !== '') foreach ((array) glob($tmpdir . '/*.part') as $f) @unlink((string) $f);
   $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
   update_option('ias_settings', [], true);
   // The dry run's one-time retirement (0.12.0) is its own test (07e): elsewhere it has already happened,
@@ -277,7 +278,10 @@ function ias_t_oneup(): void {
     // Basic plan, `playlists`, `yt_pub_id` what a published video's post_id is ('video': its YouTube id; 'oneup':
     // OneUp's number), `yt_stats` the analytics' videos, `feed` the channel feed's [id => title].
     'youtube' => false, 'yt' => 'Intel Auctions', 'uploads' => [], 'files' => [], 'upload_code' => 200, 'playlists' => [['playlist_name' => 'Properties for auction', 'playlist_id' => 'PLtest00000000000000000000000001']],
-    'yt_pub_id' => 'video', 'yt_ids' => [], 'yt_stats' => [], 'feed' => []];
+    'yt_pub_id' => 'video', 'yt_ids' => [], 'yt_stats' => [], 'feed' => [],
+    // 0.22.2: `storage` 's3' (the docs' bucket, which lets a browser upload) or 'spaces' (the live account's
+    // DigitalOcean bucket, which answers every browser 403); `put_file_fail` failed sends from this website.
+    'storage' => 's3', 'put_file_fail' => 0];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -307,6 +311,10 @@ function ias_t_oneup(): void {
         $rows[] = ['post_id' => 555, 'content' => 'A Google Business Profile post', 'source_url' => 'NA', $time_key => '2026-11-10 11:05:45', 'category_name' => 'Intel', 'video_url' => 'NA', 'content_image' => 'NA', 'social_network_username' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )'];
       }
       $slice = array_slice($rows, $start, 50);
+      // A post with a title (a YouTube video) is listed as the live account lists it (Oct 14, 2026): one
+      // `content`, "title~~~description", and no title of its own.
+      foreach ($slice as &$r) if (($r['title'] ?? '') !== '') { $r['content'] = $r['title'] . '~~~' . $r['content']; unset($r['title']); }
+      unset($r);
       if (!empty($GLOBALS['ias_t_oneup']['docs'])) return $json(200, ['message' => 'OK', 'error' => false, 'data' => $slice]);
       return $json(200, ['posts' => $slice, 'start' => $start, 'count' => count($slice), 'next_start' => $start + 50 < count($rows) ? $start + 50 : null]);
     };
@@ -348,6 +356,10 @@ function ias_t_oneup(): void {
         if ((int) $S['upload_code'] === 403) return $json(403, ['error' => true, 'message' => 'Media upload is not available on the Basic plan.']);
         $u = 'u' . (count($S['uploads']) + 1);
         $S['uploads'][] = $u;
+        if ($S['storage'] === 'spaces') { // as the live account answered (Oct 14, 2026)
+          $key = 'api_' . md5($u) . '17918182' . count($S['uploads']);
+          return $json(200, ['upload_url' => 'https://oneupdata.sfo3.digitaloceanspaces.com/' . $key . '?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=1200&X-Amz-Signature=abc', 'file_path' => 'https://oneupdata.sfo3.digitaloceanspaces.com/' . $key]);
+        }
         return $json(200, ['upload_url' => 'https://oneupdata.s3.us-east-2.amazonaws.com/api-uploads/dj%40intelauctions.com/' . $u . '?x-amz-acl=public-read&X-Amz-Expires=1200&X-Amz-Signature=abc', 'file_path' => 'https://s3.us-east-2.amazonaws.com/oneupdata/api-uploads/dj@intelauctions.com/' . $u]);
       case 'fetchytplaylist':
         return $json(200, $S['playlists']);
@@ -368,7 +380,7 @@ function ias_t_oneup(): void {
           'social_network_username' => ['fb_123' => $fb, 'accounts/1/locations/2' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )', 'UC2tfTuFO9diTgaaeozmDLKg' => (string) $S['yt']][(string) ($params['social_network_id'] ?? '')] ?? 'someone else', 'first_comment' => (string) ($params['first_comment'] ?? ''),
           'google_post_type' => (string) ($params['google_post_type'] ?? ''), 'cta_button_url' => (string) ($params['cta_button_url'] ?? ''),
           'title' => (string) ($params['title'] ?? ''), '_sn' => (string) ($params['social_network_id'] ?? '')];
-        if ($path === 'schedulevideopost' && ($params['isDraftPost'] ?? '') !== 'true' && strpos((string) ($params['video_url'] ?? ''), 'amazonaws.com/oneupdata/') !== false && empty($S['files'][(string) $params['video_url']])) {
+        if ($path === 'schedulevideopost' && ($params['isDraftPost'] ?? '') !== 'true' && (strpos((string) ($params['video_url'] ?? ''), 'amazonaws.com/oneupdata/') !== false || strpos((string) ($params['video_url'] ?? ''), 'digitaloceanspaces.com/') !== false) && empty($S['files'][(string) $params['video_url']])) {
           return $json(200, ['error' => true, 'message' => 'The video could not be downloaded.']); // a file never uploaded
         }
         if (($params['isDraftPost'] ?? '') === 'true' && !$S['draft_real']) $S['drafts'][$id] = $row; else $S['scheduled'][$id] = $row;
@@ -448,6 +460,15 @@ function ias_t_storage(): void {
       $S['calls'][] = ['path' => 's3', 'method' => (string) ($args['method'] ?? 'GET'), 'params' => ['url' => (string) $url], 'raw_sn' => null];
       return $resp(!empty($S['files'][(string) $url]) ? 200 : 403);
     }
+    if (strpos((string) $url, 'https://oneupdata.sfo3.digitaloceanspaces.com/') === 0) { // the live account's storage: no CORS rule at all
+      $method = (string) ($args['method'] ?? 'GET');
+      $plain = strtok((string) $url, '?');
+      $S['calls'][] = ['path' => 'spaces', 'method' => $method, 'params' => ['url' => (string) $url], 'raw_sn' => null];
+      $dict = class_exists('WpOrg\\Requests\\Utility\\CaseInsensitiveDictionary') ? 'WpOrg\\Requests\\Utility\\CaseInsensitiveDictionary' : 'Requests_Utility_CaseInsensitiveDictionary';
+      if ($method === 'OPTIONS') return ['headers' => new $dict(['vary' => 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method']), 'body' => '', 'response' => ['code' => 403, 'message' => ''], 'cookies' => [], 'filename' => null];
+      if ($method === 'PUT') { if (!empty($S['put_refused'])) return $resp(403, 'SignatureDoesNotMatch'); $S['files'][$plain] = true; return $resp(200); }
+      return $resp(!empty($S['files'][$plain]) ? 200 : 403);
+    }
     if (strpos((string) $url, 'https://www.youtube.com/feeds/videos.xml') === 0) {
       $S['calls'][] = ['path' => 'feed', 'method' => 'GET', 'params' => ['url' => (string) $url], 'raw_sn' => null];
       $xml = '<?xml version="1.0" encoding="UTF-8"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom">';
@@ -456,6 +477,17 @@ function ias_t_storage(): void {
     }
     return $pre;
   }, 9, 3);
+  // The website's own send of a whole file (curl, streamed): stored where the address puts it, as the PUT above.
+  add_filter('ias_youtube_put_file_pre', function ($pre, $url, $path, $type) {
+    $S =& $GLOBALS['ias_t_oneup'];
+    clearstatcache(true, (string) $path);
+    $S['calls'][] = ['path' => 'put-file', 'method' => 'PUT', 'params' => ['url' => (string) $url, 'size' => (int) @filesize((string) $path), 'type' => (string) $type, 'body' => (int) @filesize((string) $path) <= 64 ? (string) @file_get_contents((string) $path) : ''], 'raw_sn' => null];
+    if ($S['put_file_fail'] > 0) { $S['put_file_fail']--; return ['ok' => false, 'code' => 0, 'error' => 'the connection to OneUp\'s storage failed (Operation timed out)']; }
+    if (!empty($S['put_refused'])) return ['ok' => false, 'code' => 403, 'error' => 'OneUp\'s storage refused the file (HTTP 403)'];
+    $plain = (string) strtok((string) $url, '?');
+    $S['files'][strpos($plain, 'https://oneupdata.s3.us-east-2.amazonaws.com/') === 0 ? 'https://s3.us-east-2.amazonaws.com/oneupdata/api-uploads/dj@intelauctions.com/' . basename($plain) : $plain] = true;
+    return ['ok' => true, 'code' => 200, 'error' => ''];
+  }, 10, 4);
 }
 
 /**

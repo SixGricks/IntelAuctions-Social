@@ -159,6 +159,17 @@ if (!function_exists('ias_oneup_gone')) {
   }
 }
 
+/**
+ * Is a row of OneUp's draft list one of Verify's own test drafts? Only the
+ * exact words Verify writes count (with its six-character code), so nobody
+ * else's draft is ever taken for one.
+ */
+if (!function_exists('ias_oneup_is_test_draft')) {
+  function ias_oneup_is_test_draft(array $row): bool {
+    return (bool) preg_match('/^Intel Auctions Social connection test [A-Za-z0-9]{6} \x{2014} a draft: it never publishes, and the plugin deletes it straight away\.$/u', trim((string) ($row['content'] ?? '')));
+  }
+}
+
 /** Did OneUp answer with its "Page Not Found" web page — no such API address — rather than an answer about a post? */
 if (!function_exists('ias_oneup_no_route')) {
   function ias_oneup_no_route(array $r): bool {
@@ -742,7 +753,11 @@ if (!function_exists('ias_oneup_verify')) {
     }
 
     // Test drafts an earlier Verify could not delete go first, by their ids — nobody deletes them in OneUp by hand.
+    // A run whose draft came back without an id left one nobody noted: found on the draft list by Verify's own words (0.22.2).
     $left = ias_oneup_verify_leftovers();
+    $before = ias_oneup_list('drafts', 5);
+    foreach ($before['rows'] as $row) if (ias_oneup_is_test_draft($row) && (string) ($row['post_id'] ?? '') !== '') $left[] = (string) $row['post_id'];
+    $left = array_values(array_unique($left));
     if ($left) {
       $errors = [];
       foreach ($left as $lid) {
@@ -823,7 +838,7 @@ if (!function_exists('ias_oneup_verify')) {
       $step('Delete it (' . $path . ')', $d['ok'] && !$still, ($d['ok'] ? ($still ? 'OneUp answered, but the draft is still there (or the list could not be read).' : 'Deleted.') : $d['error'])
         . ($d['ok'] && !$still ? '' : ' The test draft (#' . $draft_id . ') never publishes; the next Verify deletes it.'));
     } else {
-      $step('Delete it (' . (string) (ias_oneup_endpoints()['delete'][1] ?? 'delete') . ')', false, 'OneUp gave the test draft no id to delete it by — it never publishes; delete it in OneUp if it is in the way.');
+      $step('Delete it (' . (string) (ias_oneup_endpoints()['delete'][1] ?? 'delete') . ')', false, 'OneUp gave the test draft no id and it was not found on the draft list — it never publishes, and the next Verify looks for it there and deletes it.');
     }
 
     // 5. The lists the read-back uses.
@@ -834,7 +849,7 @@ if (!function_exists('ias_oneup_verify')) {
     // 6. YouTube: an upload address (the file goes there; nothing is uploaded now) and the channel's playlists.
     if ($yt) {
       $up = ias_youtube_upload_address();
-      if ($step('Get an upload address (uploadmedia)', !isset($up['error']), isset($up['error']) ? (string) $up['error'] : 'OneUp handed over an address for a file — the browser sends each video there.')) {
+      if ($step('Get an upload address (uploadmedia)', !isset($up['error']), isset($up['error']) ? (string) $up['error'] : 'OneUp handed over an address for a file — each video goes to one of these.')) {
         [$ok, $words] = ias_youtube_upload_test($up);
         $step('Upload a test file there', $ok, $words);
       }

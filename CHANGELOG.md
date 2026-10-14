@@ -1,5 +1,39 @@
 # Intel Auctions Social changelog
 
+## 0.22.2 (2026-10-14) — YouTube on the live account
+DJ's first **Verify for YouTube** on intelauctions.com failed two steps, and
+both were the plugin's to fix:
+- **OneUp lists a post with a title as "title~~~description".** Its draft list
+  (and its other lists) give a YouTube post one `content` joining the two, so
+  Verify could not find its own test draft, and a video sent for real — whose
+  answer carries no id — would never have been found again: no link onto the
+  listing, no take-back. `ias_oneup_row_split()` splits them as OneUp's lists
+  are read; the video match checks the title too. The test fake lists YouTube
+  rows the same way.
+- **Old test drafts clean themselves up.** Verify finds its own test drafts on
+  OneUp's draft list by their exact words and deletes them by id — so the one
+  that first run left behind goes on the next run. The note that told a person
+  to delete it in OneUp is gone.
+- **Uploads through the website when OneUp's storage takes none from a
+  browser.** The live account's storage is a DigitalOcean bucket with no CORS
+  rule at all: every browser preflight gets a 403, so the 0.22.0 design (the
+  browser PUTs straight there) can never work for it. Verify for YouTube now
+  settles the route (`ias_youtube_route`): straight from the browser where the
+  storage allows it, otherwise through the website — the browser sends 8 MB
+  pieces (smaller where PHP takes less; a lost piece is resent, an out-of-step
+  one answered with where to carry on), the website keeps them in
+  `uploads/intel-social/video-tmp/` (checking first it has room), and once the
+  file is whole it answers the browser, asks OneUp for an address (only then:
+  one lasts 20 minutes), streams the file there with curl, checks it arrived
+  and deletes its copy (`ias_youtube_transfer()`). A send that fails is tried
+  again by the hourly run, three tries, then the row says why. An upload left
+  halfway is let go two hours after its last piece; stray copies go after a
+  day. Verify tests the route it chose with its 42-byte test file, so a
+  preflight with no answer no longer fails it — the website route needs none.
+- **The row is never blank.** Before YouTube is set up, each Property Videos
+  row says what is missing and links to Social Settings → YouTube, rather than
+  showing nothing.
+
 ## 0.22.1 (2026-10-14) — YouTube review fixes
 From the review of 0.22.0 (SixGricks/IntelAuctions-Social#10):
 - **A withdrawn listing's video is taken back.** A listing that stops being

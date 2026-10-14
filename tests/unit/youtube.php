@@ -97,3 +97,13 @@ $dict = new class(['access-control-allow-origin' => '*', 'access-control-allow-m
 t_ok(ias_youtube_cors_ok($dict, $o), 'the headers as WordPress hands them over (a dictionary object): read, allowed');
 t_ok(ias_youtube_cors_ok(new ArrayIterator(['Access-Control-Allow-Origin' => '*', 'Access-Control-Allow-Methods' => ['PUT'], 'Access-Control-Allow-Headers' => ['Content-Type']]), $o), 'any iterable, values as lists: allowed');
 t_ok(!ias_youtube_cors_ok(null, $o) && !ias_youtube_cors_ok('nonsense', $o), 'nothing usable: refused');
+
+// OneUp lists a post with a title as one `content`, "title~~~description" (the live account, Oct 14, 2026; 0.22.2).
+$row = ias_oneup_row_split(['post_id' => 53791625, 'content' => "Intel Auctions Social connection test~~~Intel Auctions Social connection test v8cE2f — a draft: it never publishes, and the plugin deletes it straight away."]);
+t_eq('Intel Auctions Social connection test', $row['title'], 'the title is split off');
+t_eq('Intel Auctions Social connection test v8cE2f — a draft: it never publishes, and the plugin deletes it straight away.', $row['content'], '…and content is the words the plugin sent');
+t_ok(strpos($row['content_joined'], '~~~') !== false, '…the joined text kept');
+$row = ias_oneup_row_split(['content' => 'A title~~~Words with ~~~ in them']);
+t_eq(['A title', 'Words with ~~~ in them'], [$row['title'], $row['content']], 'split at the first ~~~ only');
+t_eq(['content' => 'A Facebook post'], ias_oneup_row_split(['content' => 'A Facebook post']), 'a post with no title is left as it is');
+t_eq('Kept', ias_oneup_row_split(['content' => 'Other~~~Words', 'title' => 'Kept'])['title'], 'a title OneUp gave on its own is kept');

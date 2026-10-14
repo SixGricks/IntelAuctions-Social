@@ -138,9 +138,19 @@ it, and the spec stays verbatim, so they are recorded here:
   one time upload, title, description and not to think about it again… just
   give you the file and then have you upload to Youtube with description as
   part of a single property workflow"; DJ is on Vimeo Starter, which has no
-  file links, so Vimeo plays no part). `youtube.php`: the file goes from the
-  browser **straight to OneUp's storage** (`uploadmedia`; never through the
-  website — Elementor Cloud caps uploads at 256 MB), then to the channel
+  file links, so Vimeo plays no part). `youtube.php`: the file reaches
+  OneUp's storage (`uploadmedia`) by the route **Verify for YouTube** finds
+  (`ias_youtube_route`): the live account's storage, on DigitalOcean, answers
+  every browser 403 (no CORS rule at all — Oct 14, 2026), so the file goes
+  **through the website in 8 MB pieces** (each far under Elementor Cloud's
+  256 MB and Cloudflare's 100 MB request caps), and once whole the website
+  asks for an address (it lasts 20 minutes — never ask for it at the start),
+  streams the file there with curl (never read into memory), checks it and
+  deletes its copy, after the AJAX answer (`ias_youtube_reply_then()`), the
+  hourly run retrying (three tries). A storage that does allow a browser
+  gets the file straight from it. OneUp's lists give a post with a title as
+  one `content`, "title~~~description": `ias_oneup_row_split()` splits it
+  as the lists are read — match YouTube rows on the split words. Then to the channel
   through OneUp, with a title and description built from the facts
   (`ias_youtube_words()`) — **never Claude's prose and never the starting
   bid**, which is why it needs no approval — and the YouTube link onto the
