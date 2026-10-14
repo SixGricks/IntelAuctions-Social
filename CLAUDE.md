@@ -98,6 +98,14 @@ it, and the spec stays verbatim, so they are recorded here:
   time pinned like a Move; on Lane A pressing it is the approval. Never while
   its switches are off, never on a Sunday, never with holds, a `[VERIFY]` or a
   stale draft.
+- **Drag on the calendar, by time of day** (Oct 14, 2026: "I want to be able
+  to drag posts around on the calendar and choose the morning, afternoon, or
+  evening time slot"). A drop, and the post's Move, choose a posting window
+  (`ias_windows()`), never a free-typed minute by default: the post takes its
+  own shifted minute there (`ias_slot_minute()`), pinned like a Move, clear of
+  the posts that stay put (`ias_move_fixed()`); the plan then runs at once and
+  OneUp follows for every post it moved. The exact time stays on the post's
+  Move for a person who wants it. Phones use the post's Move (no drag).
 - **Variety, and bidding said positively** (Oct 13, 2026: "We need more
   variety in the Results posts… sometimes paragraphs and sometimes bullets…
   1 out of every 5 posts… emoji heavy… Positive statements are better").

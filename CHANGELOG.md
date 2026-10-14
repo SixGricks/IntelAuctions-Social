@@ -1,5 +1,30 @@
 # Intel Auctions Social changelog
 
+## 0.13.0 (2026-10-14) — Drag posts on the calendar; morning, afternoon or evening
+DJ: "I want to be able to drag posts around on the calendar and choose the
+morning, afternoon, or evening time slot."
+- **Drag a post** (desktop) onto any day from today to 30 days out, or onto
+  its own, and choose **Morning**, **Afternoon** or **Evening** — the posting
+  windows from Settings, named by when they start (`ias_slot_names()`).
+  Cancel or Escape puts it back. Sundays take no drop; a post that went out,
+  or one changed inside OneUp, is not draggable (`ias_movable()`).
+- **The choice is a move** (`ias_move_to_window()`, action `move_slot`): the
+  post's own minute in that window — the shift the plan gives it, never on
+  the hour (`ias_slot_minute()`) — pinned like a Move, so it holds and goes
+  to OneUp at once (inside the 48 hours too). It keeps clear of the posts
+  that stay put (`ias_move_fixed()`: published, human, changed in OneUp,
+  moved there, on OneUp inside the 48 hours); a window they hold, or one
+  already gone today, is refused, naming why. The plan then runs at once:
+  the posts in the way get new times, their copies on OneUp follow
+  (`ias_push_now()`), and the notice names what moved — or was dropped.
+  A drag comes back to the calendar.
+- **The post's Move** offers the same three times of day, or an exact time.
+- Tests: `tests/unit/windows.php` (names, minutes, gaps, today) and
+  `tests/wp/07f-drag.php` (the calendar's drag markup, a drop, the same day,
+  a Sunday, a passed window, a held window, making room and OneUp
+  following, the Move form, what cannot be dragged, a drop that leaves no
+  room for another post).
+
 ## 0.12.0 (2026-10-14) — On or off: the dry run is gone; Publish now
 DJ: "I want to turn dry run off and remove it. Either things are active or
 inactive." — and "I also want a "Publish now" button if a post is past it's

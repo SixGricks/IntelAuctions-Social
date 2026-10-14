@@ -42,7 +42,7 @@ add_action('ias_calendar_action', function (string $action): void {
   $p = $id > 0 ? ias_post_get($id) : null;
   if (!$p) return;
   $back = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]);
-  $_POST['ias_back'] = $back;
+  if ($action !== 'move_slot' || empty($_POST['ias_back'])) $_POST['ias_back'] = $back; // a drag on the calendar comes back to the calendar
   $flash = function (string $html, string $level = 'success') { ia_flash_set('<div class="notice notice-' . $level . '"><p>' . $html . '</p></div>'); };
 
   switch ($action) {

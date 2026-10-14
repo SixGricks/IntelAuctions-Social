@@ -67,7 +67,7 @@ if (!function_exists('ias_calendar_render')) {
     $button = (string) apply_filters('ias_calendar_header_actions', $button);
     ia_ui_header(
       'Social Calendar',
-      'The next ' . (int) ias_setting('plan_days', 30) . ' days of posts for every listing. Click a post to see it. '
+      'The next ' . (int) ias_setting('plan_days', 30) . ' days of posts for every listing. Click a post to see it; drag it to another day — or onto its own — to choose the morning, afternoon or evening. '
         . 'Sundays never carry a post; the shaded days are inside the ' . (int) ias_setting('lead_hours', 48) . "\u{2011}hour veto window, where nothing new is scheduled.",
       $button
     );
@@ -144,6 +144,15 @@ if (!function_exists('ias_calendar_grid')) {
       return $html;
     };
 
+    // Dragging a post (desktop): which days take a drop, the windows to choose from, and the form a choice submits.
+    $move_until = ias_now()->modify('+' . max(30, (int) ias_setting('plan_days', 30)) . ' days')->format('Y-m-d');
+    $windows = function_exists('ias_windows') ? ias_windows() : [];
+    $soon = ias_now()->modify('+15 minutes');
+    echo '<form method="post" id="ias-drop-form" hidden>' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
+      . '<input type="hidden" name="ias_cal_action" value="move_slot"><input type="hidden" name="ias_post" value=""><input type="hidden" name="ias_day" value=""><input type="hidden" name="ias_slot" value="">'
+      . '<input type="hidden" name="ias_back" value="' . esc_attr(ias_admin_url(IAS_PAGE_CALENDAR)) . '"></form>';
+    echo '<script>window.iasCal = ' . wp_json_encode(['windows' => array_values(array_map(function ($w) { return ['name' => $w['name'], 'span' => $w['from'] . '–' . $w['to'], 'b' => $w['b']]; }, $windows)),
+      'today' => $soon->format('Y-m-d'), 'soonMin' => (int) $soon->format('G') * 60 + (int) $soon->format('i')]) . ';</script>';
     echo '<div class="ias-cal">';
     foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $d) echo '<div class="ias-cal-head' . ($d === 'Sun' ? ' sun' : '') . '">' . esc_html($d) . '</div>';
     for ($day = $start; $day <= $end; $day = $day->modify('+1 day')) {
@@ -166,7 +175,8 @@ if (!function_exists('ias_calendar_grid')) {
       $count = count(array_filter($list, function ($p) { return in_array($p['status'], array_merge(ias_live_statuses(), ['published', 'human']), true); }));
       $title = $day->format('N') === '7' ? 'Never a post on Sunday' : ($past ? 'Earlier this week' : ($beyond ? 'Past the ' . (int) ias_setting('plan_days', 30) . ' days the plan looks ahead' : ''));
 
-      echo '<div class="' . esc_attr(implode(' ', $classes)) . '"' . ($title !== '' ? ' title="' . esc_attr($title) . '"' : '') . '>';
+      $drop = $day->format('N') !== '7' && $key >= $today->format('Y-m-d') && $key <= $move_until;
+      echo '<div class="' . esc_attr(implode(' ', $classes)) . '"' . ($title !== '' ? ' title="' . esc_attr($title) . '"' : '') . ' data-day="' . esc_attr($key) . '" data-drop="' . ($drop ? '1' : '0') . '">';
       echo '<div class="ias-day-date"><span>' . ($is_today ? '<b class="ias-today">Today</b> ' : '') . esc_html($day->format('D M j')) . '</span>';
       if ($count && !$past && $day->format('N') !== '7') echo '<span class="n" title="' . esc_attr($count . ' of the ' . $cap . ' posts a day') . '">' . (int) $count . '/' . (int) $cap . '</span>';
       echo '</div>';
@@ -187,7 +197,11 @@ if (!function_exists('ias_calendar_chip')) {
     $shown = ias_post_shown_status($p);
     $title = ($statuses[$shown]['label'] ?? $shown) . ($shown === 'notsent' ? ': its time came before posting was on' : '') . (!empty($p['locked']) ? ' · edited in OneUp' : '')
       . ($timed ? '' : ' · not placed on the plan yet: shown on its best day') . ' · score ' . number_format((float) $p['score'], 0);
-    return '<a class="ias-chip st-' . esc_attr($shown) . ($timed ? '' : ' untimed') . '" href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '" title="' . esc_attr($title) . '">'
+    $drag = function_exists('ias_movable') && ias_movable($p) && !in_array($shown, ['published', 'notsent'], true);
+    $slot = $timed && function_exists('ias_windows') ? ias_slot_index(ias_windows(), ias_hm_to_min(date('H:i', strtotime((string) $p['scheduled_at'])))) : -1;
+    if ($drag) $title .= ' · drag to move';
+    return '<a class="ias-chip st-' . esc_attr($shown) . ($timed ? '' : ' untimed') . ($drag ? ' drag' : '') . '" href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '" title="' . esc_attr($title) . '"'
+      . ($drag ? ' draggable="true" data-post="' . (int) $p['id'] . '" data-slot="' . (int) $slot . '" data-label="' . esc_attr($def['short'] . ' · ' . ias_post_subject($p)) . '"' : ' draggable="false"') . '>'
       . '<span class="t">' . esc_html($def['short']) . '</span> <span class="tm">' . esc_html($time) . '</span>'
       . '<span class="s">' . esc_html(ias_post_subject($p)) . '</span></a>';
   }

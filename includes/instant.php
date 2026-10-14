@@ -59,36 +59,171 @@ if (!function_exists('ias_move_day_count')) {
   }
 }
 
+/** Can a person move this post (Move on its page, or drag it on the calendar)? */
+if (!function_exists('ias_movable')) {
+  function ias_movable(array $p): bool {
+    return $p['type'] !== 'human' && in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped'], true) && empty($p['locked']);
+  }
+}
+
+/** The posting windows, named (ias_slot_names()), from Settings. */
+if (!function_exists('ias_windows')) {
+  function ias_windows(): array {
+    return ias_slot_names((array) ias_setting('slots', []));
+  }
+}
+
+/**
+ * The posts on $day that stay where they are whatever happens — published,
+ * a person's own, changed in OneUp, put there by a person, or on OneUp inside
+ * the veto window: [[minute, 'Listing · 12 Alpha Road'], …]. A post moved
+ * into a window keeps clear of these; the plan moves the rest out of its way.
+ */
+if (!function_exists('ias_move_fixed')) {
+  function ias_move_fixed(string $day, int $except): array {
+    $floor = ias_now()->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:s');
+    $out = [];
+    foreach (ias_posts_query(['from' => $day, 'to' => $day, 'limit' => 50]) as $o) {
+      $at = (string) ($o['scheduled_at'] ?? '');
+      if ((int) $o['id'] === $except || $at === '' || substr($at, 0, 10) !== $day) continue;
+      if (!in_array($o['status'], array_merge(ias_live_statuses(), ['published', 'human']), true)) continue;
+      $pin = (string) ($o['flags']['pinned'] ?? '');
+      $fixed = in_array($o['status'], ['published', 'human'], true) || !empty($o['locked']) || ($pin !== '' && substr($pin, 0, 10) === $day)
+        || (ias_post_sent($o)['mode'] === 'live' && $at < $floor);
+      if ($fixed) $out[] = [ias_hm_to_min(substr($at, 11, 5)), ias_post_type((string) $o['type'])['short'] . ' · ' . ias_post_subject($o)];
+    }
+    return $out;
+  }
+}
+
+/**
+ * Move a post into a posting window on a day (DJ, Oct 14, 2026: "drag posts
+ * around on the calendar and choose the morning, afternoon, or evening time
+ * slot"): its own shifted minute in that window, clear of the posts that stay
+ * where they are, pinned there like a Move; then the plan runs at once, so
+ * the posts it displaced find new times, and their copies on OneUp follow.
+ * Returns ['ok' => bool, 'message' => html, 'when' => 'Y-m-d H:i', 'level'].
+ */
+if (!function_exists('ias_move_to_window')) {
+  function ias_move_to_window(array $p, string $day, int $si, string $actor): array {
+    $no = function (string $why) { return ['ok' => false, 'message' => 'Not moved: ' . esc_html($why), 'when' => '', 'level' => 'error']; };
+    if (!ias_movable($p)) return $no('this post cannot be moved now.');
+    $w = ias_windows()[$si] ?? null;
+    if (!$w) return $no('there is no such time of day.');
+    try { $d = new DateTimeImmutable($day, ia_wp_tz()); } catch (\Exception $e) { return $no('that is not a day.'); }
+    if ($d->format('Y-m-d') !== $day) return $no('that is not a day.');
+    if ($d->format('N') === '7') return $no('never on Sunday.');
+    $now = ias_now();
+    $soon = $now->modify('+15 minutes');
+    $not_before = $day === $soon->format('Y-m-d') ? ias_hm_to_min($soon->format('H:i')) : ($day < $soon->format('Y-m-d') ? 24 * 60 : 0);
+    $fixed = ias_move_fixed($day, (int) $p['id']);
+    $m = ias_slot_minute($w['a'], $w['b'], (string) $p['slot_key'], (int) ias_setting('jitter_minutes', 25), array_column($fixed, 0), 60 * (int) ias_setting('min_gap_hours', 3), $not_before);
+    $label = strtolower($w['name']);
+    if ($m === null) {
+      if ($not_before > $w['b']) return $no('the ' . $label . ' has passed ' . ($day === $now->format('Y-m-d') ? 'for today' : 'that day') . ' — choose a later time.');
+      $near = '';
+      foreach ($fixed as $f) {
+        if (abs((int) $f[0] - $w['a']) < 60 * (int) ias_setting('min_gap_hours', 3) + ($w['b'] - $w['a'])) {
+          $near = (string) $f[1];
+          break;
+        }
+      }
+      return $no('no room in the ' . $label . ' on ' . date_i18n('D M j', strtotime($day)) . ($near !== '' ? ': ' . $near . ' is held there' : '') . ', and posts are kept ' . (int) ias_setting('min_gap_hours', 3) . ' hours apart. Choose another time of day.');
+    }
+    $when = $day . ' ' . sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
+    $why = ias_move_problem($when);
+    if ($why !== '') return $no($why);
+
+    $id = (int) $p['id'];
+    $was = (string) ($p['scheduled_at'] ?? '');
+    $flags = (array) $p['flags'];
+    $flags['pinned'] = $when;
+    $flags['pinned_by'] = $actor;
+    unset($flags['plan_note'], $flags['late'], $flags['relaxed']);
+    $fields = ['scheduled_at' => $when . ':00', 'flags' => $flags];
+    if ($p['status'] === 'dropped') {
+      unset($fields['flags']['dropped_by']);
+      $fields['status'] = ias_back_on_plan_status(['flags' => $fields['flags']]);
+      $fields['note'] = $fields['status'] === 'held' ? 'Needs a decision: ' . (string) ($fields['flags']['holds'][0] ?? '') : '';
+    } elseif ((string) $p['note'] === (string) ($p['flags']['plan_note'] ?? '-')) {
+      $fields['note'] = '';
+    }
+    ias_post_update($id, $fields);
+    $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
+    $words = 'Moved' . ($was !== '' ? ' from ' . $fmt($was) : '') . ' to ' . $fmt($when) . ' (' . $label . ') by ' . ias_actor_name($actor);
+    ias_post_trail($id, $words, $actor);
+    ias_log('moved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $words], $actor);
+
+    // The plan makes room at once: posts in the way move, and their copies on OneUp follow.
+    $before = [];
+    foreach (ias_posts_query(['status' => ias_live_statuses(), 'limit' => 2000]) as $o) if ((int) $o['id'] !== $id) $before[(int) $o['id']] = (string) ($o['scheduled_at'] ?? '');
+    if (function_exists('ias_plan_run')) ias_plan_run($actor);
+    $moved = [];
+    $still = [];
+    foreach (ias_posts_query(['status' => ias_live_statuses(), 'limit' => 2000]) as $o) {
+      $oid = (int) $o['id'];
+      $still[$oid] = true;
+      if (isset($before[$oid]) && $before[$oid] !== (string) ($o['scheduled_at'] ?? '')) $moved[] = $o;
+    }
+    $dropped = []; // off the plan now: no room left in its window
+    foreach (array_keys(array_diff_key($before, $still)) as $oid) if (($o = ias_post_get((int) $oid)) && $o['status'] === 'dropped') $dropped[] = $o;
+    $follow = array_map(function ($o) { return (int) $o['id']; }, array_merge($moved, $dropped));
+    if ($follow && function_exists('ias_push_now')) ias_push_now($follow);
+    $n = ias_move_day_count($day, $id);
+    $cap = (int) ias_setting('daily_cap', 3);
+    $msg = 'Moved to <strong>' . esc_html(date_i18n('D M j', strtotime($day))) . ', ' . esc_html($label) . '</strong> (' . esc_html(date_i18n('g:i a', strtotime($when))) . '). It stays there; the plan works around it.'
+      . ($moved ? ' To make room the plan moved ' . esc_html(implode(', ', array_map(function ($o) use ($fmt) { return ias_post_type((string) $o['type'])['short'] . ' · ' . ias_post_subject($o) . (!empty($o['scheduled_at']) ? ' to ' . $fmt((string) $o['scheduled_at']) : ' off the plan for now'); }, $moved))) . '.' : '')
+      . ($dropped ? ' <strong>The plan dropped ' . esc_html(implode(', ', array_map(function ($o) { return ias_post_type((string) $o['type'])['short'] . ' · ' . ias_post_subject($o); }, $dropped))) . '</strong> — ' . esc_html(rtrim((string) $dropped[0]['note'], '.')) . '. Restore it on its page, or move this one again.' : '')
+      . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . ').' : '');
+    return ['ok' => true, 'message' => $msg, 'when' => $when, 'level' => $n >= $cap || $dropped ? 'warning' : 'success'];
+  }
+}
+
 /** Move… on a post's page: a day and a time, and back to the plan's choice. */
 if (!function_exists('ias_move_form')) {
   function ias_move_form(array $p): string {
-    if ($p['type'] === 'human' || !in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped'], true) || !empty($p['locked'])) return '';
+    if (!ias_movable($p)) return '';
     $at = !empty($p['scheduled_at']) ? strtotime((string) $p['scheduled_at']) : 0;
     $pinned = (string) ($p['flags']['pinned'] ?? '');
+    $now_si = $at ? ias_slot_index(ias_windows(), ias_hm_to_min(date('H:i', $at))) : -1;
+    $radios = '';
+    foreach (ias_windows() as $i => $w) {
+      $radios .= '<label class="ias-move-slot"><input type="radio" name="ias_slot" value="' . (int) $i . '"' . checked($i === $now_si || ($now_si < 0 && $i === 0), true, false) . '> <strong>' . esc_html($w['name']) . '</strong> <span class="description">' . esc_html($w['from'] . '–' . $w['to']) . '</span></label>';
+    }
+    $radios .= '<label class="ias-move-slot"><input type="radio" name="ias_slot" value="exact"' . checked($now_si < 0 && !ias_windows(), true, false) . '> At <input type="time" name="ias_time" value="' . esc_attr($at ? date('H:i', $at) : '') . '" step="60" onfocus="var r=this.form.querySelector(\'input[name=ias_slot][value=exact]\');if(r)r.checked=true"></label>';
     $html = '<details class="ias-move"><summary>Move…</summary>'
       . ias_post_action_form($p, 'move', 'Move it', 'button',
         '<label>Day <input type="date" name="ias_day" value="' . esc_attr($at ? date('Y-m-d', $at) : '') . '" min="' . esc_attr(ias_now()->format('Y-m-d')) . '" required></label> '
-        . '<label>Time <input type="time" name="ias_time" value="' . esc_attr($at ? date('H:i', $at) : '') . '" step="60" required></label> ')
-      . '<p class="description">It goes out then — on Facebook' . (function_exists('ias_gbp_live') && ias_channel_settings('gbp')['on'] ? ' (and on Google a minute later)' : '') . ' — and stays there: the morning plan works around it. Not on a Sunday.</p></details>';
+        . '<fieldset class="ias-move-slots"><legend class="screen-reader-text">Time of day</legend>' . $radios . '</fieldset> ')
+      . '<p class="description">It goes out then — on Facebook' . (function_exists('ias_gbp_live') && ias_channel_settings('gbp')['on'] ? ' (and on Google a minute later)' : '') . ' — and stays there: the plan works around it, moving what was in the way. A time of day picks the post\'s own minute in that window. Not on a Sunday. On the calendar you can also drag it to another day.</p></details>';
     if ($pinned !== '') $html .= ias_post_action_form($p, 'unpin', 'Let the plan choose the time', 'button-link', '', 'Let the morning plan choose this post\'s time again? It is re-planned now.');
     return $html;
   }
 }
 
 add_action('ias_calendar_action', function (string $action): void {
-  if (!in_array($action, ['move', 'unpin', 'retry', 'unlock', 'gbp_unlock'], true)) return;
+  if (!in_array($action, ['move', 'move_slot', 'unpin', 'retry', 'unlock', 'gbp_unlock'], true)) return;
   $id = isset($_POST['ias_post']) ? (int) $_POST['ias_post'] : 0;
   $p = $id > 0 ? ias_post_get($id) : null;
   if (!$p || $p['type'] === 'human') return;
-  $_POST['ias_back'] = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]);
+  if ($action !== 'move_slot' || empty($_POST['ias_back'])) $_POST['ias_back'] = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]); // a drag on the calendar comes back to the calendar
   $actor = ias_actor();
   $flags = $p['flags'];
   $flash = function (string $html, string $level = 'success') { ia_flash_set('<div class="notice notice-' . $level . '"><p>' . $html . '</p></div>'); };
   $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
 
+  // A time of day (the Move form's windows, or a drop on the calendar): its own minute in that window.
+  $slot = isset($_POST['ias_slot']) ? sanitize_key(wp_unslash((string) $_POST['ias_slot'])) : '';
+  if ($action === 'move_slot' || ($action === 'move' && $slot !== '' && $slot !== 'exact')) {
+    if (!ctype_digit($slot)) { $flash('Not moved: choose the morning, afternoon or evening.', 'error'); return; }
+    $r = ias_move_to_window($p, sanitize_text_field((string) wp_unslash($_POST['ias_day'] ?? '')), (int) $slot, $actor);
+    $flash($r['message'], $r['level']);
+    return;
+  }
+
   switch ($action) {
     case 'move':
-      if ($p['type'] === 'human' || !in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped'], true) || !empty($p['locked'])) { $flash('This post cannot be moved now.', 'error'); return; }
+      if (!ias_movable($p)) { $flash('This post cannot be moved now.', 'error'); return; }
       $when = sanitize_text_field((string) wp_unslash($_POST['ias_day'] ?? '')) . ' ' . substr(sanitize_text_field((string) wp_unslash($_POST['ias_time'] ?? '')), 0, 5);
       $why = ias_move_problem($when);
       if ($why !== '') { $flash('Not moved: ' . esc_html($why), 'error'); return; }
@@ -274,6 +409,86 @@ add_action('ias_calendar_before_grid', function (): void {
   echo '<div class="notice notice-warning inline"><p><strong>' . count($past) . ' post' . (count($past) === 1 ? '' : 's') . ' passed ' . (count($past) === 1 ? 'its' : 'their') . ' time without going out</strong> in the last 7 days. Open one to <strong>Publish now</strong> — or leave it, and the morning plan finds it a new time if it still has a window: ';
   echo implode(', ', array_map(function ($p) { return '<a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '">' . esc_html(ias_post_type((string) $p['type'])['short'] . ' · ' . ias_post_subject($p)) . '</a>'; }, array_slice($past, 0, 10))) . (count($past) > 10 ? ' …' : '') . '</p></div>';
 }, 6);
+
+/**
+ * Drag a post on the calendar (desktop): drop it on a day — or back on its own
+ * — and choose the morning, afternoon or evening; the choice submits the
+ * calendar's move form (ias_move_to_window()). Escape, Cancel or a click
+ * elsewhere puts it back. On a phone the post's own Move does the same.
+ */
+add_action('admin_footer', function () {
+  if (($_GET['page'] ?? '') !== IAS_PAGE_CALENDAR || isset($_GET['post']) || !current_user_can('manage_options')) return;
+  ?>
+<script>
+jQuery(function ($) {
+  var cfg = window.iasCal, $form = $('#ias-drop-form');
+  if (!cfg || !$form.length || !cfg.windows.length) return;
+  var drag = null, $pop = null;
+  function close() { if ($pop) { $pop.remove(); $pop = null; } $('.ias-day').removeClass('ias-drop-ok ias-drop-target'); }
+  function nice(day) { var d = new Date(day + 'T12:00:00'); return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); }
+  function open($day, x, y) {
+    close();
+    var day = String($day.data('day')), same = day === drag.day;
+    $day.addClass('ias-drop-target');
+    $pop = $('<div class="ias-drop-pop" role="dialog" aria-label="Choose a time of day"></div>');
+    $pop.append($('<p class="ias-drop-q"></p>').append('Move <strong></strong> to <strong></strong>:'));
+    $pop.find('strong').eq(0).text(drag.label);
+    $pop.find('strong').eq(1).text(nice(day));
+    var $row = $('<div class="ias-drop-slots"></div>');
+    $.each(cfg.windows, function (i, w) {
+      var past = day === cfg.today && w.b < cfg.soonMin, now = same && i === drag.slot;
+      var $b = $('<button type="button" class="button"></button>').attr('data-slot', i)
+        .append($('<strong></strong>').text(w.name)).append('<br>').append($('<span class="description"></span>').text(now ? 'where it is now' : (past ? 'passed for today' : w.span)));
+      if (past || now) $b.prop('disabled', true);
+      $row.append($b);
+    });
+    $pop.append($row).append('<p class="description">It stays there; the plan works around it.</p>')
+      .append($('<button type="button" class="button-link ias-drop-cancel">Cancel</button>'));
+    $('body').append($pop);
+    var w = $pop.outerWidth(), h = $pop.outerHeight();
+    $pop.css({ left: Math.max(8, Math.min(x - w / 2, $(window).width() - w - 8)) + 'px', top: Math.max(8 + $(window).scrollTop(), Math.min(y + 12, $(window).scrollTop() + $(window).height() - h - 8)) + 'px' });
+    $pop.data('day', day).data('post', drag.id);
+    $pop.find('.ias-drop-slots button:enabled').first().trigger('focus');
+  }
+  $('.ias-cal').on('dragstart', '.ias-chip.drag', function (e) {
+    var $c = $(this);
+    drag = { id: $c.data('post'), slot: parseInt($c.data('slot'), 10), label: String($c.data('label')), day: String($c.closest('.ias-day').data('day')) };
+    var dt = e.originalEvent.dataTransfer;
+    if (dt) { dt.effectAllowed = 'move'; try { dt.setData('text/plain', String(drag.id)); } catch (x) {} }
+    $c.addClass('is-dragging');
+    $('body').addClass('ias-dragging');
+  }).on('dragend', '.ias-chip.drag', function () {
+    $(this).removeClass('is-dragging');
+    $('body').removeClass('ias-dragging');
+    $('.ias-day').removeClass('ias-drop-ok');
+  }).on('dragover', '.ias-day', function (e) {
+    if (!drag || String($(this).data('drop')) !== '1') return;
+    e.preventDefault();
+    if (e.originalEvent.dataTransfer) e.originalEvent.dataTransfer.dropEffect = 'move';
+    $(this).addClass('ias-drop-ok');
+  }).on('dragleave', '.ias-day', function (e) {
+    if (!$.contains(this, e.originalEvent.relatedTarget)) $(this).removeClass('ias-drop-ok');
+  }).on('drop', '.ias-day', function (e) {
+    if (!drag || String($(this).data('drop')) !== '1') return;
+    e.preventDefault();
+    open($(this), e.originalEvent.pageX, e.originalEvent.pageY);
+  });
+  $(document).on('click', '.ias-drop-slots button', function () {
+    $form.find('[name=ias_post]').val($pop.data('post'));
+    $form.find('[name=ias_day]').val($pop.data('day'));
+    $form.find('[name=ias_slot]').val($(this).data('slot'));
+    $pop.find('button').prop('disabled', true);
+    $(this).text('Moving…');
+    $form.trigger('submit');
+  }).on('click', '.ias-drop-cancel', close).on('keydown', function (e) {
+    if (e.key === 'Escape') close();
+  }).on('mousedown', function (e) {
+    if ($pop && !$(e.target).closest('.ias-drop-pop').length) close();
+  });
+});
+</script>
+  <?php
+});
 
 /* ---------------- From OneUp, while anyone is looking ---------------- */
 
