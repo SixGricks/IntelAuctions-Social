@@ -1,5 +1,45 @@
 # Intel Auctions Social changelog
 
+## 0.16.0 (2026-10-14) — OneUp as its documentation says
+DJ shared OneUp's API documentation (docs.oneupapp.io), unreachable when the
+OneUp side was built. Every call the plugin makes was checked against it.
+What did not match, and could have gone wrong once more than a few posts
+were on OneUp, is fixed; where the live account has answered differently
+from the documentation (`posts` and `next_start` in its lists), both are read.
+- **Lists past the first 50** (`ias_oneup_list()`, `ias_oneup_next_start()`):
+  the documented lists come up to 50 a page from `start`, with no
+  `next_start`. The plugin read one page and called it the whole list, so a
+  post of ours past the first 50 was never found: OneUp gives a new post no
+  id, so it could not be taken back when switched off, nor replaced — and
+  with ids, it could be taken for "deleted in OneUp by a person" while still
+  going out. Now every page is read (a full page means ask again from where
+  it ended; a short page is the end; a `next_start` is followed), and a page
+  that only repeats rows ends the reading as not complete, so nothing is
+  concluded from it.
+- **Gone out, confirmed** (`ias_published_pick()`): the published list's
+  `post_id` is documented as the network's own id ("FB_…"). A post that went
+  out was never confirmed ("OneUp has not confirmed this went out" a day
+  later) and was taken for a person's own post, counting toward the day's
+  three. A published row that is not ours by id is now matched by its words,
+  on our page, at its time (15 minutes before to a day after); the network's
+  id is kept (`flags.oneup.published_id`, `flags.gbp.published_id`). Google's
+  read-back the same. Only a status is read this way — nothing is deleted or
+  replaced by a match of words.
+- **POST** for scheduletextpost / scheduleimagepost / schedulevideopost (and
+  `editpost`, unused), as documented; a 405 is still retried the other way.
+- **"0 new Posts Scheduled."** with no error flag is a refusal
+  (`ias_oneup_error_in()`): nothing was created, and nothing is looked for.
+- **OneUp's failure reason**: the failed list's `fail_reason`
+  (`ias_oneup_fail_reason()`), for Facebook and Google.
+- `ias_norm_text()` moved to `oneup.php`.
+- Tests: a docs-shaped fake OneUp (`docs`, `ignore_start`, `zero_new`; the
+  fake now reads a POST body as a server does), `tests/wp/07h-oneup-docs.php`
+  (Verify and POST; 60 posts on the list; nothing taken for deleted; take-back
+  from the second page; "0 new"; `fail_reason`; published by words, and a
+  person's own still theirs — 15 of its 24 checks fail on 0.15.0), Google's
+  published match in `tests/wp/07c-google.php`, and unit tests in
+  `tests/unit/oneup.php`.
+
 ## 0.15.0 (2026-10-14) — Only phone bid has to be said; "Call for a private showing" sometimes
 DJ: "don't require 'in person auction' as part of the description. We only
 need to say when it's a phone bid auction." — and "If no open house date is

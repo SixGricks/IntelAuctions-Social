@@ -49,3 +49,37 @@ t_ok(ias_oneup_type_is('gbp', 'GBP') && ias_oneup_type_is('gbp', 'Google Busines
 t_ok(ias_oneup_type_is('facebook', 'Facebook') && !ias_oneup_type_is('facebook', 'GBP'), 'a Facebook page is Facebook\'s, a GBP location is not');
 t_ok(ias_oneup_type_is('x', 'Twitter') && ias_oneup_type_is('x', 'X'), 'X answers to Twitter too');
 t_ok(!ias_oneup_type_is('instagram', 'YouTube'), 'a YouTube channel is no network of ours');
+
+// ---- 0.16.0: as docs.oneupapp.io shows (Oct 14, 2026) ----
+$eps = ias_oneup_endpoints();
+t_eq(['POST', 'POST', 'POST', 'POST', 'GET'], [$eps['schedule_text'][0], $eps['schedule_image'][0], $eps['schedule_video'][0], $eps['delete'][0], $eps['scheduled'][0]], 'scheduling and deleting are POST, the lists GET — as documented');
+t_eq('', ias_oneup_error_in(['message' => '1 new Posts Scheduled.', 'error' => false, 'data' => []]), 'the documented answer to a scheduling call is a success');
+t_eq('0 new Posts Scheduled.', ias_oneup_error_in(['message' => '0 new Posts Scheduled.', 'error' => false, 'data' => []]), '"0 new Posts Scheduled." is a refusal, though it carries no error flag');
+t_eq('', ias_oneup_find_id(['message' => '1 new Posts Scheduled.', 'error' => false, 'data' => []]), 'it carries no post id (the post is found on the list)');
+t_eq(2, count(ias_oneup_rows(['message' => 'OK', 'error' => false, 'data' => [['post_id' => 1], ['post_id' => 2]]])), 'a documented list: rows under data');
+
+// Where the next page starts.
+t_eq(50, ias_oneup_next_start([], 0, 50), 'no next_start and a full page of 50: ask again from 50');
+t_eq(100, ias_oneup_next_start(['data' => []], 50, 50), '…and from 100 after the second');
+t_eq(null, ias_oneup_next_start([], 50, 12), 'a short page is the end');
+t_eq(null, ias_oneup_next_start([], 0, 0), 'an empty page is the end');
+t_eq(50, ias_oneup_next_start(['next_start' => 50], 0, 50), 'a next_start is followed');
+t_eq(null, ias_oneup_next_start(['next_start' => null], 0, 50), '…and a null one is the end, however full the page');
+t_eq(null, ias_oneup_next_start(['next_start' => 0], 0, 50), '…as is one that does not move on');
+
+// A published row whose id is the network's own: matched by its words and time.
+$c = ['900051' => ['text' => "12 Alpha Road sells Nov 28.\n\nCall Jacob.", 'when' => '2026-11-10 19:12'],
+      '900052' => ['text' => '7 Bravo Lane sells Nov 27.', 'when' => '2026-11-11 06:20'],
+      'p:7'    => ['text' => '7 Bravo Lane sells Nov 27.', 'when' => '2026-11-18 06:20']];
+t_eq('900051', ias_published_pick("12 Alpha Road sells Nov 28.\r\n\r\nCall Jacob. ", '2026-11-10 19:13:00', $c), 'the post whose words are the row\'s, published at its time (line endings and a trailing space aside)');
+t_eq('900052', ias_published_pick('7 Bravo Lane sells Nov 27.', '2026-11-11 08:00:00', $c), 'two posts with the same words: the one whose time is nearest');
+t_eq('p:7', ias_published_pick('7 Bravo Lane sells Nov 27.', '2026-11-18 06:21:00', $c), '…the later one at its own time');
+t_eq(null, ias_published_pick('12 Alpha Road sells Nov 28. Call Jacob.', '2026-11-10 19:13:00', $c), 'other words: none');
+t_eq(null, ias_published_pick("12 Alpha Road sells Nov 28.\n\nCall Jacob.", '2026-11-12 19:13:00', $c), 'more than a day after its time: none');
+t_eq(null, ias_published_pick("12 Alpha Road sells Nov 28.\n\nCall Jacob.", '2026-11-10 18:30:00', $c), 'well before its time: none');
+t_eq(null, ias_published_pick("12 Alpha Road sells Nov 28.\n\nCall Jacob.", '', $c), 'no time on the row: none');
+
+// Why a post failed.
+t_eq('The image size exceeds the platform limit.', ias_oneup_fail_reason(['post_id' => '987654', 'fail_reason' => 'The image size exceeds the platform limit.', 'message' => 'x']), 'a failed row\'s fail_reason (the documented field)');
+t_eq('Token expired', ias_oneup_fail_reason(['failure_reason' => 'Token expired']), '…or another name for it');
+t_eq('', ias_oneup_fail_reason(['post_id' => '1']), '…or none');

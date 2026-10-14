@@ -7,25 +7,33 @@
  * public API for the Facebook page. Instagram or LinkedIn later are more
  * renderers, not a rebuild.
  *
- * OneUp's API (https://www.oneupapp.io/api/…, the key as `apiKey`): a post
- * is scheduled with scheduletextpost / scheduleimagepost / schedulevideopost
- * (category_id, social_network_id — a list, even of one account: see
+ * OneUp's API (https://www.oneupapp.io/api/…, the key as `apiKey`; read
+ * against docs.oneupapp.io on Oct 14, 2026): a post is scheduled with POST
+ * scheduletextpost / scheduleimagepost / schedulevideopost (category_id,
+ * social_network_id — a list, even of one account: see
  * ias_oneup_wire_params() — scheduled_date_time "YYYY-MM-DD HH:MM",
  * content, image_url — several joined with "~~" — or video_url, and
- * first_comment). A scheduled post's time cannot be edited, so a moved or
- * changed post is deleted and scheduled again. Lists (scheduled, published,
- * drafts, failed) come 50 at a time with `next_start`; each row carries
+ * first_comment). The documented answer is {"message": "1 new Posts
+ * Scheduled.", "error": false, "data": []} — no post id — so a new post is
+ * found on the scheduled list by its text and time; "0 new Posts" is a
+ * refusal. A scheduled post's time cannot be edited (editpost changes only
+ * its words), so a moved or changed post is deleted (POST
+ * deletescheduledpost, post_id, scheduled posts only) and scheduled again.
+ * Lists (scheduled, published, drafts, failed) come up to 50 a page from
+ * `start`; the live account has answered with `next_start` too, and without
+ * it a full page means there may be more (ias_oneup_list()). Each row carries
  * post_id, content, date_time (scheduled: the OneUp account's time) or
- * created_at (published: UTC), category_name and social_network_username.
+ * created_at (published: UTC), category_name and social_network_username;
+ * a failed row's reason is `fail_reason`. On the published list `post_id` is
+ * documented as the network's own id ("FB_…"), not OneUp's — so a published
+ * post is matched to ours by its id or else by its words, page and time
+ * (ias_published_pick()).
  *
  * The endpoint names and methods live in one filterable map
- * (`ias_oneup_endpoints`). The scheduling and delete ones are OneUp's
- * documented ones (docs.oneupapp.io — delete is POST deletescheduledpost,
- * for posts not yet published; the guessed "deletepost" answered the live
- * site with a 404 page, Oct 13, 2026); the list names follow the same pattern
- * and are what **Verify OneUp** on the Settings screen checks, with a draft
- * that never publishes, before any switch is turned on. A method OneUp refuses (405) or
- * an address too long for it (414) is retried once the other way.
+ * (`ias_oneup_endpoints`), as documented; **Verify OneUp** on the Settings
+ * screen checks them with a draft that never publishes before any switch is
+ * turned on. A method OneUp refuses (405) or an address too long for it (414)
+ * is retried once the other way.
  *
  * Nothing is sent unless every switch allows it (ias_push_blockers()); the
  * key is added to the request only when it is sent and is never logged.
@@ -34,6 +42,7 @@
 if (!defined('ABSPATH')) exit;
 
 if (!defined('IAS_ONEUP_BASE')) define('IAS_ONEUP_BASE', 'https://www.oneupapp.io/api/');
+if (!defined('IAS_ONEUP_PAGE')) define('IAS_ONEUP_PAGE', 50); // rows a list page holds at most (OneUp's docs)
 
 /** Endpoint name => [HTTP method, path]. */
 if (!function_exists('ias_oneup_endpoints')) {
@@ -41,15 +50,15 @@ if (!function_exists('ias_oneup_endpoints')) {
     return (array) apply_filters('ias_oneup_endpoints', [
       'categories'     => ['GET', 'listcategory'],
       'accounts'       => ['GET', 'listcategoryaccount'],
-      'schedule_text'  => ['GET', 'scheduletextpost'],
-      'schedule_image' => ['GET', 'scheduleimagepost'],
-      'schedule_video' => ['GET', 'schedulevideopost'],
+      'schedule_text'  => ['POST', 'scheduletextpost'],
+      'schedule_image' => ['POST', 'scheduleimagepost'],
+      'schedule_video' => ['POST', 'schedulevideopost'],
       'scheduled'      => ['GET', 'getscheduledposts'],
       'published'      => ['GET', 'getpublishedposts'],
       'drafts'         => ['GET', 'getdraftposts'],
       'failed'         => ['GET', 'getfailedposts'],
       'delete'         => ['POST', 'deletescheduledpost'], // OneUp's docs: post_id, unpublished posts only (Verify OneUp checks it on its test draft)
-      'edit'           => ['GET', 'editpost'],     // not used: a changed post is deleted and scheduled again
+      'edit'           => ['POST', 'editpost'],    // not used: it changes only the words, so a changed post is deleted and scheduled again
     ]);
   }
 }
@@ -228,8 +237,9 @@ if (!function_exists('ias_oneup_call')) {
       if ($method === 'GET') {
         $url = add_query_arg(array_map('rawurlencode', array_merge(['apiKey' => $key], array_map('strval', $params))), $url);
       } else {
+        // The docs name apiKey a query parameter, and their POST examples send it in the form: both.
         $url = add_query_arg(['apiKey' => rawurlencode($key)], $url);
-        $args['body'] = array_map('strval', $params);
+        $args['body'] = ['apiKey' => $key] + array_map('strval', $params);
       }
       return wp_remote_request($url, $args);
     };
@@ -316,6 +326,8 @@ if (!function_exists('ias_oneup_error_in')) {
       return $msg !== '' ? $msg : (is_string($data['error'] ?? null) ? (string) $data['error'] : 'an error');
     }
     if (is_string($data['error'] ?? null) && $data['error'] !== '') return (string) $data['error'];
+    // "0 new Posts Scheduled." with no error flag: nothing was created — a clear no, never a success.
+    if (preg_match('/^\s*0\s+new\s+posts?\b/i', $msg)) return $msg;
     return '';
   }
 }
@@ -340,13 +352,20 @@ if (!function_exists('ias_oneup_find_id')) {
 }
 
 /**
- * Every row of a OneUp list (scheduled, published, drafts, failed), following
- * `next_start` up to $pages pages. Returns ['ok', 'rows', 'complete' (the whole
- * list was read), 'error'].
+ * Every row of a OneUp list (scheduled, published, drafts, failed), up to
+ * $pages pages. Returns ['ok', 'rows', 'complete' (the whole list was read),
+ * 'error']. OneUp's docs page a list by `start`, up to 50 rows a page, and say
+ * nothing of where it ends; the live account has also answered with
+ * `next_start`. So: a `next_start` is followed (null = the end); without one, a
+ * full page means there may be more and the next is asked for from where this
+ * one ended, and a short page is the end. A page that brings nothing new (a
+ * server that ignored `start`) ends the reading as not complete — a partial
+ * list must never read as "OneUp has none of our posts".
  */
 if (!function_exists('ias_oneup_list')) {
   function ias_oneup_list(string $endpoint, int $pages = 10): array {
     $rows = [];
+    $seen = [];
     $start = 0;
     for ($i = 0; $i < $pages; $i++) {
       $r = ias_oneup_call($endpoint, ['start' => $start]);
@@ -356,12 +375,83 @@ if (!function_exists('ias_oneup_list')) {
       // requests" message must never read as "OneUp has none of our posts".
       $list = is_array($data) ? ($data['posts'] ?? $data['data'] ?? null) : null;
       if (!is_array($list)) return ['ok' => false, 'rows' => $rows, 'complete' => false, 'error' => 'OneUp\'s answer had no list of posts' . (is_array($data) && !empty($data['message']) && is_string($data['message']) ? ': ' . ias_oneup_redact((string) $data['message']) : '') . '.'];
-      foreach ($list as $row) if (is_array($row)) $rows[] = $row;
-      $next = $data['next_start'] ?? null;
-      if ($next === null || $next === '' || (int) $next <= $start) return ['ok' => true, 'rows' => $rows, 'complete' => true, 'error' => ''];
-      $start = (int) $next;
+      $page = array_values(array_filter($list, 'is_array'));
+      $new = 0;
+      foreach ($page as $row) {
+        $k = isset($row['post_id']) && (string) $row['post_id'] !== '' ? 'id:' . $row['post_id'] : 'row:' . md5((string) wp_json_encode($row));
+        if (isset($seen[$k])) continue;
+        $seen[$k] = true;
+        $rows[] = $row;
+        $new++;
+      }
+      if ($page && !$new) return ['ok' => true, 'rows' => $rows, 'complete' => false, 'error' => ''];
+      $next = ias_oneup_next_start($data, $start, count($page));
+      if ($next === null) return ['ok' => true, 'rows' => $rows, 'complete' => true, 'error' => ''];
+      $start = $next;
     }
     return ['ok' => true, 'rows' => $rows, 'complete' => false, 'error' => ''];
+  }
+}
+
+/**
+ * Where the next page of a OneUp list starts, or null at the end. A
+ * `next_start` in the answer decides; without one, a full page (50) means ask
+ * again from where it ended. Pure.
+ */
+if (!function_exists('ias_oneup_next_start')) {
+  function ias_oneup_next_start(array $data, int $start, int $count): ?int {
+    if (array_key_exists('next_start', $data)) {
+      $n = $data['next_start'];
+      return ($n === null || $n === '' || $n === false || (int) $n <= $start) ? null : (int) $n;
+    }
+    return $count >= IAS_ONEUP_PAGE ? $start + $count : null;
+  }
+}
+
+/** Text compared the way OneUp may hand it back (line endings, runs of spaces, trailing space). Pure. */
+if (!function_exists('ias_norm_text')) {
+  function ias_norm_text(string $s): string {
+    return trim((string) preg_replace('/[ \t]+/', ' ', str_replace(["\r\n", "\r"], "\n", $s)));
+  }
+}
+
+/**
+ * Which of our posts a row of OneUp's published list is, when its post_id is
+ * not one of ours — OneUp's docs give the network's own id there ("FB_…"),
+ * not the id the post was scheduled under. The post whose words are the
+ * row's, published from 15 minutes before its time to a day after it; the
+ * nearest in time when two could be. $cands: [key => ['text', 'when'
+ * (site time)]]; $at: the row's time, in site time. Returns the key, or null.
+ * The caller checks the row is on our page, and gives each post one row.
+ * Only a status is read this way — nothing is ever deleted or replaced by a
+ * match of words. Pure.
+ */
+if (!function_exists('ias_published_pick')) {
+  function ias_published_pick(string $text, string $at, array $cands): ?string {
+    $norm = ias_norm_text($text);
+    $t = $at !== '' ? strtotime($at) : false;
+    if ($norm === '' || !$t) return null;
+    $best = null;
+    $gap = PHP_INT_MAX;
+    foreach ($cands as $k => $c) {
+      if (ias_norm_text((string) ($c['text'] ?? '')) !== $norm) continue;
+      $w = strtotime((string) ($c['when'] ?? ''));
+      if (!$w) continue;
+      $d = $t - $w;
+      if ($d < -15 * 60 || $d > 86400) continue;
+      if (abs($d) < $gap) { $gap = abs($d); $best = (string) $k; }
+    }
+    return $best;
+  }
+}
+
+/** Why OneUp could not publish a post, from a row of its failed list ('' = it gave none). */
+if (!function_exists('ias_oneup_fail_reason')) {
+  function ias_oneup_fail_reason(array $row): string {
+    foreach (['fail_reason', 'failure_reason', 'reason', 'error', 'message'] as $k) {
+      if (isset($row[$k]) && is_string($row[$k]) && trim($row[$k]) !== '') return trim($row[$k]);
+    }
+    return '';
   }
 }
 

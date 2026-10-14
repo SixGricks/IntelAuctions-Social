@@ -113,13 +113,6 @@ if (!function_exists('ias_correction_facts')) {
   }
 }
 
-/** Text compared the way OneUp may hand it back (line endings, runs of spaces, trailing space). */
-if (!function_exists('ias_norm_text')) {
-  function ias_norm_text(string $s): string {
-    return trim((string) preg_replace('/[ \t]+/', ' ', str_replace(["\r\n", "\r"], "\n", $s)));
-  }
-}
-
 /**
  * OneUp's scheduled list, read once per request and forgotten after every
  * write. $fresh = read it again now.
@@ -522,27 +515,44 @@ if (!function_exists('ias_readback_run')) {
       $count[$moved ? 'moved' : 'edited']++;
     }
 
-    // Published.
+    // Published. OneUp's docs give the network's own id here ("FB_…"), not the one the post was scheduled
+    // under: a row that is not one of ours by id is matched by its words, page and time
+    // (ias_published_pick()), so a post of ours is confirmed — and never taken for a person's.
     $seen_pub = [];
+    $by_key = $ours;
+    $in_ours = [];
+    foreach ($ours as $p) $in_ours[(int) $p['id']] = true;
+    foreach ($noid as $p) { // sent, but OneUp's id for it never found: it can still be seen going out
+      if (empty($in_ours[(int) $p['id']]) && ias_post_sent($p)['mode'] === 'live') $by_key['p:' . (int) $p['id']] = $p;
+    }
+    $pub_cands = [];
+    foreach ($by_key as $k => $p) {
+      $o = (array) ($p['flags']['oneup'] ?? []);
+      if (!empty($o['text']) && !empty($o['when'])) $pub_cands[(string) $k] = ['text' => (string) $o['text'], 'when' => (string) $o['when']];
+    }
     foreach ($pub['ok'] ? $pub['rows'] : [] as $row) {
       $oid = (string) ($row['post_id'] ?? '');
-      if ($oid === '') continue;
-      $seen_pub[$oid] = true;
       $at = ias_oneup_time((string) ($row['created_at'] ?? $row['date_time'] ?? ''), true);
-      if (!isset($ours[$oid])) {
-        if ($mine($row) && $at !== '' && $at >= ias_now()->modify('-2 days')->format('Y-m-d H:i:s')) ias_human_upsert($oid, $at, (string) ($row['content'] ?? '')); // today's count toward today's three
+      $key = $oid !== '' && isset($ours[$oid]) ? $oid : null;
+      if ($key === null && $mine($row)) $key = ias_published_pick((string) ($row['content'] ?? ''), $at, $pub_cands);
+      if ($key === null) {
+        if ($oid !== '' && $mine($row) && $at !== '' && $at >= ias_now()->modify('-2 days')->format('Y-m-d H:i:s')) ias_human_upsert($oid, $at, (string) ($row['content'] ?? '')); // today's count toward today's three
         continue;
       }
+      unset($pub_cands[$key]);
+      $seen_pub[$key] = true;
+      if ($oid !== '' && $oid !== $key) ias_human_forget($oid); // an earlier read-back took it for a person's post
       $names[] = trim((string) ($row['social_network_username'] ?? ''));
-      $p = $ours[$oid];
+      $p = $by_key[$key];
       if ($p['status'] === 'published' && empty($p['flags']['unconfirmed'])) continue;
       $flags = $p['flags'];
       $was = (string) $p['status'];
+      if ($oid !== '' && $oid !== $key) $flags['oneup']['published_id'] = mb_substr($oid, 0, 64); // the network's own id
       unset($flags['unconfirmed'], $flags['unconfirmed_noted'], $flags['missing_since']);
       $note = in_array($was, ['cancelled', 'skipped', 'dropped'], true) ? 'It went out on Facebook although it was ' . $was . ' here — take it down on the page if it should not be there.' : '';
       ias_post_update((int) $p['id'], ['status' => 'published', 'flags' => $flags, 'published_at' => $at !== '' ? $at : $now, 'note' => $note]);
       ias_post_trail((int) $p['id'], 'Published on Facebook' . ($at !== '' ? ' ' . date_i18n('D M j, g:i a', strtotime($at)) : '') . ($note !== '' ? ' — although it was ' . $was : ''));
-      ias_log('readback', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Published on Facebook (OneUp #' . $oid . ').' . ($note !== '' ? ' ' . $note : '')]);
+      ias_log('readback', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Published on Facebook' . ($oid !== '' ? ' (' . ($oid === $key ? 'OneUp #' : '') . $oid . ')' : '') . '.' . ($note !== '' ? ' ' . $note : '')]);
       if (function_exists('ias_voice_record')) ias_voice_record((int) $p['id'], 'out');
       $count['published']++;
     }
@@ -554,7 +564,7 @@ if (!function_exists('ias_readback_run')) {
       $seen_fail[$oid] = true;
       if (!isset($ours[$oid]) || in_array($ours[$oid]['status'], ['failed', 'cancelled', 'skipped'], true)) continue;
       $p = $ours[$oid];
-      $why = (string) ($row['failure_reason'] ?? $row['reason'] ?? $row['error'] ?? $row['message'] ?? 'no reason given');
+      $why = ias_oneup_fail_reason($row) ?: 'no reason given';
       ias_post_update((int) $p['id'], ['status' => 'failed', 'note' => 'OneUp could not publish it: ' . $why . ' — press Try again, or skip it.']);
       ias_post_trail((int) $p['id'], 'Failed on OneUp: ' . $why);
       ias_log('push_failed', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'OneUp could not publish it: ' . $why]);

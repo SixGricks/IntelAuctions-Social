@@ -251,7 +251,12 @@ function ias_t_claude_off(): void {
  * $GLOBALS['ias_t_oneup']: scheduled, published, drafts, failed (id => row),
  * calls (every request: path, method, params), fail_next (refuse that many
  * schedules), no_id (answer without a post id), tz_shift (hours OneUp's clock
- * is off the site's), gbp (a Google Business Profile post on the list).
+ * is off the site's), gbp (a Google Business Profile post on the list),
+ * docs (answer exactly as docs.oneupapp.io shows, Oct 14, 2026: lists under
+ * `data` with no next_start, scheduling answers "1 new Posts Scheduled." with
+ * no post id, the published list carrying the network's own id "FB_…"),
+ * ignore_start (every page is the first), zero_new (the next N scheduling
+ * calls answer "0 new Posts Scheduled." and create nothing).
  */
 function ias_t_oneup(): void {
   // Switches for the ways OneUp can let us down: fail_next (refuse the next N posts), no_id (answer
@@ -262,7 +267,7 @@ function ias_t_oneup(): void {
   // ('any': the account as a JSON list or social_network_id[…]; 'brackets': only the latter). A plain id is refused.
   $GLOBALS['ias_t_oneup'] = ['scheduled' => [], 'published' => [], 'drafts' => [], 'failed' => [], 'next' => 900001, 'calls' => [],
     'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true, 'lose_answer' => 0, 'net_error' => 0, 'delete_404' => 0,
-    'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)', 'id_form' => 'any'];
+    'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)', 'id_form' => 'any', 'docs' => false, 'ignore_start' => false, 'zero_new' => 0];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -270,7 +275,9 @@ function ias_t_oneup(): void {
     $parts = wp_parse_url((string) $url);
     parse_str((string) ($parts['query'] ?? ''), $q);
     $path = basename((string) $parts['path']);
-    $params = array_merge($q, is_array($args['body'] ?? null) ? $args['body'] : []);
+    $body = [];
+    if (is_array($args['body'] ?? null)) parse_str(http_build_query($args['body']), $body); // read as a server reads the form WordPress sends (social_network_id[0] becomes a list)
+    $params = array_merge($q, $body);
     // The account as it came over the wire (`raw_sn`); the calls list keeps the one id, for the tests to read.
     $raw_sn = $params['social_network_id'] ?? null;
     if (is_string($raw_sn)) { $d = json_decode($raw_sn, true); if (is_array($d) && $d) $params['social_network_id'] = (string) array_values($d)[0]; }
@@ -283,12 +290,13 @@ function ias_t_oneup(): void {
     if (in_array($path, (array) $S['broken'], true)) return $json(200, ['message' => 'Too many requests, slow down']);
     $fb = (string) $S['fb'];
     $page = function (array $rows, string $time_key) use ($params, $json) {
-      $start = (int) ($params['start'] ?? 0);
+      $start = !empty($GLOBALS['ias_t_oneup']['ignore_start']) ? 0 : (int) ($params['start'] ?? 0);
       $rows = array_values($rows);
       if ($time_key === 'date_time' && !empty($GLOBALS['ias_t_oneup']['gbp'])) {
         $rows[] = ['post_id' => 555, 'content' => 'A Google Business Profile post', 'source_url' => 'NA', $time_key => '2026-11-10 11:05:45', 'category_name' => 'Intel', 'video_url' => 'NA', 'content_image' => 'NA', 'social_network_username' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )'];
       }
       $slice = array_slice($rows, $start, 50);
+      if (!empty($GLOBALS['ias_t_oneup']['docs'])) return $json(200, ['message' => 'OK', 'error' => false, 'data' => $slice]);
       return $json(200, ['posts' => $slice, 'start' => $start, 'count' => count($slice), 'next_start' => $start + 50 < count($rows) ? $start + 50 : null]);
     };
     switch ($path) {
@@ -307,6 +315,7 @@ function ias_t_oneup(): void {
         if (!is_array($sn) || !$sn) return $json(200, ['error' => true, 'message' => 'Social Network ID must be an array.']);
         if ($S['net_error'] > 0) { $S['net_error']--; return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds for ' . $url); }
         if ($S['fail_next'] > 0) { $S['fail_next']--; return $json(200, ['error' => true, 'message' => 'The Facebook token has expired']); }
+        if ($S['zero_new'] > 0) { $S['zero_new']--; return $json(200, ['message' => '0 new Posts Scheduled.', 'error' => false, 'data' => []]); }
         $id = $S['next']++;
         $row = ['post_id' => $id, 'content' => (string) ($params['content'] ?? ''), 'source_url' => 'NA',
           'date_time' => date('Y-m-d H:i:s', strtotime((string) $params['scheduled_date_time']) + 3600 * (int) $S['tz_shift']),
@@ -315,6 +324,7 @@ function ias_t_oneup(): void {
           'google_post_type' => (string) ($params['google_post_type'] ?? ''), 'cta_button_url' => (string) ($params['cta_button_url'] ?? '')];
         if (($params['isDraftPost'] ?? '') === 'true' && !$S['draft_real']) $S['drafts'][$id] = $row; else $S['scheduled'][$id] = $row;
         if ($S['lose_answer'] > 0) { $S['lose_answer']--; return $json(502, ['message' => 'Bad gateway']); }
+        if ($S['docs']) return $json(200, ['message' => '1 new Posts Scheduled.', 'error' => false, 'data' => []]);
         return $json(200, $S['no_id'] ? ['error' => false, 'message' => 'Post scheduled successfully'] : ['error' => false, 'message' => 'Post scheduled successfully', 'data' => ['post_id' => $id]]);
       case 'deletepost': // the address the plugin once guessed: OneUp answers it with its 404 web page
         return ['headers' => [], 'body' => '<!doctype html><title>Page Not Found</title><h1>Page Not Found</h1><p>Sorry, the page you are looking for could not be found.</p>', 'response' => ['code' => 404, 'message' => 'Not Found'], 'cookies' => [], 'filename' => null];
@@ -346,6 +356,7 @@ function ias_t_oneup_publish(int $id): void {
   $at = (string) $row['date_time'];
   unset($S['scheduled'][$id], $row['date_time']);
   $row['created_at'] = (new DateTimeImmutable($at, ia_wp_tz()))->modify('+1 minute')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+  if (!empty($S['docs'])) $row['post_id'] = ($row['social_network_username'] === $S['fb'] ? 'FB_1336677789520495_' : 'GBP_') . $id; // the network's own id, as the docs show
   $S['published'][$id] = $row;
 }
 

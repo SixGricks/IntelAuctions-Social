@@ -213,12 +213,22 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   finds moved or edited by a person in OneUp is `locked`: never replaced, taken
   back only if skipped or cancelled. Status `pushed` is a display status
   (`ias_post_shown_status()`), never stored.
-- **OneUp's API is only partly documented where this was built** (its site was
-  unreachable): the endpoint names and methods live in `ias_oneup_endpoints()`,
-  answers are read loosely (`ias_oneup_rows()`, `ias_oneup_find_id()`,
-  `ias_oneup_error_in()`), and **Verify OneUp** checks the real thing with a
-  draft. The list rows' shape (post_id, content, date_time in the account's time
-  zone, created_at in UTC, social_network_username) is from the real account.
+- **OneUp's API is documented at docs.oneupapp.io** (unreachable when this was
+  built; checked against it Oct 14, 2026, 0.16.0 — read it before changing a
+  call). The endpoint names and methods live in `ias_oneup_endpoints()`
+  (scheduling and delete are POST); answers are read loosely
+  (`ias_oneup_rows()`, `ias_oneup_find_id()`, `ias_oneup_error_in()`) because the
+  live account has answered differently from the docs (`posts`/`next_start`
+  vs `data`), and **Verify OneUp** checks the real thing with a draft. What the
+  docs settle: a new post's answer carries **no post id** (it is found on the
+  list by words and time; "0 new Posts Scheduled." is a refusal); lists come
+  **50 a page** from `start` — always read every page (`ias_oneup_list()`),
+  never take one page for the whole list; the **published** list's `post_id`
+  is the network's own id, so a published row is matched by id or by words,
+  page and time (`ias_published_pick()`) — a status only, never a delete; a
+  failed row's reason is `fail_reason`. Row times: date_time in the account's
+  time zone, created_at in UTC. Analytics (`analyze.oneupapp.io`) and comments
+  (`feed.oneupapp.io`) need OneUp's Intermediate plan or above.
 - **A person's decision holds.** Anything that puts a post back on the plan uses
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when
