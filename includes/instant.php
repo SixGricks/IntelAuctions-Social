@@ -155,20 +155,9 @@ if (!function_exists('ias_move_to_window')) {
     ias_log('moved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $words], $actor);
 
     // The plan makes room at once: posts in the way move, and their copies on OneUp follow.
-    $before = [];
-    foreach (ias_posts_query(['status' => ias_live_statuses(), 'limit' => 2000]) as $o) if ((int) $o['id'] !== $id) $before[(int) $o['id']] = (string) ($o['scheduled_at'] ?? '');
-    if (function_exists('ias_plan_run')) ias_plan_run($actor);
-    $moved = [];
-    $still = [];
-    foreach (ias_posts_query(['status' => ias_live_statuses(), 'limit' => 2000]) as $o) {
-      $oid = (int) $o['id'];
-      $still[$oid] = true;
-      if (isset($before[$oid]) && $before[$oid] !== (string) ($o['scheduled_at'] ?? '')) $moved[] = $o;
-    }
-    $dropped = []; // off the plan now: no room left in its window
-    foreach (array_keys(array_diff_key($before, $still)) as $oid) if (($o = ias_post_get((int) $oid)) && $o['status'] === 'dropped') $dropped[] = $o;
-    $follow = array_map(function ($o) { return (int) $o['id']; }, array_merge($moved, $dropped));
-    if ($follow && function_exists('ias_push_now')) ias_push_now($follow);
+    $changed = ias_plan_run_follow($id, $actor);
+    $moved = $changed['moved'];
+    $dropped = $changed['dropped'];
     $n = ias_move_day_count($day, $id);
     $cap = (int) ias_setting('daily_cap', 3);
     $msg = 'Moved to <strong>' . esc_html(date_i18n('D M j', strtotime($day))) . ', ' . esc_html($label) . '</strong> (' . esc_html(date_i18n('g:i a', strtotime($when))) . '). It stays there; the plan works around it.'
@@ -176,6 +165,42 @@ if (!function_exists('ias_move_to_window')) {
       . ($dropped ? ' <strong>The plan dropped ' . esc_html(implode(', ', array_map(function ($o) { return ias_post_type((string) $o['type'])['short'] . ' · ' . ias_post_subject($o); }, $dropped))) . '</strong> — ' . esc_html(rtrim((string) $dropped[0]['note'], '.')) . '. Restore it on its page, or move this one again.' : '')
       . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . ').' : '');
     return ['ok' => true, 'message' => $msg, 'when' => $when, 'level' => $n >= $cap || $dropped ? 'warning' : 'success'];
+  }
+}
+
+/**
+ * Run the plan now and send OneUp every other post it changed — moved, dropped
+ * (no room left in its window) or brought back (room opened) — in this same
+ * request, so OneUp follows at once (DJ, Oct 13, 2026: instant both ways).
+ * The post a person acted on ($id) is the caller's to send. Returns ['moved',
+ * 'dropped', 'reinstated'] (posts as they are now).
+ */
+if (!function_exists('ias_plan_run_follow')) {
+  function ias_plan_run_follow(int $id, string $actor): array {
+    $out = ['moved' => [], 'dropped' => [], 'reinstated' => []];
+    if (!function_exists('ias_plan_run')) return $out;
+    $statuses = array_merge(ias_live_statuses(), ['dropped']);
+    $snap = function () use ($statuses, $id) {
+      $rows = [];
+      foreach (ias_posts_query(['status' => $statuses, 'limit' => 2000]) as $o) if ((int) $o['id'] !== $id) $rows[(int) $o['id']] = $o;
+      return $rows;
+    };
+    $before = $snap();
+    ias_plan_run($actor);
+    $after = $snap();
+    $live = ias_live_statuses();
+    foreach ($before as $oid => $b) {
+      $o = $after[$oid] ?? null;
+      if (!$o) continue; // cancelled or skipped meanwhile: its own path takes it off
+      $was = in_array($b['status'], $live, true);
+      $is = in_array($o['status'], $live, true);
+      if ($was && $is && (string) ($b['scheduled_at'] ?? '') !== (string) ($o['scheduled_at'] ?? '')) $out['moved'][] = $o;
+      elseif ($was && $o['status'] === 'dropped') $out['dropped'][] = $o;
+      elseif ($b['status'] === 'dropped' && $is) $out['reinstated'][] = $o;
+    }
+    $follow = array_map(function ($o) { return (int) $o['id']; }, array_merge($out['moved'], $out['dropped'], $out['reinstated']));
+    if ($follow && function_exists('ias_push_now')) ias_push_now($follow);
+    return $out;
   }
 }
 
@@ -255,7 +280,7 @@ add_action('ias_calendar_action', function (string $action): void {
       ias_post_update($id, ['flags' => $flags]);
       ias_post_trail($id, 'The plan chooses its time again', $actor);
       $was = (string) ($p['scheduled_at'] ?? '');
-      if (function_exists('ias_plan_run')) ias_plan_run($actor);
+      ias_plan_run_follow($id, $actor);
       $p = ias_post_get($id) ?: $p;
       $at = (string) ($p['scheduled_at'] ?? '');
       $kept = $at !== '' && $at === $was && ias_post_sent($p)['mode'] !== '' && $at < ias_now()->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:s');
@@ -286,7 +311,7 @@ add_action('ias_calendar_action', function (string $action): void {
       if (!array_key_exists('scheduled_at', $fields) || $fields['scheduled_at'] !== null) {
         $flash('Back on the plan for ' . esc_html($fmt((string) $p['scheduled_at'])) . '.');
       } else {
-        if (function_exists('ias_plan_run')) ias_plan_run($actor);
+        ias_plan_run_follow($id, $actor);
         $p = ias_post_get($id) ?: $p;
         $flash('Back on the plan' . (!empty($p['scheduled_at']) ? ' for <strong>' . esc_html($fmt((string) $p['scheduled_at'])) . '</strong> (use Move for another time)' : '') . '.');
       }

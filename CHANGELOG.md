@@ -1,5 +1,19 @@
 # Intel Auctions Social changelog
 
+## 0.19.1 (2026-10-14) — Everything a re-plan changes follows at once
+From the Codex review of SixGricks/IntelAuctions-Social#8 (two findings, one
+cause): a click that re-plans sent OneUp only the post clicked, or the
+posts the plan moved — not a post it dropped back onto the plan when room
+opened, and, for Restore, nothing else at all — so those waited for the
+hourly run.
+- `ias_plan_run_follow()`: runs the plan and sends OneUp, in the same
+  request, every other post it moved, dropped or brought back (a snapshot of
+  the live and dropped posts before and after). Restore, Move, a drag, Let
+  the plan choose and Try again use it; Plan now and an approval already
+  push everything after planning.
+- Tests: `tests/wp/07l-replan-follow.php` (11 checks; Restore, the drag and
+  Let the plan choose fail without it).
+
 ## 0.19.0 (2026-10-14) — Try again reuses OneUp's failed post
 DJ: "Yes" — Try again reuses the copy OneUp could not publish rather than
 sending a second one.

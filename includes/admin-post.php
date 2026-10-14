@@ -167,8 +167,9 @@ add_action('ias_calendar_action', function (string $action): void {
       ias_post_update($id, ['status' => $status, 'flags' => $flags, 'note' => $status === 'held' ? 'Needs a decision: ' . (string) ($flags['holds'][0] ?? '') : '']);
       ias_post_trail($id, 'Turned back on: restored to the plan', $actor);
       ias_log('planned', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Turned back on: restored to the plan'], $actor);
-      // The plan gives it a time now (its old one may be gone or inside the 48 hours), and OneUp follows in this request.
-      if (function_exists('ias_plan_run')) ias_plan_run($actor);
+      // The plan gives it a time now (its old one may be gone or inside the 48 hours), and OneUp follows in this
+      // request — for this post (the calendar's handler) and for every other post the plan moved, dropped or brought back.
+      if (function_exists('ias_plan_run_follow')) ias_plan_run_follow($id, $actor); elseif (function_exists('ias_plan_run')) ias_plan_run($actor);
       $q = ias_post_get($id) ?: $p;
       $flash('Turned back on' . ($q['status'] === 'held' ? ' — it needs a decision before it goes anywhere' : ($q['status'] === 'dropped' ? ', but the plan has no room for it in its window: move it to a day yourself' : (!empty($q['scheduled_at']) ? ': it goes ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $q['scheduled_at']))) : ': the plan gives it a time'))) . '.');
       return;
