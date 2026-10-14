@@ -1,5 +1,28 @@
 # Intel Auctions Social changelog
 
+## 0.14.0 (2026-10-14) — A switch on every post; hover for a preview
+DJ: "I also want to be able to turn on skipped items and turn off others." —
+and "Hover over an item on the calendar should give a preview of the post."
+- **An on/off switch on each post on the calendar** (`ias_calendar_onoff()`):
+  green on a post on its way — press it to turn the post off (Skip, off
+  OneUp at once); grey on a skipped, cancelled or dropped post — press it to
+  turn it back on (Restore). None on a post that went out, a person's own, or
+  one whose time came before posting was on. It comes back to the calendar
+  (`ias_from=calendar`, which the drag's form now sends too).
+- **Turning a post back on re-plans at once** (Restore, from the calendar or
+  its page): the plan gives it a time — its old one may be gone or inside the
+  48 hours — and OneUp follows in the same request; the notice says when it
+  goes, or that the plan had no room for it.
+- **Words:** Skip is **Turn this post off…** / **Turn it off**, Restore is
+  **Turn it back on**, and the notices say turned off / turned back on.
+- **Hover a post for its preview** (`ias_calendar_preview()`): its type and
+  listing, where it stands and when, the lead picture and how many more, the
+  words, the start of the first comment — or that it has no draft yet.
+  Carried on the chip, so no request; built as text, never HTML; not on a
+  device without hover; Escape, moving away or scrolling hides it. It
+  replaces the chip's old tooltip.
+- Tests: `tests/wp/07g-onoff-preview.php`.
+
 ## 0.13.0 (2026-10-14) — Drag posts on the calendar; morning, afternoon or evening
 DJ: "I want to be able to drag posts around on the calendar and choose the
 morning, afternoon, or evening time slot."

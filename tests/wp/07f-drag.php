@@ -61,16 +61,16 @@ $html = $calendar();
 restore_error_handler();
 t_eq([], $errors, 'the calendar renders without a notice');
 $aid = (int) $lp($a)['id'];
-t_ok(preg_match('/<a class="ias-chip[^"]* drag"[^>]*draggable="true" data-post="' . $aid . '" data-slot="\d"/', $html) === 1, 'a post that can move is draggable, with its post and its window');
+t_ok(preg_match('/<a class="ias-chip[^"]* drag[^"]*"[^>]*draggable="true" data-post="' . $aid . '" data-slot="\d"/', $html) === 1, 'a post that can move is draggable, with its post and its window');
 t_ok(strpos($html, 'data-day="2026-11-08" data-drop="0"') !== false, 'a Sunday takes no drop');
 t_ok(strpos($html, 'data-day="2026-11-02" data-drop="1"') !== false && strpos($html, 'data-day="2026-11-10" data-drop="1"') !== false, 'today and the days ahead do');
-t_ok(strpos($html, '<form method="post" id="ias-drop-form" hidden>') !== false && strpos($html, 'value="move_slot"') !== false && strpos($html, 'name="_wpnonce"') !== false, 'the drop submits a nonce-checked move');
+t_ok(strpos($html, '<form method="post" id="ias-drop-form" hidden>') !== false && strpos($html, 'value="move_slot"') !== false && strpos($html, 'name="_wpnonce"') !== false && strpos($html, 'name="ias_from" value="calendar"') !== false, 'the drop submits a nonce-checked move, from the calendar');
 t_ok(strpos($html, 'window.iasCal = ') !== false && strpos($html, '"name":"Morning"') !== false && strpos($html, '"name":"Afternoon"') !== false && strpos($html, '"name":"Evening"') !== false, '…offering the morning, afternoon and evening');
 t_ok(strpos($html, 'drag it to another day') !== false, 'the calendar says posts can be dragged');
 
 // ---- 2. Dropped on another day, in the evening ----
 $day = '2026-11-12'; // a Thursday
-$act('move_slot', ['ias_post' => $aid, 'ias_day' => $day, 'ias_slot' => '2', 'ias_back' => ias_admin_url(IAS_PAGE_CALENDAR)]);
+$act('move_slot', ['ias_post' => $aid, 'ias_day' => $day, 'ias_slot' => '2', 'ias_from' => 'calendar', 'ias_back' => ias_admin_url(IAS_PAGE_CALENDAR)]);
 $p = ias_post_get($aid);
 $at = (string) $p['scheduled_at'];
 $want = ias_slot_minute($W[2]['a'], $W[2]['b'], (string) $p['slot_key'], (int) ias_setting('jitter_minutes'), array_column(ias_move_fixed($day, $aid), 0), 180);

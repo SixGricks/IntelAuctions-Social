@@ -206,7 +206,7 @@ add_action('ias_calendar_action', function (string $action): void {
   $id = isset($_POST['ias_post']) ? (int) $_POST['ias_post'] : 0;
   $p = $id > 0 ? ias_post_get($id) : null;
   if (!$p || $p['type'] === 'human') return;
-  if ($action !== 'move_slot' || empty($_POST['ias_back'])) $_POST['ias_back'] = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]); // a drag on the calendar comes back to the calendar
+  if (($_POST['ias_from'] ?? '') !== 'calendar' || empty($_POST['ias_back'])) $_POST['ias_back'] = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]); // a drag on the calendar comes back to the calendar
   $actor = ias_actor();
   $flags = $p['flags'];
   $flash = function (string $html, string $level = 'success') { ia_flash_set('<div class="notice notice-' . $level . '"><p>' . $html . '</p></div>'); };
@@ -485,6 +485,64 @@ jQuery(function ($) {
   }).on('mousedown', function (e) {
     if ($pop && !$(e.target).closest('.ias-drop-pop').length) close();
   });
+});
+</script>
+  <?php
+});
+
+/**
+ * Hover a post on the calendar for its preview (DJ, Oct 14, 2026): a card
+ * built from the chip's own data (ias_calendar_preview()) — with text, never
+ * HTML — beside the post, after a moment's rest. Not while dragging, not on a
+ * device without hover (a phone opens the post instead); keyboard focus shows
+ * it too.
+ */
+add_action('admin_footer', function () {
+  if (($_GET['page'] ?? '') !== IAS_PAGE_CALENDAR || isset($_GET['post']) || !current_user_can('manage_options')) return;
+  ?>
+<script>
+jQuery(function ($) {
+  if (!window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
+  var $pv = null, timer = null, at = null;
+  function hide() { clearTimeout(timer); if ($pv) { $pv.remove(); $pv = null; } at = null; }
+  function place() {
+    if (!$pv || !at) return;
+    var r = at.getBoundingClientRect(), w = $pv.outerWidth(), h = $pv.outerHeight(), vw = window.innerWidth, vh = window.innerHeight;
+    var left = r.right + 10, top = r.top;
+    if (left + w > vw - 8) left = r.left - w - 10;
+    if (left < 8) { left = Math.max(8, Math.min(r.left, vw - w - 8)); top = r.bottom + 8; }
+    if (top + h > vh - 8) top = Math.max(8, vh - h - 8);
+    $pv.css({ left: left + 'px', top: top + 'px' });
+  }
+  function show(el) {
+    var d = $(el).data('pv');
+    if (!d || $('body').hasClass('ias-dragging') || $('.ias-drop-pop').length) return;
+    hide();
+    at = el;
+    $pv = $('<div class="ias-pv" role="tooltip"></div>');
+    $pv.append($('<div class="ias-pv-head"></div>').text(d.head));
+    $pv.append($('<div class="ias-pv-meta"></div>').text([d.note, d.when].filter(Boolean).join(' · ')));
+    if (d.img) {
+      var $i = $('<div class="ias-pv-img"></div>').append($('<img alt="">').attr('src', d.img).on('load', place).on('error', function () { $(this).closest('.ias-pv-img').remove(); place(); }));
+      if (d.more > 0) $i.append($('<span class="ias-pv-more"></span>').text('+' + d.more + (d.more === 1 ? ' picture' : ' pictures')));
+      $pv.append($i);
+    } else if (d.video) {
+      $pv.append($('<div class="ias-pv-meta"></div>').text('A video'));
+    }
+    $pv.append($('<div class="ias-pv-text"></div>').toggleClass('empty', !!d.empty).text(d.text));
+    if (d.comment) $pv.append($('<div class="ias-pv-comment"></div>').text('First comment: ' + d.comment));
+    $pv.append($('<div class="ias-pv-hint"></div>').text(d.hint));
+    $('body').append($pv);
+    place();
+  }
+  $(document).on('mouseenter focusin', '.ias-chip[data-pv]', function () {
+    var el = this;
+    clearTimeout(timer);
+    timer = setTimeout(function () { show(el); }, 250);
+  }).on('mouseleave focusout dragstart mousedown', '.ias-chip[data-pv]', hide).on('keydown', function (e) {
+    if (e.key === 'Escape') hide();
+  });
+  $(window).on('scroll resize', hide);
 });
 </script>
   <?php

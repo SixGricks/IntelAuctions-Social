@@ -253,7 +253,7 @@ if (!function_exists('ias_live_person_deleted')) {
     unset($flags['missing_since'], $flags['was_on_oneup']);
     $flags['skipped_by'] = 'person';
     ias_post_update((int) $p['id'], ['status' => 'skipped', 'flags' => $flags, 'locked' => 0, 'oneup_post_id' => $confirmed_gone ? '' : (string) $p['oneup_post_id'],
-      'note' => 'Deleted in OneUp by a person — it stays off the plan until you press Restore.']);
+      'note' => 'Deleted in OneUp by a person — it stays off until you turn it back on.']);
     ias_post_trail((int) $p['id'], 'Deleted in OneUp by a person');
     ias_log('readback', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'summary' => 'Deleted in OneUp by a person — kept off the plan.']);
   }

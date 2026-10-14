@@ -106,6 +106,12 @@ it, and the spec stays verbatim, so they are recorded here:
   the posts that stay put (`ias_move_fixed()`); the plan then runs at once and
   OneUp follows for every post it moved. The exact time stays on the post's
   Move for a person who wants it. Phones use the post's Move (no drag).
+- **A switch on every post, and a preview on hover** (Oct 14, 2026: "I also
+  want to be able to turn on skipped items and turn off others" and "Hover
+  over an item on the calendar should give a preview of the post"). The
+  calendar's switch is Skip / Restore (`ias_calendar_onoff()`), worded as
+  turning a post off and back on; Restore re-plans at once. The preview is
+  data on the chip (`ias_calendar_preview()`), rendered with `.text()` only.
 - **Variety, and bidding said positively** (Oct 13, 2026: "We need more
   variety in the Results posts… sometimes paragraphs and sometimes bullets…
   1 out of every 5 posts… emoji heavy… Positive statements are better").
