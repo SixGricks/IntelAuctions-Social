@@ -6,11 +6,12 @@
  * Google is the second network the plugin sends to, through the same OneUp
  * category, with everything Facebook has — and none of Facebook's records:
  *
- *   Switches     Google posts on, a location chosen, **Send to Google** on,
- *                the master switch on, dry run off, and **Verify for Google**
- *                passed for that location (`ias_gbp_verify`, the same safe
- *                draft round trip as Facebook's). Until then Google posts are
- *                a dry run in the log, like Instagram's (channels.php).
+ *   Switches     **Google posts** on, a location chosen, the master switch
+ *                on and **Verify for Google** passed for that location
+ *                (`ias_gbp_verify`, the same safe draft round trip as
+ *                Facebook's). One switch, on or off (DJ, Oct 14, 2026 — the
+ *                dry run went in 0.12.0): off, nothing goes to Google and
+ *                its copies already on OneUp come back off.
  *   Its record   `flags.gbp` (id, hash, at, when, text) is what went to
  *                Google; `flags.gbp_sending` an attempt whose answer is not in
  *                yet; `gbp_fails` / `gbp_error` its refusals; `gbp_locked` a
@@ -57,8 +58,6 @@ if (!function_exists('ias_gbp_blockers')) {
     $g = ias_channel_settings('gbp');
     $out = [];
     if (!$g['on']) $out[] = 'Google posts are off';
-    if (!$g['live']) $out[] = 'Send to Google is off';
-    if (ias_setting('dry_run', true)) $out[] = 'dry run is on';
     $out = array_merge($out, ias_gbp_blockers_read());
     if (!defined('IA_TOOLKIT_VERSION') || version_compare((string) IA_TOOLKIT_VERSION, IAS_GBP_TOOLKIT, '<')) {
       $out[] = 'the Intel Auctions Toolkit needs updating to ' . IAS_GBP_TOOLKIT . ' (from then its own Google post stands down, so nothing is posted twice)';
@@ -80,17 +79,28 @@ if (!function_exists('ias_gbp_verified')) {
   }
 }
 
-/** 'off' (Google posts off), 'live' (sent for real) or 'dry' (planned and logged). */
-if (!function_exists('ias_gbp_mode')) {
-  function ias_gbp_mode(): string {
-    if (!ias_channel_settings('gbp')['on']) return 'off';
-    return ias_gbp_blockers() ? 'dry' : 'live';
+/** Is Google sent from here now (every switch on, Verify for Google passed)? */
+if (!function_exists('ias_gbp_live')) {
+  function ias_gbp_live(): bool {
+    return !ias_gbp_blockers();
   }
 }
 
-if (!function_exists('ias_gbp_live')) {
-  function ias_gbp_live(): bool {
-    return ias_gbp_mode() === 'live';
+/**
+ * The switches that are off for this post on Google ([] = none): the master
+ * switch, Pause, Google posts, its post type. Any of them, and its Google
+ * copy on OneUp comes back off — off means off. (A missing location, an old
+ * toolkit or Verify for Google not passed stops anything new but takes
+ * nothing back.)
+ */
+if (!function_exists('ias_gbp_switched_off')) {
+  function ias_gbp_switched_off(array $p): array {
+    $out = [];
+    if (!ias_setting('master', false)) $out[] = 'the master switch is off';
+    if (ias_setting('paused', false)) $out[] = 'posting is paused';
+    if (!ias_channel_settings('gbp')['on']) $out[] = 'Google posts are off';
+    if (!ias_type_on((string) $p['type'])) $out[] = ias_post_type((string) $p['type'])['short'] . ' posts are off';
+    return $out;
   }
 }
 
@@ -144,29 +154,6 @@ if (!function_exists('ias_gbp_find_scheduled')) {
       }
     }
     return '';
-  }
-}
-
-/** Note Google's mode; going live clears its dry run's record, so nothing counts as sent that was not. */
-if (!function_exists('ias_gbp_mode_changed')) {
-  function ias_gbp_mode_changed(string $mode): void {
-    $last = (string) get_option('ias_gbp_mode', 'off');
-    if ($last === $mode) return;
-    update_option('ias_gbp_mode', $mode, false);
-    if ($mode !== 'live') {
-      if ($last === 'live') ias_log('run', 0, ['channel' => 'gbp', 'summary' => 'Google is no longer sent for real (' . ($mode === 'off' ? 'Google posts are off' : implode('; ', ias_gbp_blockers())) . '). Google posts already scheduled on OneUp stay there until they are deleted in OneUp.']);
-      return;
-    }
-    $n = 0;
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
-      if (empty($p['flags']['dry_ch']['gbp'])) continue;
-      $flags = $p['flags'];
-      unset($flags['dry_ch']['gbp']);
-      if (!$flags['dry_ch']) unset($flags['dry_ch']);
-      ias_post_update((int) $p['id'], ['flags' => $flags]);
-      $n++;
-    }
-    ias_log('run', 0, ['channel' => 'gbp', 'summary' => 'Google is sent for real now: the dry run\'s record of ' . $n . ' posts was cleared, so each goes to Google through OneUp (outside the ' . (int) ias_setting('lead_hours', 48) . '-hour window).']);
   }
 }
 
@@ -328,7 +315,7 @@ if (!function_exists('ias_gbp_delete')) {
 
 /** A cancelled post's Google copy comes off at once, like its Facebook one. */
 add_action('ias_post_cancelled', function ($post_id) {
-  if (!ias_gbp_live()) return;
+  if (ias_oneup_takeback_blockers()) return;
   $p = ias_post_get((int) $post_id);
   if ($p && !empty($p['flags']['gbp'])) ias_gbp_delete($p, 'cancelled: ' . (string) $p['note']);
 }, 11, 1);
@@ -471,14 +458,14 @@ if (!function_exists('ias_gbp_readback')) {
 /**
  * Bring Google in line with the plan, like ias_push_run_locked() does for
  * Facebook: schedule the posts that are ready (outside the veto window unless
- * approved), re-schedule changed ones, take back the ones no longer ready.
- * Runs only while Google is live; its dry run is channels.php's. Returns
- * ['pushed', 'deleted', 'failed', 'skipped' => […]].
+ * approved), re-schedule changed ones, take back the ones no longer ready —
+ * and, with a switch off, every copy still on OneUp. Returns ['pushed',
+ * 'deleted', 'failed', 'skipped' => […]].
  */
 if (!function_exists('ias_gbp_run')) {
   function ias_gbp_run(array $only = []): array {
     $out = ['pushed' => 0, 'deleted' => 0, 'failed' => 0, 'skipped' => []];
-    if (!ias_gbp_live()) return $out;
+    if (!ias_gbp_live() && ias_oneup_takeback_blockers()) return $out;
     $now = ias_now();
     $c = [
       'nowsql' => $now->format('Y-m-d H:i:s'),
@@ -488,7 +475,10 @@ if (!function_exists('ias_gbp_run')) {
     $statuses = ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'dropped', 'skipped', 'cancelled'];
     $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
       : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
-    foreach ($posts as $p) ias_gbp_one($p, $c, $out);
+    foreach ($posts as $p) {
+      if (function_exists('ias_push_out_of_time') && ias_push_out_of_time()) break;
+      ias_gbp_one($p, $c, $out);
+    }
     return $out;
   }
 }
@@ -508,15 +498,12 @@ if (!function_exists('ias_gbp_one')) {
     if ($why_not === '' && empty($g) && empty($flags['gbp_was']) && empty($flags['pinned_by']) && $p['lane'] !== 'A' && $at < $floor) $why_not = 'its time is inside the ' . (int) ias_setting('lead_hours', 48) . '-hour veto window';
 
     if ($in_range && $why_not === '') {
-      $req = ias_render_gbp($p);
-      $hash = md5((string) wp_json_encode($req));
-      if ($hash === ($g['hash'] ?? '') || !empty($flags['gbp_locked'])) return;
-      $blockers = [];
-      if (ias_setting('paused', false)) $blockers[] = 'pushes are paused';
-      if (!ias_gbp_type_on((string) $p['type'])) $blockers[] = ias_post_type((string) $p['type'])['label'] . ' posts are off';
-      if ($blockers) {
+      $off = ias_gbp_switched_off($p);
+      $blockers = array_values(array_unique(array_merge($off, ias_gbp_blockers())));
+      if ($blockers) { // nothing new goes — and off means off: with a switch off, its copy on OneUp comes back off until it is on again
+        if (!$g) return;
         $out['skipped'][] = 'Google #' . (int) $p['id'] . ': ' . implode('; ', $blockers);
-        if ($g && ias_gbp_delete($p, 'it changed while ' . implode(' and ', $blockers) . ' — it goes again when they allow')) {
+        if ($off && empty($flags['gbp_locked']) && !ias_oneup_takeback_blockers() && ias_gbp_delete($p, implode(' and ', $off) . ' — it goes again when that changes')) {
           $f = (ias_post_get((int) $p['id']) ?: $p)['flags'];
           $f['gbp_was'] = true;
           ias_post_update((int) $p['id'], ['flags' => $f]);
@@ -524,13 +511,16 @@ if (!function_exists('ias_gbp_one')) {
         }
         return;
       }
+      $req = ias_render_gbp($p);
+      $hash = md5((string) wp_json_encode($req));
+      if ($hash === ($g['hash'] ?? '') || !empty($flags['gbp_locked'])) return;
       if (ias_gbp_send($p, $req, $hash)) $out['pushed']++; else $out['failed']++;
       return;
     }
     if ($g) {
       if (!empty($flags['gbp_locked']) && !in_array($p['status'], ['skipped', 'cancelled'], true) && empty($flags['gbp_off'])) return; // a person's edit in OneUp stays unless the post is called off
       $why = $why_not !== '' ? $why_not : 'moved past the next ' . (int) ias_setting('push_days', 21) . ' days';
-      if (ias_gbp_delete($p, $why)) $out['deleted']++;
+      if (!ias_oneup_takeback_blockers() && ias_gbp_delete($p, $why)) $out['deleted']++;
     }
   }
 }
@@ -543,10 +533,9 @@ add_filter('ia_social_gbp_managed', function ($managed) {
 /** The switches strip: where Google stands. */
 add_filter('ias_channel_state', function (array $state, string $ch): array {
   if ($ch !== 'gbp') return $state;
-  if (ias_gbp_live()) return ['on', 'Google: sent for real' . (ias_setting('paused', false) ? ' (paused)' : '')];
+  if (ias_gbp_live()) return ias_setting('paused', false) ? ['alert', 'Google: on — paused'] : ['on', 'Google: on — posts go to Google'];
   $why = ias_gbp_blockers();
-  $setup = array_values(array_filter($why, function ($w) { return !in_array($w, ['dry run is on', 'Send to Google is off'], true); }));
-  return ['on', 'Google: dry run' . ($setup ? ' — ' . $setup[0] : ' — not sent')];
+  return ['alert', 'Google: on, not sending yet — ' . ($why ? $why[0] : 'see Settings')];
 }, 10, 2);
 
 /** Under the Google preview on a post's page: where it stands on Google, and the switch for this one post. */
@@ -555,7 +544,6 @@ if (!function_exists('ias_gbp_post_line')) {
     $f = (array) $p['flags'];
     $g = (array) ($f['gbp'] ?? []);
     $off = (string) ($f['gbp_off'] ?? '');
-    $live = ias_gbp_live();
     $bits = [];
     if ($g) {
       $when = !empty($g['when']) ? date_i18n('D M j, g:i a', strtotime((string) $g['when'])) : '';
@@ -567,8 +555,9 @@ if (!function_exists('ias_gbp_post_line')) {
       $bits[] = '<strong>Google is off for this post:</strong> ' . esc_html($off === 'failed' ? 'Google could not take it' . (!empty($f['gbp_error']) ? ' (' . (string) $f['gbp_error'] . ')' : '') : 'a person took it off') . '. The Facebook post is not affected.';
     } elseif (!$g) {
       $why = ias_gbp_ready($p);
-      if ($live) $bits[] = $why === '' ? 'Goes to Google through OneUp a minute after the Facebook post' . ($p['lane'] !== 'A' ? ', once its time is outside the ' . (int) ias_setting('lead_hours', 48) . '-hour veto window' : '') . '.' : 'Not sent to Google yet: ' . esc_html($why) . '.';
-      else $bits[] = 'Not sent — Google is a dry run: ' . esc_html(implode('; ', ias_gbp_blockers())) . '.';
+      $stop = array_values(array_unique(array_merge(ias_gbp_switched_off($p), ias_gbp_blockers())));
+      if ($stop) $bits[] = 'Not sent to Google: ' . esc_html(implode('; ', $stop)) . '.';
+      else $bits[] = $why === '' ? 'Goes to Google through OneUp a minute after the Facebook post' . ($p['lane'] !== 'A' ? ', once its time is outside the ' . (int) ias_setting('lead_hours', 48) . '-hour veto window' : '') . '.' : 'Not sent to Google yet: ' . esc_html($why) . '.';
     }
     $problems = ias_channel_problems($req, 'gbp');
     if ($problems) $bits[] = '<strong>' . esc_html(ucfirst(implode('; ', $problems))) . '.</strong>';
@@ -598,7 +587,7 @@ add_action('ias_calendar_action', function (string $action): void {
     ias_post_trail($id, 'Google: kept off Google by a person', $actor);
     ias_log('skipped', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'channel' => 'gbp', 'summary' => 'Google: kept off Google for this post'], $actor);
     $gone = true;
-    if (!empty($flags['gbp']) && ias_gbp_live() && ias_push_lock()) {
+    if (!empty($flags['gbp']) && !ias_oneup_takeback_blockers() && ias_push_lock()) {
       try { $gone = ias_gbp_delete(ias_post_get($id) ?: $p, 'kept off Google by ' . ias_actor_name($actor)); } finally { ias_push_unlock(); }
     } elseif (!empty($flags['gbp'])) {
       $gone = false;

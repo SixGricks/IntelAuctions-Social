@@ -135,7 +135,7 @@ if (!function_exists('ias_voice_render')) {
 
     // The log.
     $filters = ['all' => 'All', 'edited' => 'Edited by a person', 'approved' => 'Approved', 'written' => 'Went out as Claude wrote it', 'starred' => 'Starred', 'off' => 'Not learned from'];
-    echo '<div class="ias-card"><h2>The log of final posts</h2><p class="description">Every post a person saved or approved, and every post that went out (in the dry run too), for ' . (int) ias_voice_keep()['days'] . ' days — a starred one for good. The ones a person wrote, approved or starred teach Claude; a post that went out unread does not, unless you star it.</p><p class="ias-filters">';
+    echo '<div class="ias-card"><h2>The log of final posts</h2><p class="description">Every post a person saved or approved, and every post that went out, for ' . (int) ias_voice_keep()['days'] . ' days — a starred one for good. The ones a person wrote, approved or starred teach Claude; a post that went out unread does not, unless you star it.</p><p class="ias-filters">';
     $links = [];
     foreach ($filters as $k => $label) {
       $n = (int) ($counts[$k] ?? 0);

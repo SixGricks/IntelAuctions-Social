@@ -24,9 +24,11 @@ if (!function_exists('ias_calendar_handle_post')) {
       $paused = $action === 'pause';
       ias_settings_update(['paused' => $paused]);
       ias_log('paused', 0, ['paused' => $paused], ias_actor());
+      // Off means off: what is on OneUp comes back off now (soonest first); on Resume it goes again.
+      $words = function_exists('ias_push_switched') ? ias_push_switched_words(ias_push_switched()) : '';
       ia_flash_set('<div class="notice notice-success"><p>' . ($paused
-        ? '<strong>Paused.</strong> Nothing goes to OneUp until you press Resume. Planning and drafts carry on.'
-        : '<strong>Resumed.</strong> Pushes follow the switches again.') . '</p></div>');
+        ? '<strong>Paused.</strong> Nothing goes out until you press Resume: posts already on OneUp come back off, and go again when you resume. Planning and drafts carry on.'
+        : '<strong>Resumed.</strong> Posting follows the switches again.') . ($words !== '' ? ' ' . esc_html($words) : '') . '</p></div>');
     }
 
     /** Later phases add their own calendar actions here. */
@@ -59,7 +61,7 @@ if (!function_exists('ias_calendar_render')) {
     $paused = (bool) ias_setting('paused', false);
     $button = '<form method="post" style="display:inline">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
       . '<input type="hidden" name="ias_cal_action" value="' . ($paused ? 'resume' : 'pause') . '">'
-      . '<button class="button ' . ($paused ? 'button-primary' : '') . '">' . ($paused ? '▶ Resume pushes' : '❚❚ Pause all pushes') . '</button></form>';
+      . '<button class="button ' . ($paused ? 'button-primary' : '') . '"' . ($paused ? '' : ' data-ia-busy="Pausing…"') . '>' . ($paused ? '▶ Resume posting' : '❚❚ Pause all posting') . '</button></form>';
 
     /** Later phases add buttons beside Pause (Plan now). */
     $button = (string) apply_filters('ias_calendar_header_actions', $button);
@@ -183,7 +185,7 @@ if (!function_exists('ias_calendar_chip')) {
     $time = $timed ? date_i18n('g:i a', strtotime((string) $p['scheduled_at'])) : 'no time yet';
     $statuses = ias_statuses();
     $shown = ias_post_shown_status($p);
-    $title = ($statuses[$shown]['label'] ?? $shown) . (!empty($p['flags']['dry_run']) ? ' in the dry run (nothing was sent)' : '') . (!empty($p['locked']) ? ' · edited in OneUp' : '')
+    $title = ($statuses[$shown]['label'] ?? $shown) . ($shown === 'notsent' ? ': its time came before posting was on' : '') . (!empty($p['locked']) ? ' · edited in OneUp' : '')
       . ($timed ? '' : ' · not placed on the plan yet: shown on its best day') . ' · score ' . number_format((float) $p['score'], 0);
     return '<a class="ias-chip st-' . esc_attr($shown) . ($timed ? '' : ' untimed') . '" href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '" title="' . esc_attr($title) . '">'
       . '<span class="t">' . esc_html($def['short']) . '</span> <span class="tm">' . esc_html($time) . '</span>'
@@ -253,7 +255,7 @@ if (!function_exists('ias_post_facts_card')) {
   function ias_post_facts_card(array $p): void {
     $day = function ($d) { return $d ? date_i18n('D M j', strtotime((string) $d)) : ''; };
     echo '<div class="ias-card"><h3>About this post</h3><table class="ias-kv">';
-    if (!empty($p['flags']['dry_run'])) echo '<tr><th>Sent</th><td>' . ias_status_badge('published') . ' <span class="description">in the dry run — nothing was sent to OneUp</span></td></tr>';
+    if (!empty($p['flags']['dry_run'])) echo '<tr><th>Sent</th><td>' . ias_status_badge('notsent') . ' <span class="description">its time came before posting was on — nothing went to OneUp</span></td></tr>';
     if ($p['lane'] === 'A') $approval = 'Needed — emailed to ' . (implode(' and ', array_map('ias_person_name', ias_approvers())) ?: 'the approvers');
     elseif ($p['lane'] === 'B') $approval = 'Not needed — ' . (int) ias_setting('lead_hours', 48) . ' hours to skip, move or change it here first';
     else $approval = '';

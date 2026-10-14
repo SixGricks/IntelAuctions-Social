@@ -38,7 +38,7 @@ t_eq([], $errors, 'no PHP notices while rendering');
 // file run on its own before this suite leaves its settings behind.)
 delete_option('ias_settings');
 $s = ias_settings();
-t_ok(!$s['master'] && $s['dry_run'] && !in_array(true, $s['types'], true), 'nothing can reach Facebook at install');
+t_ok(!$s['master'] && !array_key_exists('dry_run', $s) && !in_array(true, $s['types'], true) && empty($s['networks']['gbp']['on']), 'nothing can reach Facebook or Google at install: the master switch, every post type and Google off — and no dry run');
 [$clean, $problems] = ias_settings_sanitize([
   'master' => '1', 'types' => ['listing' => '1'], 'daily_cap' => '99', 'lead_hours' => '24',
   'slots' => [['07:30', '06:00'], ['19:00', '21:00']], 'approvers' => 'DJ@IntelAuctions.com, nope',

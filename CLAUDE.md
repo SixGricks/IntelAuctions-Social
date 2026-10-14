@@ -17,8 +17,9 @@ it, and the spec stays verbatim, so they are recorded here:
   (4.67.0). The spec's "API key stored in wp-config" is superseded.
 - **More networks are provisioned** (Oct 13, 2026: "provision for more social
   networks now. At least Instagram, X, and LinkedIn"). `includes/channels.php`
-  holds their rules and renderers; they are planned, previewed and dry-run
-  only. Making one live needs its own Verify and its own sent record
+  holds their rules and renderers; they are **previewed only** (their switch
+  shows a preview tab, and is not a posting switch — 0.12.0). Making one live
+  needs its own Verify and its own sent record
   (`flags.oneup` is Facebook's) — never reuse Facebook's. X's words come from
   the facts (`ias_x_line()`), never from Claude's prose. Facebook's renderer
   (`ias_render_facebook()`) must not change output for the others' sake: its
@@ -77,6 +78,26 @@ it, and the spec stays verbatim, so they are recorded here:
   and the person's yes past the veto window); Try again and Edit it here
   again replace "fix it in OneUp". Never write a note, button or email that
   sends someone into OneUp.
+- **On or off — no dry run, and off means off** (Oct 14, 2026: "I want to
+  turn dry run off and remove it. Either things are active or inactive.").
+  Every switch either really posts or sends nothing; there is no rehearsal
+  mode, and Google is one switch (`networks.gbp.on`). Off means off: when the
+  master switch, Pause, a post type or Google is off (`ias_push_switched_off()`,
+  `ias_gbp_switched_off()`), a copy already on OneUp and not yet out is taken
+  back (`was_on_oneup` / `gbp_was`, so it goes again when on). A missing key or
+  id, or Verify not passed, stops new posts but takes nothing back. A switch
+  saved in Settings, Pause and Resume act at once (`ias_push_switched()`, a
+  20-second budget, soonest first; the rest on the hourly run). The update
+  retired the dry run once (`ias_dry_run_retire()`): a site in it had every
+  type and Google switched off — an update must never start posting. Never
+  build a dry run, a "log what would be sent" mode or a second "send for real"
+  switch back.
+- **Publish now** (Oct 14, 2026: "I also want a "Publish now" button if a post
+  is past it's scheduled date"). A post whose time passed without going out
+  (`ias_publish_now_state()`) is sent a few minutes ahead from its page, its
+  time pinned like a Move; on Lane A pressing it is the approval. Never while
+  its switches are off, never on a Sunday, never with holds, a `[VERIFY]` or a
+  stale draft.
 - **Variety, and bidding said positively** (Oct 13, 2026: "We need more
   variety in the Results posts… sometimes paragraphs and sometimes bullets…
   1 out of every 5 posts… emoji heavy… Positive statements are better").
@@ -143,15 +164,18 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   listing recording the same failure. AI output is always a
   draft: prompts forbid invented facts (`[VERIFY]` markers hold the post), and the
   fair-housing screen holds any flagged draft for a person.
-- **Nothing reaches Facebook until DJ turns a switch on.** The master switch and
-  every post type ship **off**, dry run ships **on**, and Pause stops every new
-  post. A change that could make a post public needs all of them checked on its
-  path: every write to OneUp goes through `ias_push_blockers()` (a new post) or
-  `ias_oneup_blockers(true)` (a take-back), every read through
-  `ias_oneup_blockers(false)`; the master switch off means not one call, from
-  any screen. A write also needs **Verify OneUp passed for the page set now**
-  (`ias_oneup_verified()`). The one write before that is Verify's own test
-  draft (master on, dry run may be on), which must never be left on OneUp.
+- **Nothing reaches Facebook until DJ turns a switch on.** The master switch,
+  every post type and Google ship **off**, and Pause turns everything off. A
+  change that could make a post public needs all of them checked on its path:
+  every new post to OneUp goes through `ias_push_blockers()` (Google:
+  `ias_gbp_blockers()` plus its switched-off list), every take-back through
+  `ias_oneup_takeback_blockers()` (the key only — off means off, so no switch
+  stops a take-back), every read through `ias_oneup_blockers(false)`; the
+  master switch off means no read and nothing new, only taking back what is
+  ours, and then not one call. A new post also needs **Verify OneUp passed for
+  the page set now** (`ias_oneup_verified()`). The one write before that is
+  Verify's own test draft (master on, every type may be off), which must never
+  be left on OneUp.
 - **Never send twice, never delete by guess.** One push run at a time
   (`ias_push_lock()`), and the read-back runs first in it. An attempt goes into
   `flags.sending` before it is sent and stays there when the answer is lost
@@ -162,12 +186,11 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   (`ias_oneup_confirm_absent()`). "Deleted by a person" needs a real, complete
   list and two read-backs 30 minutes apart. Errors pass through
   `ias_oneup_redact()` so the key never leaves the request.
-- **One record of what was "sent", in both modes** (`ias_post_sent()`): live, the
-  OneUp id, hash, text, time and facts in `flags.oneup` (and the id in
-  `oneup_post_id`); dry run, `flags.dry_hash`. Both are treated alike: fixed
-  inside the veto window, taken back when the post stops being ready, and
-  `published` once its time passes (`flags.dry_run` for the dry run's). Going
-  live clears every `dry_hash` (`ias_push_mode_changed()`). A post the read-back
+- **One record of what was sent** (`ias_post_sent()`): the OneUp id, hash,
+  text, time and facts in `flags.oneup` (and the id in `oneup_post_id`); fixed
+  inside the veto window, taken back when the post stops being ready or its
+  switch goes off, and `published` once its time passes. (`flags.dry_run` on
+  an old post means its time came in the dry run: shown as Not sent.) A post the read-back
   finds moved or edited by a person in OneUp is `locked`: never replaced, taken
   back only if skipped or cancelled. Status `pushed` is a display status
   (`ias_post_shown_status()`), never stored.

@@ -44,7 +44,7 @@ t_ok(strpos((string) $m[0]['message'], 'Edit in WordPress') !== false, 'and an E
 [, $dj_token] = $token_for($m, 'dj@intelauctions.com');
 t_ok($pid === (int) $res['id'] && strlen($jacob_token) === 48 && $jacob_token !== $dj_token, 'each approver has their own link');
 t_ok(strpos(wp_json_encode($res['approvals']), $jacob_token) === false && strpos(wp_json_encode(ias_post_get($pid)['approvals']), $jacob_token) === false, 'tokens are stored only as hashes');
-t_eq(0, count(array_filter(ias_log_recent('dryrun', 100), function ($l) use ($pid) { return (int) ($l['meta']['post'] ?? 0) === $pid; })), 'nothing in Lane A is pushed before a yes');
+t_eq('it is waiting for approval', ias_push_ready(ias_post_get($pid)), 'nothing in Lane A is pushed before a yes');
 
 // ---- Approve: opening the link only shows it; the button approves ----
 $page = ias_approval_response($pid, $jacob_token, false);
@@ -58,7 +58,7 @@ t_eq('approved', $res['status'], 'the post is approved');
 t_eq('jacob@intelauctions.com', $res['approved_by'], '…by the approver whose link it was');
 t_ok(!empty($res['scheduled_at']) && $res['scheduled_at'] >= ias_now()->modify('+60 minutes')->format('Y-m-d H:i:s'), 'and queued at once, at least an hour ahead (' . $res['scheduled_at'] . ')');
 t_ok($res['scheduled_at'] < ias_now()->modify('+48 hours')->format('Y-m-d H:i:s'), '…not held to the 48-hour veto window — the approval was the yes');
-t_eq(1, count(array_filter(ias_log_recent('dryrun', 100), function ($l) use ($pid) { return (int) ($l['meta']['post'] ?? 0) === $pid; })), '…and goes to the push queue (the dry run logs it)');
+t_eq('', ias_push_ready($res), '…and is ready to go to OneUp (it goes once posting and Results posts are on)');
 $page = ias_approval_response($pid, $dj_token, true);
 t_eq('decided', $page['reason'], 'the second approver\'s link: the first yes already won');
 t_ok(strpos($page['body'], 'jacob@intelauctions.com') !== false, '…and says who approved it');

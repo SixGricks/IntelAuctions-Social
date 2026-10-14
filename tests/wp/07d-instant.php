@@ -48,7 +48,7 @@ $view = function (int $id) { $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (st
 // Live, Facebook (Listing posts).
 ias_settings_update(['generate_per_run' => 30, 'oneup_category_id' => '42', 'oneup_account_id' => 'fb_123', 'master' => true]);
 ias_oneup_verify('admin');
-ias_settings_update(['dry_run' => false, 'types' => ['listing' => true]]);
+ias_settings_update(['types' => ['listing' => true]]);
 $a = $mk('12 Alpha Road', '2026-11-28 10:00');
 $b = $mk('7 Bravo Lane', '2026-11-27 10:00');
 ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();

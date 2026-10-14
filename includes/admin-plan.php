@@ -19,7 +19,6 @@ add_action('ias_calendar_action', function (string $action): void {
   $push = ias_push_run();
   $bits = [(int) ($plan['placed'] ?? 0) . ' placed'];
   foreach (['moved', 'dropped', 'reinstated', 'late'] as $k) if (!empty($plan[$k])) $bits[] = (int) $plan[$k] . ' ' . ($k === 'reinstated' ? 'back on the plan' : $k);
-  if ($push['dryrun']) $bits[] = $push['dryrun'] . ' dry-run payloads logged';
   if ($push['pushed']) $bits[] = $push['pushed'] . ' scheduled on OneUp';
   if ($push['deleted']) $bits[] = $push['deleted'] . ' taken back';
   if ($push['failed']) $bits[] = $push['failed'] . ' OneUp calls failed (see the log)';
@@ -28,15 +27,15 @@ add_action('ias_calendar_action', function (string $action): void {
 });
 
 add_action('ias_calendar_before_grid', function (): void {
-  // Back in the dry run, posts the plan no longer wants as they are can still be on the OneUp calendar.
-  if (ias_push_mode() === 'dry') {
-    $left = array_filter(ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled', 'failed'], 'limit' => 2000]), function ($p) {
-      return $p['type'] !== 'human' && ias_post_sent($p)['mode'] === 'live' && ($p['status'] !== 'planned' && $p['status'] !== 'approved' || !empty($p['flags']['stale']));
-    });
-    if ($left) {
-      echo '<div class="notice notice-warning inline"><p><strong>' . count($left) . ' post' . (count($left) === 1 ? ' is' : 's are') . ' still scheduled on OneUp</strong> from when pushing was live, though the plan no longer wants ' . (count($left) === 1 ? 'it' : 'them') . ' as ' . (count($left) === 1 ? 'it is' : 'they are') . ' (cancelled, skipped, changed or stopped for a decision). Delete ' . (count($left) === 1 ? 'it' : 'them') . ' in OneUp, or turn live pushing back on to let the plugin take ' . (count($left) === 1 ? 'it' : 'them') . ' off: ';
-      echo implode(', ', array_map(function ($p) { return '<a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '">' . esc_html(ias_post_type((string) $p['type'])['short'] . ' · ' . ias_post_subject($p)) . '</a>'; }, array_slice(array_values($left), 0, 10))) . '</p></div>';
-    }
+  // Off means off: posts still on OneUp that a switch turned off come back off — say so while they do.
+  $left = array_filter(ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]), function ($p) {
+    return $p['type'] !== 'human' && empty($p['locked']) && ias_post_sent($p)['mode'] === 'live' && (ias_push_switched_off($p) || ias_push_ready($p) !== '');
+  });
+  if ($left) {
+    $stuck = ias_oneup_takeback_blockers();
+    echo '<div class="notice notice-' . ($stuck ? 'error' : 'info') . ' inline"><p><strong>' . count($left) . ' post' . (count($left) === 1 ? ' is' : 's are') . ' coming back off OneUp</strong> — switched off, skipped, changed or stopped for a decision. '
+      . ($stuck ? 'They cannot be taken back without the OneUp key: put it back under Settings → OneUp.' : 'Each goes on the next hourly run at the latest, soonest first.') . ' ';
+    echo implode(', ', array_map(function ($p) { return '<a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '">' . esc_html(ias_post_type((string) $p['type'])['short'] . ' · ' . ias_post_subject($p)) . '</a>'; }, array_slice(array_values($left), 0, 10))) . '</p></div>';
   }
   $last = get_option('ias_last_plan_summary', []);
   if (!is_array($last) || empty($last['at'])) {
@@ -96,7 +95,7 @@ add_action('ias_post_view_side', function (array $p): void {
     echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Press <strong>Try again</strong> (above) to send a fresh copy, or skip it.</p></div>';
     return;
   }
-  echo '<div class="ias-card"><h3>' . ($sent['mode'] === 'live' ? 'What went to OneUp' : 'What would go to OneUp') . '</h3>';
+  echo '<div class="ias-card"><h3>' . ($sent['mode'] === 'live' ? 'What went to OneUp' : 'What goes to OneUp') . '</h3>';
   $why = ias_push_ready($p);
   if ($why !== '') {
     echo '<p class="description">Nothing yet: ' . esc_html($why) . '.</p></div>';
@@ -104,18 +103,15 @@ add_action('ias_post_view_side', function (array $p): void {
   }
   $json = function (array $req) { return '<details><summary>Show the request</summary><p class="description">' . esc_html($req['method'] . ' ' . $req['url']) . ' — the key is added when it is sent.</p><div class="ias-json">' . esc_html((string) wp_json_encode($req['params'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) . '</div></details>'; };
   $block = ias_push_blockers($p);
-  echo '<p><strong>Facebook</strong> — ' . esc_html($block ? 'not sent now: ' . implode('; ', $block) . '.' : ($sent['mode'] === 'live' ? 'on OneUp.' : 'goes on the next hourly run.')) . '</p>' . $json(ias_render_facebook($p));
-  foreach (ias_channels_extra_on() as $ch) {
-    $req = ias_render_channel($p, $ch);
-    $problems = ias_channel_problems($req, $ch);
-    if ($ch === 'gbp') {
-      $g = (array) ($p['flags']['gbp'] ?? []);
-      $gwhy = ias_gbp_ready($p);
-      $state = !ias_gbp_live() ? 'dry run, not sent: ' . implode('; ', ias_gbp_blockers()) : ($gwhy !== '' ? 'not sent: ' . $gwhy : ($g ? 'on OneUp.' : 'goes on the next hourly run (outside the veto window).'));
-      echo '<p><strong>' . esc_html((string) ias_channel($ch)['label']) . '</strong> — ' . esc_html($state) . ($problems ? '; ' . esc_html(implode('; ', $problems)) : '') . '</p>' . $json($req);
-      continue;
-    }
-    echo '<p><strong>' . esc_html((string) ias_channel($ch)['label']) . '</strong> — dry run only, not sent' . ($problems ? '; ' . esc_html(implode('; ', $problems)) : '') . '.</p>' . $json($req);
+  echo '<p><strong>Facebook</strong> — ' . esc_html($block ? 'not sent: ' . implode('; ', $block) . '.' : ($sent['mode'] === 'live' ? 'on OneUp.' : 'goes on the next hourly run.')) . '</p>' . $json(ias_render_facebook($p));
+  if (ias_channel_settings('gbp')['on']) { // Google posts; Instagram, X and LinkedIn are previews only (their tabs)
+    $req = ias_render_gbp($p);
+    $problems = ias_channel_problems($req, 'gbp');
+    $g = (array) ($p['flags']['gbp'] ?? []);
+    $gwhy = ias_gbp_ready($p);
+    $stop = array_values(array_unique(array_merge(ias_gbp_switched_off($p), ias_gbp_blockers())));
+    $state = $stop ? 'not sent: ' . implode('; ', $stop) . '.' : ($gwhy !== '' ? 'not sent: ' . $gwhy . '.' : ($g ? 'on OneUp.' : 'goes on the next hourly run (outside the veto window).'));
+    echo '<p><strong>' . esc_html((string) ias_channel('gbp')['label']) . '</strong> — ' . esc_html($state) . ($problems ? ' ' . esc_html(ucfirst(implode('; ', $problems))) . '.' : '') . '</p>' . $json($req);
   }
   echo '</div>';
 });
@@ -209,7 +205,7 @@ add_action('ias_settings_after_form', function () {
   // Look up accounts (its button sits in the OneUp section above, form="ias-oneup-lookup-form").
   echo '<form method="post" id="ias-oneup-lookup-form">' . wp_nonce_field('ias_oneup_check', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_check" value="1"></form>';
   echo '<div class="ias-card" style="max-width:760px"><h2 style="margin-top:0">OneUp connection</h2>';
-  if (!$master) echo '<p class="description">The master switch is off, so the plugin never calls OneUp. Turn it on (dry run can stay on) to look up the accounts and verify.</p>';
+  if (!$master) echo '<p class="description">The master switch is off, so the plugin asks OneUp nothing. Turn it on to look up the accounts and verify — nothing posts while every post type is off.</p>';
   $verify = function (string $ch) {
     $gbp = $ch === 'gbp';
     $ready = $gbp ? !ias_gbp_blockers_read() : !ias_oneup_blockers(false);
@@ -232,7 +228,7 @@ add_action('ias_settings_after_form', function () {
   echo '<h3 id="ias-verify">Verify OneUp</h3><p>Nothing is sent to Facebook for real until this has passed for the page chosen above. It checks every call the plugin makes, safely: it saves a <strong>draft</strong> for the page (drafts never publish — and if OneUp scheduled it as a real post anyway, Verify says so and takes it off), reads it back, compares its time with the site\'s, deletes it, and reads the scheduled, published and failed lists.</p>';
   echo $verify('facebook');
   if (ias_channel_settings('gbp')['on'] || get_option('ias_gbp_verify')) {
-    echo '<h3 id="ias-verify-gbp">Verify for Google</h3><p>The same round trip for the Google Business Profile location: nothing goes to Google for real until it has passed for the location chosen above (and <strong>Send to Google</strong> is on).</p>';
+    echo '<h3 id="ias-verify-gbp">Verify for Google</h3><p>The same round trip for the Google Business Profile location: nothing goes to Google until it has passed for the location chosen above and <strong>Google posts</strong> is on.</p>';
     echo $verify('gbp');
   }
   $rb = get_option('ias_readback_last', []);

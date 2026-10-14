@@ -15,7 +15,7 @@
  *                the final words, who changed or approved them, and what they
  *                asked for in Talk it over. A row is written when a person
  *                saves a post's text or approves it, and when the post goes
- *                out (dry run included) — every write recomputes the row from
+ *                out — every write recomputes the row from
  *                the post as it stands, so a rewrite or a later edit never
  *                leaves stale words behind.
  *   House rules  short style rules (option `ias_voice_notes`) that go into

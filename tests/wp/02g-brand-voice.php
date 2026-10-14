@@ -66,7 +66,7 @@ t_ok($r['ok'] && $row && $row['edited'] === 0 && $row['touched'] === 1 && $row['
 
 // ---- A post that went out as Claude wrote it: logged, teaches nothing ----
 $flags = ias_post_get((int) $c['id'])['flags'];
-$flags['dry_hash'] = 'sent-in-the-dry-run';
+$flags['oneup'] = ['id' => '777', 'hash' => 'sent', 'when' => '2026-11-02 05:00:00']; // on OneUp
 ias_post_update((int) $c['id'], ['flags' => $flags, 'status' => 'planned', 'scheduled_at' => '2026-11-02 05:00:00']);
 ias_push_run();
 $row = ias_voice_get((int) $c['id']);

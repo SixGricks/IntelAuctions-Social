@@ -51,7 +51,8 @@ if (!function_exists('ias_summary_visits')) {
 /**
  * The month's numbers ($ym = 'Y-m'): ['month', 'types' => [type => row],
  * 'divisions' => [division => row], 'human' => n, 'visits' => bool]. A row:
- * out, dry_run, upcoming, dropped, skipped, cancelled, failed, late, visits.
+ * out, dry_run (not sent: its time came in the dry run, before 0.12.0),
+ * upcoming, dropped, skipped, cancelled, failed, late, visits.
  */
 if (!function_exists('ias_summary_month')) {
   function ias_summary_month(string $ym): array {
@@ -96,7 +97,7 @@ if (!function_exists('ias_summary_html')) {
     $cols = ['out' => 'Went out', 'upcoming' => 'Still to come', 'dropped' => 'Dropped', 'skipped' => 'Skipped', 'cancelled' => 'Cancelled', 'failed' => 'Failed', 'late' => 'Ran late'];
     if ($s['visits']) $cols['visits'] = 'Site visits';
     $any_dry = array_sum(array_column($s['types'], 'dry_run')) > 0;
-    if ($any_dry) $cols = ['dry_run' => 'Out in the dry run'] + $cols;
+    if ($any_dry) $cols = ['dry_run' => 'Not sent (before posting was on)'] + $cols;
     $th = 'style="text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid #dcdcde;font-size:13px"';
     $td = 'style="padding:4px 10px 4px 0;font-size:13px"';
     $table = function (string $first, array $rows, callable $label) use ($cols, $th, $td) {

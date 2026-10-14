@@ -3,15 +3,15 @@
  * Intel Auctions Social — Phase 5: OneUp live.
  *
  * Everything here runs only when the switches allow it (oneup.php:
- * ias_oneup_blockers(), ias_push_blockers()); with the master switch off the
- * plugin never calls OneUp at all.
+ * ias_oneup_blockers(), ias_push_blockers()). A switch is on or off (DJ,
+ * Oct 14, 2026 — the dry run went in 0.12.0): with the master switch off the
+ * plugin sends nothing new and reads nothing, and only takes back what it put
+ * on OneUp itself, until none of it is left there.
  *
  *   Sending      ias_push_live_send() schedules a post (taking an older copy
  *                off first) and keeps what it sent in `flags.oneup`: the
  *                OneUp post id, the request's hash, the text and time, and
  *                the facts it carried. ias_push_live_delete() takes it back.
- *                Going live clears the dry run's record, so nothing counts as
- *                sent that was not.
  *   Cancelling   a cancelled post that is on OneUp is taken off at once.
  *   Read-back    every hourly run lists the Facebook page's scheduled,
  *                published and failed posts in OneUp: a post a person moved or
@@ -32,27 +32,65 @@
 
 if (!defined('ABSPATH')) exit;
 
-/* ---------------- Mode ---------------- */
+/* ---------------- The dry run, retired ---------------- */
 
-/** Note the push mode; going live clears the dry run's record of what it "sent". */
-if (!function_exists('ias_push_mode_changed')) {
-  function ias_push_mode_changed(string $mode): void {
-    $last = (string) get_option('ias_push_mode', 'dry');
-    if ($last === $mode) return;
-    update_option('ias_push_mode', $mode, false);
-    if ($mode !== 'live') {
-      ias_log('run', 0, ['summary' => 'Back to the dry run: nothing more is sent to OneUp. Posts already scheduled there stay there until they are deleted in OneUp.']);
-      return;
+/**
+ * 0.12.0 took the dry run out (DJ, Oct 14, 2026: "I want to turn dry run off
+ * and remove it. Either things are active or inactive."). Once, on the first
+ * admin page or hourly run after the update: the stored `dry_run` and
+ * Google's separate Send switch go, and Google stays on only where it was
+ * really being sent. A site that was in the dry run has every post type and
+ * Google switched off here, so the update itself never starts anything
+ * posting — a person turns on what should go (the notice under the switches
+ * names them, until Settings is next saved). The dry run's records on posts
+ * (`dry_hash`, `dry_ch`) go too; `flags.dry_run` stays on the posts whose
+ * time came in it, as history: nothing was sent.
+ */
+if (!function_exists('ias_dry_run_retire')) {
+  function ias_dry_run_retire(): void {
+    if (get_option('ias_dry_run_retired', '') !== '' || !ias_db_ready()) return;
+    $saved = get_option('ias_settings', null);
+    $off = [];
+    if (is_array($saved)) {
+      $was_dry = !array_key_exists('dry_run', $saved) || !empty($saved['dry_run']);
+      $g = isset($saved['networks']['gbp']) && is_array($saved['networks']['gbp']) ? $saved['networks']['gbp'] : null;
+      if ($was_dry) {
+        foreach ((array) ($saved['types'] ?? []) as $type => $on) {
+          if (!$on) continue;
+          $saved['types'][$type] = false;
+          $off[] = (string) $type;
+        }
+      }
+      if ($g !== null) {
+        if (!empty($g['on']) && ($was_dry || empty($g['live']))) { $g['on'] = false; $off[] = 'gbp'; } // planned for Google, never really sent: off
+        unset($g['live']);
+        $saved['networks']['gbp'] = $g;
+      }
+      unset($saved['dry_run']);
+      update_option('ias_settings', $saved, true);
     }
     $n = 0;
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]) as $p) {
-      if (empty($p['flags']['dry_hash'])) continue;
-      $flags = $p['flags'];
-      unset($flags['dry_hash']);
+    foreach (ias_posts_query(['limit' => 2000, 'order' => 'id']) as $p) {
+      $flags = (array) $p['flags'];
+      if (!isset($flags['dry_hash']) && !isset($flags['dry_ch'])) continue;
+      unset($flags['dry_hash'], $flags['dry_ch']);
       ias_post_update((int) $p['id'], ['flags' => $flags]);
       $n++;
     }
-    ias_log('run', 0, ['summary' => 'Live pushing is on: the dry run\'s record of ' . $n . ' posts was cleared, so each goes to OneUp for real (outside the 48-hour window).']);
+    delete_option('ias_push_mode');
+    delete_option('ias_gbp_mode');
+    update_option('ias_dry_run_retired', ['at' => ias_now_sql(), 'off' => $off], false);
+    $names = array_map(function ($t) { return $t === 'gbp' ? 'Google' : (string) ias_post_type($t)['short']; }, $off);
+    ias_log('run', 0, ['summary' => 'The dry run is gone (0.12.0): every switch is on or off now. ' . ($names ? 'Switched off so the update would not start posting: ' . implode(', ', $names) . '. ' : '') . 'The dry run\'s records on ' . $n . ' post' . ($n === 1 ? '' : 's') . ' were cleared.']);
+  }
+}
+add_action('admin_init', function () { if (function_exists('ias_dry_run_retire')) ias_dry_run_retire(); }, 7);
+
+/** What the retirement switched off, while nobody has saved Settings since ([] = nothing to say). */
+if (!function_exists('ias_dry_run_switched_off')) {
+  function ias_dry_run_switched_off(): array {
+    $r = get_option('ias_dry_run_retired', []);
+    return is_array($r) ? array_values(array_map('strval', (array) ($r['off'] ?? []))) : [];
   }
 }
 
@@ -342,7 +380,7 @@ if (!function_exists('ias_push_live_delete')) {
 
 /** A cancelled post that is on OneUp comes off at once — before the page that cancelled it has finished. */
 add_action('ias_post_cancelled', function ($post_id) {
-  if (ias_push_mode() !== 'live') return;
+  if (ias_oneup_takeback_blockers()) return;
   $p = ias_post_get((int) $post_id);
   if ($p && ias_post_sent($p)['mode'] === 'live') ias_push_live_delete($p, 'cancelled: ' . (string) $p['note']);
 }, 10, 1);
@@ -608,8 +646,9 @@ if (!function_exists('ias_readback_note')) {
  * $ch 'gbp' runs the same round trip for the Google location (Verify for
  * Google, recorded in `ias_gbp_verify`) — Google's own, never Facebook's.
  *
- * It needs the master switch on (off means the plugin never calls OneUp),
- * not dry run off: the one thing it writes is the draft. Should OneUp ignore
+ * It needs the master switch on (off, the plugin calls OneUp only to take
+ * back its own posts): the one thing it writes is the draft, which never
+ * publishes, and no post type has to be on for it. Should OneUp ignore
  * "draft" and schedule the test as a real post, Verify finds it on the
  * scheduled list, fails, and takes it off at once (it is set a month out, so
  * there is time to delete it by hand if even that fails).
@@ -624,7 +663,7 @@ if (!function_exists('ias_oneup_verify')) {
     $tz_offset = null;
     $block = $gbp ? ias_gbp_blockers_read() : ias_oneup_blockers(false);
     if ($block) {
-      $step('Ready to call OneUp', false, 'Not yet: ' . implode('; ', $block) . '. (The master switch must be on — dry run can stay on.)');
+      $step('Ready to call OneUp', false, 'Not yet: ' . implode('; ', $block) . '. (The master switch must be on. Nothing posts while the post types are off.)');
       return ias_oneup_verify_save($steps, $by, null, $ch);
     }
 

@@ -2,12 +2,15 @@
 /**
  * Intel Auctions Social — the networks a post can go to.
  *
- * Facebook is the live one. Instagram, X and LinkedIn are provisioned (DJ,
- * Oct 13, 2026: "provision for more social networks now"): each has its rules
- * here, an account id and an on/off switch in Settings, a renderer that turns
- * the same post into that network's request, a preview on the post view, and
- * its payloads in the dry run. None of them is sent yet — that needs its own
- * Verify and its own record of what was sent, the way Facebook has.
+ * Facebook and Google Business Profile (gbp.php) are sent. Instagram, X and
+ * LinkedIn are provisioned (DJ, Oct 13, 2026: "provision for more social
+ * networks now"): each has its rules here, an account id and a preview switch
+ * in Settings, a renderer that turns the same post into that network's
+ * request, and a preview on the post view. None of them is sent yet — that
+ * needs its own Verify and its own record of what was sent, the way Facebook
+ * and Google have. Their switch shows a preview only; it is not a posting
+ * switch, so it never appears among the switches (there is no dry run, DJ,
+ * Oct 14, 2026).
  *
  * The words are Facebook's, adapted without a Claude call: Instagram takes
  * them with "link in our bio" (its captions carry no clickable links) and
@@ -46,7 +49,8 @@ if (!function_exists('ias_channel')) {
 /**
  * A network's settings: ['on' => bool, 'account' => OneUp account id].
  * Facebook's are the page id above. Google's also carry 'name' (the
- * location's name in OneUp's lists), 'live' (Send to Google) and 'types'.
+ * location's name in OneUp's lists) and 'types'; its 'on' posts it. For
+ * Instagram, X and LinkedIn 'on' shows their preview only.
  */
 if (!function_exists('ias_channel_settings')) {
   function ias_channel_settings(string $ch): array {
@@ -54,12 +58,12 @@ if (!function_exists('ias_channel_settings')) {
     $all = (array) ias_setting('networks', []);
     $one = (array) ($all[$ch] ?? []);
     $out = ['on' => !empty($one['on']), 'account' => trim((string) ($one['account'] ?? ''))];
-    if ($ch === 'gbp') $out += ['name' => trim((string) ($one['name'] ?? '')), 'live' => !empty($one['live']), 'types' => array_values(array_map('strval', (array) ($one['types'] ?? [])))];
+    if ($ch === 'gbp') $out += ['name' => trim((string) ($one['name'] ?? '')), 'types' => array_values(array_map('strval', (array) ($one['types'] ?? [])))];
     return $out;
   }
 }
 
-/** The networks besides Facebook that are switched on (planned and dry-run only, for now). */
+/** The networks besides Facebook that are switched on: Google (posted), and those previewed. */
 if (!function_exists('ias_channels_extra_on')) {
   function ias_channels_extra_on(): array {
     $out = [];
@@ -69,19 +73,17 @@ if (!function_exists('ias_channels_extra_on')) {
 }
 
 /**
- * One line per network besides Facebook that is switched on, for the folded
- * switches strip: [class, words]. The networks in the dry run only share one.
+ * One line per network besides Facebook that posts and is switched on, for
+ * the folded switches strip: [class, words]. Only networks that can post say
+ * anything (Google); a preview is not a switch.
  */
 if (!function_exists('ias_channels_summary')) {
   function ias_channels_summary(): array {
-    $dry = [];
     $out = [];
     foreach (ias_channels_extra_on() as $ch) {
-      $state = (array) apply_filters('ias_channel_state', [], $ch); // a network that can go live says where it stands
-      if ($state) { $out[] = $state; continue; }
-      $dry[] = (string) ias_channel($ch)['label'];
+      $state = (array) apply_filters('ias_channel_state', [], $ch); // a network that can post says where it stands
+      if ($state) $out[] = $state;
     }
-    if ($dry) $out[] = ['on', implode(', ', $dry) . ': dry run only — not sent'];
     return $out;
   }
 }
@@ -310,66 +312,3 @@ if (!function_exists('ias_channel_problems')) {
   }
 }
 
-/**
- * The dry run for the networks besides Facebook: each ready post's request
- * goes to the log once per change ("Would schedule on Instagram …"), and a
- * post that stops being ready gets a logged take-back — the way Facebook's
- * dry run works. Nothing is sent: these networks are not live yet. Their
- * record is `flags.dry_ch[network]`. Runs after Facebook's pushes, on the
- * posts as they are then.
- */
-if (!function_exists('ias_push_channels_run')) {
-  function ias_push_channels_run(array $only = []): int {
-    $live = function_exists('ias_gbp_live') && ias_gbp_live();
-    $chs = array_values(array_diff(ias_channels_extra_on(), $live ? ['gbp'] : [])); // live Google is gbp.php's
-    $logged = 0;
-    $now = ias_now();
-    $nowsql = $now->format('Y-m-d H:i:s');
-    $until = $now->modify('+' . (int) ias_setting('push_days', 21) . ' days')->format('Y-m-d H:i:s');
-    $floor = $now->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:00');
-    $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
-    $statuses = ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'];
-    $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
-      : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
-    foreach ($posts as $p) {
-      if ($p['type'] === 'human') continue;
-      $flags = (array) $p['flags'];
-      $had = (array) ($flags['dry_ch'] ?? []);
-      $at = (string) ($p['scheduled_at'] ?? '');
-      $timely = $at !== '' && $at >= $nowsql && $at <= $until;
-      $ready = ias_push_ready($p) === '' && $timely;
-      $changed = false;
-      foreach (array_unique(array_merge($chs, array_keys($had))) as $ch) {
-        if ($ch === 'gbp' && $live) continue;
-        $label = (string) (ias_channel($ch)['label'] ?? $ch);
-        $on = in_array($ch, $chs, true);
-        $ok = $ch === 'gbp' ? (ias_gbp_ready($p) === '' && $timely) : $ready; // Google: only the types ticked for it, and not taken off it
-        if ($on && $ok && ($p['lane'] === 'A' || !empty($had[$ch]) || $at >= $floor)) {
-          $req = ias_render_channel($p, $ch);
-          $hash = md5((string) wp_json_encode($req));
-          if (($had[$ch] ?? '') === $hash) continue;
-          if ($ch === 'gbp' && (string) ($flags['gbp']['hash'] ?? '') === $hash) continue; // already on Google as it is, from when it was live
-          $problems = ias_channel_problems($req, $ch);
-          ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'channel' => $ch,
-            'summary' => (!empty($had[$ch]) ? 'Would replace on ' : 'Would schedule on ') . $label . ' for ' . $fmt($at) . ' — not sent: ' . ($ch === 'gbp' ? implode('; ', ias_gbp_blockers()) : $label . ' is set up for the dry run only') . ($problems ? '; ' . implode('; ', $problems) : '') . '.',
-            'payload' => $req]);
-          $had[$ch] = $hash;
-          $changed = true;
-          $logged++;
-        } elseif (!empty($had[$ch])) {
-          ias_log('dryrun', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'channel' => $ch,
-            'summary' => 'Would delete from ' . $label . ' (' . ($on ? (($ch === 'gbp' ? ias_gbp_ready($p) : ias_push_ready($p)) ?: 'moved out of reach') : $label . ' switched off') . ') — not sent: dry run only.']);
-          unset($had[$ch]);
-          $changed = true;
-          $logged++;
-        }
-      }
-      if ($changed) {
-        $flags['dry_ch'] = $had;
-        if (!$had) unset($flags['dry_ch']);
-        ias_post_update((int) $p['id'], ['flags' => $flags]);
-      }
-    }
-    return $logged;
-  }
-}

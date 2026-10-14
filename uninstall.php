@@ -25,9 +25,11 @@ foreach (['posts', 'history', 'chat', 'voice'] as $name) {
 foreach ([
   'ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_live_since',
   'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review',
-  'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
+  'ias_push_mode', // before 0.12.0: dry run or live (the dry run is gone; kept here so an old site's copy goes too)
+  'ias_dry_run_retired', // when 0.12.0 retired the dry run, and what it switched off (the note under the switches until Settings is saved)
+  'ias_readback_last', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
   'ias_oneup_directory', // Look up accounts: OneUp's categories and accounts (ids and names, never the key)
-  'ias_gbp_verify', 'ias_gbp_mode', // Google Business Profile: its Verify, and whether it was last sent for real
+  'ias_gbp_verify', 'ias_gbp_mode', // Google Business Profile: its Verify (and, before 0.12.0, whether it was last sent for real)
   'ias_pulse', // the last time an open calendar asked OneUp what changed, and what it found
   'ias_oneup_id_form', // how OneUp took the account as a list: a JSON list or social_network_id[0]
   'ias_oneup_verify_leftovers', // test drafts an earlier Verify could not delete, by id — the next Verify deletes them

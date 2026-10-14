@@ -1,6 +1,6 @@
 # Intel Auctions Social
 
-A WordPress plugin (**v0.11.0**) for intelauctions.com, the sister of the
+A WordPress plugin (**v0.12.0**) for intelauctions.com, the sister of the
 [Intel Auctions Toolkit](https://github.com/SixGricks/IntelAuction). It turns
 each auction into a set of Facebook posts (and Google Business Profile posts, once switched on), plans them three a day through OneUp, and keeps
 a person in the loop on the posts that carry hard facts.
@@ -19,8 +19,9 @@ New → Upload) and activate. Updates then arrive through WordPress (`includes/u
 from this repo's latest non-prerelease). Put the OneUp API key in Settings → OneUp (or in
 wp-config as `INTEL_ONEUP_API_KEY`), then **Look up accounts** and choose the page from the list.
 
-**Safe by default:** the master switch and every post type are off
-at install and dry run is on, so nothing can reach Facebook until DJ turns a switch on.
+**Safe by default:** the master switch, every post type and Google are off
+at install, so nothing can reach Facebook until DJ turns a switch on. Every switch is on (it really
+posts) or off (nothing goes, and what is on OneUp comes back off) — there is no dry run.
 
 ## Layout
 
@@ -42,12 +43,12 @@ at install and dry run is on, so nothing can reach Facebook until DJ turns a swi
 | `includes/graphics.php` | The Results graphic, the roundup collage, the branded card (GD) |
 | `includes/checks.php`, `fairhousing.php` | What every draft is checked for (pure) |
 | `includes/scheduler.php` | The scheduler: days and minutes for every post (pure) |
-| `includes/plan.php` | The morning plan, the pushes (dry run or live), cancelling at once, Cancel posts |
+| `includes/plan.php` | The morning plan, the pushes (on or off — off takes back), cancelling at once, Cancel posts |
 | `includes/oneup.php` | The Facebook renderer, the OneUp client, the switches that gate it, the directory Look up accounts keeps |
-| `includes/channels.php` | Google, Instagram, X and LinkedIn: their rules, words, renderers and dry run |
+| `includes/channels.php` | Google, Instagram, X and LinkedIn: their rules, words and renderers (Instagram, X and LinkedIn preview only) |
 | `includes/live.php` | Phase 5: sending to OneUp, taking back, the hourly read-back, Verify OneUp (and for Google), corrections |
 | `includes/gbp.php` | Google Business Profile sent for real: its switches, record, sends, take-backs and read-back |
-| `includes/instant.php` | Nobody needs OneUp: Move, Try again, Edit it here again, and asking OneUp every minute while the calendar is open |
+| `includes/instant.php` | Nobody needs OneUp: Move, Publish now, Try again, Edit it here again, and asking OneUp every minute while the calendar is open |
 | `includes/summary.php` | The monthly summary (with site visits from Google Analytics through the toolkit) |
 | `includes/approval.php` | Lane A approval emails, the signed one-time links and their page, reminders, the Monday email |
 | `includes/admin*.php` | The Social Calendar (and each post's view), Brand voice, Settings, Log and Guide screens, and the listing panel |

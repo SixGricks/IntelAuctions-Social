@@ -353,7 +353,7 @@ if (!function_exists('ias_review_email')) {
       foreach ($week as $p) {
         $when = ias_post_when($p);
         $html .= '<tr style="border-bottom:1px solid #f0f0f1"><td style="white-space:nowrap;vertical-align:top">' . esc_html($when ? date_i18n(!empty($p['scheduled_at']) ? 'D M j, g:i a' : 'D M j', strtotime($when->format('Y-m-d H:i:s'))) : '') . '</td>'
-          . '<td>' . $link($p) . '</td><td style="white-space:nowrap">' . esc_html((ias_statuses()[ias_post_shown_status($p)]['label'] ?? $p['status']) . (!empty($p['flags']['dry_run']) ? ' (dry run)' : '')) . '</td></tr>';
+          . '<td>' . $link($p) . '</td><td style="white-space:nowrap">' . esc_html(ias_statuses()[ias_post_shown_status($p)]['label'] ?? $p['status']) . '</td></tr>';
       }
       $html .= '</table>';
     }

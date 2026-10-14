@@ -28,6 +28,9 @@ function ias_t_reset(): void {
   foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned'] as $o) delete_option($o);
   $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
   update_option('ias_settings', [], true);
+  // The dry run's one-time retirement (0.12.0) is its own test (07e): elsewhere it has already happened,
+  // so a fresh test database never has it switch off what a test just switched on.
+  update_option('ias_dry_run_retired', ['at' => 'tests', 'off' => []], false);
   // The fake Claude's calls are metered like real ones: without this, a month of test runs spends the
   // toolkit's real monthly cap and every later draft is refused as over budget.
   delete_option('ia_ai_tok_in_' . current_time('Y-m'));

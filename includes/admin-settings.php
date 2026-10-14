@@ -43,12 +43,11 @@ if (!function_exists('ias_settings_sanitize')) {
       $out[$key] = $v;
     };
 
-    foreach (['master', 'dry_run', 'paused', 'link_in_comment', 'voice_auto'] as $key) $out[$key] = !empty($in[$key]);
+    foreach (['master', 'paused', 'link_in_comment', 'voice_auto'] as $key) $out[$key] = !empty($in[$key]);
     $networks = [];
     foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
       $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
       if ($ch === 'gbp') {
-        $networks[$ch]['live'] = !empty($in['networks'][$ch]['live']);
         $all = array_keys(ias_settings_defaults()['types']);
         $networks[$ch]['types'] = isset($in['networks'][$ch]['types']) ? array_values(array_intersect($all, array_map('strval', (array) $in['networks'][$ch]['types']))) : [];
         // The location's name in OneUp's lists (the read-back finds its posts by it): from the directory, never typed.
@@ -155,8 +154,8 @@ if (!function_exists('ias_settings_sanitize')) {
     if (($out['lead_hours'] ?? $old['lead_hours']) < 48) {
       $problems[] = 'The veto window is under 48 hours — the spec promises DJ and Jacob two days to veto a scheduled post.';
     }
-    if (!empty($out['master']) && empty($out['dry_run']) && function_exists('ias_oneup_verified') && !ias_oneup_verified()) {
-      $problems[] = 'Dry run is off, but nothing is sent to OneUp until Verify OneUp (below) passes for this page.';
+    if (!empty($out['master']) && array_filter($out['types']) && function_exists('ias_oneup_verified') && !ias_oneup_verified()) {
+      $problems[] = 'A post type is on, but nothing goes to OneUp until Verify OneUp (below) passes for this page.';
     }
     return [$out, $problems];
   }
@@ -259,8 +258,15 @@ if (!function_exists('ias_settings_handle_post')) {
       elseif ($key === '' && !empty($_POST['ias_oneup_key_clear']) && get_option('ias_oneup_api_key', '') !== '') { delete_option('ias_oneup_api_key'); $changed[] = 'OneUp key removed'; }
     }
     if ($changed) ias_log('settings', 0, ['changed' => $changed], ias_actor());
+    if (function_exists('ias_dry_run_switched_off') && ias_dry_run_switched_off()) update_option('ias_dry_run_retired', ['off' => []] + (array) get_option('ias_dry_run_retired', []), false); // the notice has been read
 
     $html = '<div class="notice notice-success"><p>Settings saved' . ($changed ? ' (' . esc_html(implode(', ', $changed)) . ')' : ' — nothing changed') . '.</p></div>';
+    // A switch is on or off, and the change goes to OneUp now: what was switched off comes back off, what was switched on goes.
+    $switches = function (array $x) { return wp_json_encode([!empty($x['master']), !empty($x['paused']), (array) ($x['types'] ?? []), !empty($x['networks']['gbp']['on']), (array) ($x['networks']['gbp']['types'] ?? [])]); };
+    if ($switches($old) !== $switches(ias_settings()) && function_exists('ias_push_switched')) {
+      $words = ias_push_switched_words(ias_push_switched());
+      if ($words !== '') $html .= '<div class="notice notice-info"><p><strong>OneUp</strong> — ' . esc_html($words) . '</p></div>';
+    }
     if ($problems) {
       $html .= '<div class="notice notice-warning"><p>' . implode('<br>', array_map('esc_html', $problems)) . '</p></div>';
     }
@@ -294,15 +300,14 @@ if (!function_exists('ias_settings_render')) {
     echo '<input type="hidden" name="ias_settings_save" value="1">';
 
     echo '<h2>Safety switches</h2><table class="form-table" role="presentation">';
-    echo '<tr><th scope="row">Master switch</th><td>' . $check('ias[master]', !empty($s['master']), '<strong>On</strong> — let the plugin call OneUp', 'Off means the plugin plans, drafts and logs, and never calls OneUp. On, it reads back what OneUp holds for the page every hour — and, with dry run off, sends the posts of each type that is switched on.') . '</td></tr>';
-    echo '<tr><th scope="row">Dry run</th><td>' . $check('ias[dry_run]', !empty($s['dry_run']), 'Write the exact payloads it would send to the <a href="' . esc_url(ias_admin_url(IAS_PAGE_LOG, ['event' => 'dryrun'])) . '">log</a> instead of sending them') . '</td></tr>';
-    echo '<tr><th scope="row">Paused</th><td>' . $check('ias[paused]', !empty($s['paused']), 'Stop every push at once (the same as the Pause button on the calendar)') . '</td></tr>';
+    echo '<tr><th scope="row">Master switch</th><td>' . $check('ias[master]', !empty($s['master']), '<strong>On</strong> — post: each post type switched on below goes to OneUp', 'Every switch is on or off — there is no rehearsal mode. On, the posts of each type that is on are scheduled on OneUp for real (once Verify OneUp has passed), and the plugin reads back what OneUp holds every hour. Off, nothing goes: posts already on OneUp and not yet out are taken back off, and then the plugin makes no call to OneUp at all.') . '</td></tr>';
+    echo '<tr><th scope="row">Paused</th><td>' . $check('ias[paused]', !empty($s['paused']), 'Pause all posting (the same as the Pause button on the calendar)', 'Everything off for now: posts on OneUp and not yet out are taken back off, and go again when you resume. Facebook stays with this plugin while paused.') . '</td></tr>';
     echo '<tr><th scope="row">Post types</th><td>';
     foreach (ias_post_types() as $type => $def) {
       if ($type === 'human') continue;
       echo $check('ias[types][' . $type . ']', ias_type_on($type), '<strong>' . esc_html($def['short']) . '</strong> (' . esc_html($def['label']) . ') <span class="description">— ' . esc_html($def['lane'] === 'A' ? 'approve first' : 'scheduled, ' . (int) ias_setting('lead_hours', 48) . ' hours to veto') . ', ' . esc_html($def['window']) . '</span>') . '<br>';
     }
-    echo '<p class="description">A type that is off is still planned and drafted, so you can read it on the calendar; it just never goes to OneUp.</p></td></tr>';
+    echo '<p class="description">On, that type\'s posts go to OneUp. Off, none of them goes — any already on OneUp come back off — but they are still planned and drafted, so you can read them on the calendar.</p></td></tr>';
     echo '</table>';
     submit_button('Save settings', 'primary', 'submit-top'); // the switches above, saved without scrolling a long page
 
@@ -324,9 +329,9 @@ if (!function_exists('ias_settings_render')) {
     foreach (array_keys(ias_channels()) as $ch) if ($ch !== 'facebook') $chosen[$ch] = ias_channel_settings($ch)['account'];
     $pick = ias_oneup_pick_options($chosen);
     $can = (bool) ias_setting('master', false) && ias_oneup_key() !== '';
-    echo '<tr><th scope="row">Accounts</th><td id="ias-oneup-pick"><button type="submit" form="ias-oneup-lookup-form" class="button" id="ias-lookup"' . ($can ? '' : ' disabled title="' . esc_attr(!ias_setting('master', false) ? 'Turn the master switch on and save first — while it is off, the plugin never calls OneUp' : 'Add the OneUp key and save first') . '"') . ' data-ia-busy="Asking OneUp…">Look up accounts</button>'
+    echo '<tr><th scope="row">Accounts</th><td id="ias-oneup-pick"><button type="submit" form="ias-oneup-lookup-form" class="button" id="ias-lookup"' . ($can ? '' : ' disabled title="' . esc_attr(!ias_setting('master', false) ? 'Turn the master switch on and save first — while it is off, the plugin never asks OneUp anything' : 'Add the OneUp key and save first') . '"') . ' data-ia-busy="Asking OneUp…">Look up accounts</button>'
       . ' <span class="description" id="ias-oneup-found">' . ias_oneup_directory_line() . '</span>'
-      . '<br><span class="description">Asks OneUp for its categories and the accounts in each — read only, nothing changes there. Then choose below and press <strong>Save settings</strong>.' . ($can ? '' : ' <strong>' . esc_html(!ias_setting('master', false) ? 'The master switch must be on (dry run can stay on).' : 'The OneUp key is needed.') . '</strong>') . '</span></td></tr>';
+      . '<br><span class="description">Asks OneUp for its categories and the accounts in each — read only, nothing changes there. Then choose below and press <strong>Save settings</strong>.' . ($can ? '' : ' <strong>' . esc_html(!ias_setting('master', false) ? 'The master switch must be on (nothing posts while every post type is off).' : 'The OneUp key is needed.') . '</strong>') . '</span></td></tr>';
     echo '<tr><th scope="row"><label for="ias-cat">Category</label></th><td><select id="ias-cat" name="ias[oneup_category_id]" class="ias-pick">' . $pick['ias-cat'] . '</select><br><span class="description">The OneUp category that holds the Intel Facebook page — and the other accounts posts go to.</span></td></tr>';
     echo '<tr><th scope="row"><label for="ias-acct">Facebook page</label></th><td><select id="ias-acct" name="ias[oneup_account_id]" class="ias-pick ias-acct-pick">' . $pick['ias-acct'] . '</select>'
       . ((string) $s['oneup_account_name'] !== '' && !ias_oneup_directory_account((string) $s['oneup_account_id']) ? ' ' . ia_ui_badge((string) $s['oneup_account_name'], 'ok') : '') // the list names it already
@@ -334,11 +339,12 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row">Listing link</th><td>' . $check('ias[link_in_comment]', !empty($s['link_in_comment']), 'Put the link in the first comment', 'Facebook shows posts with a link in them to fewer people. Untick only if OneUp cannot post first comments: the link then goes at the end of the post.') . '</td></tr>';
     echo '</table>';
 
-    // Google Business Profile: planned like the others, and sent for real once its own Verify has passed.
+    // Google Business Profile: one switch, sent once its own Verify has passed.
     $g = ias_channel_settings('gbp');
     $gstate = function_exists('ias_gbp_blockers') ? ias_gbp_blockers() : [];
-    echo '<h2 id="ias-gbp">Google Business Profile</h2><p class="description" style="max-width:760px">Each post can also go to the Intel profile on Google, through OneUp: the Facebook words without hashtags or phone numbers (Google refuses a post with a phone number in it — the profile has its own Call button), at most 1,500 characters, one picture and a <strong>Learn more</strong> button to the listing. It goes out a minute after the Facebook post. Until <strong>Send to Google</strong> is on and Verify for Google has passed, Google posts are a dry run in the log.</p><table class="form-table" role="presentation">';
-    echo '<tr><th scope="row">Google posts</th><td>' . $check('ias[networks][gbp][on]', $g['on'], 'Plan posts for Google Business Profile') . '</td></tr>';
+    echo '<h2 id="ias-gbp">Google Business Profile</h2><p class="description" style="max-width:760px">Each post can also go to the Intel profile on Google, through OneUp: the Facebook words without hashtags or phone numbers (Google refuses a post with a phone number in it — the profile has its own Call button), at most 1,500 characters, one picture and a <strong>Learn more</strong> button to the listing. It goes out a minute after the Facebook post. Off, nothing goes to Google and any Google posts already on OneUp come back off.</p><table class="form-table" role="presentation">';
+    echo '<tr><th scope="row">Google posts</th><td>' . $check('ias[networks][gbp][on]', $g['on'], '<strong>On</strong> — post to Google Business Profile',
+      'Needs the master switch on and <a href="#ias-verify-gbp">Verify for Google</a> passed for this location. ' . ($g['on'] && !$gstate ? ia_ui_badge('Posting', 'ok') : ($g['on'] ? ia_ui_badge('Not yet', 'warn') . ' ' . esc_html(ucfirst(implode('; ', $gstate))) . '.' : ''))) . '</td></tr>';
     echo '<tr><th scope="row"><label for="ias-net-gbp">Location</label></th><td><select id="ias-net-gbp" name="ias[networks][gbp][account]" class="ias-pick ias-acct-pick">' . $pick['ias-net-gbp'] . '</select>'
       . ((string) ($g['name'] ?? '') !== '' && !ias_oneup_directory_account($g['account']) ? ' ' . ia_ui_badge((string) $g['name'], 'ok') : '') . '<br><span class="description">The Google Business Profile location in the category above.</span></td></tr>';
     echo '<tr><th scope="row">Which posts</th><td>';
@@ -347,11 +353,9 @@ if (!function_exists('ias_settings_render')) {
       echo '<label style="display:inline-block;margin:0 14px 6px 0"><input type="checkbox" name="ias[networks][gbp][types][]" value="' . esc_attr($type) . '" ' . checked(in_array($type, $g['types'], true), true, false) . '> ' . esc_html($def['short']) . '</label>';
     }
     echo '<br><span class="description">Each type still needs its own switch on (Safety switches, above) before it goes anywhere.</span></td></tr>';
-    echo '<tr><th scope="row">Send to Google</th><td>' . $check('ias[networks][gbp][live]', $g['live'], '<strong>On</strong> — schedule the Google posts on OneUp for real',
-      'Needs the master switch on, dry run off and <a href="#ias-verify-gbp">Verify for Google</a> passed for this location. ' . ($g['on'] && $g['live'] && !$gstate ? ia_ui_badge('Sending', 'ok') : ($g['on'] && $g['live'] ? ia_ui_badge('Not yet', 'warn') . ' ' . esc_html(ucfirst(implode('; ', $gstate))) . '.' : ''))) . '</td></tr>';
     echo '</table>';
 
-    echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram, X and LinkedIn are set up but not sent to yet. Switch one on and every post is also planned for it: its words and pictures show on each post, and what would go to OneUp is written to the log as a dry run. Nothing reaches these networks until a later release gives each one its own Verify. Choose each one\'s account from the OneUp category above.</p><table class="form-table" role="presentation">';
+    echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram, X and LinkedIn are set up but cannot post yet — that needs a later release giving each one its own Verify. Tick <strong>Show a preview</strong> to see, on each post\'s page, the words and pictures it would get. A preview is not a switch: nothing goes to these networks. Choose each one\'s account from the OneUp category above.</p><table class="form-table" role="presentation">';
     foreach (ias_channels() as $ch => $rules) {
       if (in_array($ch, ['facebook', 'gbp'], true)) continue;
       $n = (array) (($s['networks'] ?? [])[$ch] ?? []);
@@ -361,7 +365,7 @@ if (!function_exists('ias_settings_render')) {
         'linkedin'  => 'The Facebook words with the link at the end, up to 9 pictures.',
       ][$ch] ?? '';
       echo '<tr><th scope="row">' . esc_html((string) $rules['label']) . '</th><td>'
-        . $check('ias[networks][' . $ch . '][on]', !empty($n['on']), 'Plan posts for ' . esc_html((string) $rules['label']) . ' <span class="description">(dry run only)</span>')
+        . $check('ias[networks][' . $ch . '][on]', !empty($n['on']), 'Show a preview for ' . esc_html((string) $rules['label']) . ' <span class="description">(not posted)</span>')
         . '<br><label>Account <select id="ias-net-' . esc_attr($ch) . '" name="ias[networks][' . esc_attr($ch) . '][account]" class="ias-pick ias-acct-pick">' . $pick['ias-net-' . $ch] . '</select></label>'
         . '<br><span class="description">' . esc_html($what) . '</span></td></tr>';
     }

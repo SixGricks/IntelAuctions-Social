@@ -14,7 +14,8 @@
  * changed post's old copy back; a post a person moved in OneUp is held, not
  * rewritten, when its listing changes; an Auction Week post on OneUp keeps its
  * listings when another sale joins its day; a post OneUp never confirms is
- * flagged once; and back in the dry run, leftovers on OneUp are listed.
+ * flagged once; and a post skipped comes off OneUp by the plugin's own hand
+ * (there is no dry run to leave it there).
  */
 require_once dirname(__DIR__) . '/fixtures/wp-fixtures.php';
 global $wpdb;
@@ -64,12 +65,12 @@ t_ok(preg_match('/id="ias-lookup" disabled title="Turn the master switch on[^"]*
 t_ok(preg_match('/disabled title="[^"]*master switch is off[^"]*"[^>]*>Verify OneUp/', $html) === 1, '…and Verify OneUp');
 
 // ---- 2. Everything on but Verify OneUp: still nothing is written ----
-ias_settings_update(['master' => true, 'dry_run' => false, 'types' => ['listing' => true]]);
+ias_settings_update(['master' => true, 'types' => ['listing' => true]]);
 $a = $mk('12 Alpha Road', 'Narvon', 'Lancaster', '2026-11-28 10:00');
 $n = count($S['calls']);
 $plan();
-t_eq([], $writes($n), 'master on, dry run off, Listing on, but Verify OneUp not passed: nothing is written to OneUp');
-t_eq('dry', ias_push_mode(), '…the plugin stays in the dry run');
+t_eq([], $writes($n), 'master on, Listing on, but Verify OneUp not passed: nothing is written to OneUp');
+t_eq('off', ias_push_mode(), '…the plugin is not posting');
 t_ok(in_array('Verify OneUp has not passed for this page', ias_oneup_blockers(true), true), '…and says why');
 t_ok(!ia_social_facebook_managed(), '…and Facebook stays with the toolkit\'s webhook');
 
@@ -116,7 +117,7 @@ t_ok($sent['mode'] === 'live' && isset($S['scheduled'][(int) $sent['id']]), 'onc
 
 // ---- 4. Another page: verify again ----
 ias_settings_update(['oneup_account_id' => 'fb_999']);
-t_ok(!ias_oneup_verified() && ias_push_mode() === 'dry', 'another Facebook account set: nothing is written until Verify OneUp passes for it');
+t_ok(!ias_oneup_verified() && ias_push_mode() === 'off', 'another Facebook account set: nothing is written until Verify OneUp passes for it');
 t_ok(strpos($screen(IAS_PAGE_SETTINGS), 'passed for this page') === false, '…and Settings no longer says it passed');
 ias_settings_update(['oneup_account_id' => 'fb_123']);
 t_ok(ias_oneup_verified(), 'back to the verified page: verified again');
@@ -129,7 +130,7 @@ t_ok(ias_oneup_verified(), '…and it is the key Verify OneUp passed with');
 $html = $screen(IAS_PAGE_SETTINGS);
 t_ok(strpos($html, 'name="ias_oneup_key_new"') !== false && strpos($html, 'test-oneup-key') === false, 'Settings has the key field and never prints the saved key');
 update_option('ias_oneup_api_key', 'a-different-key', false);
-t_ok(!ias_oneup_verified() && ias_push_mode() === 'dry', 'another key pasted in: nothing is written until Verify OneUp passes with it');
+t_ok(!ias_oneup_verified() && ias_push_mode() === 'off', 'another key pasted in: nothing is written until Verify OneUp passes with it');
 update_option('ias_oneup_api_key', 'test-oneup-key', false);
 t_ok(ias_oneup_verified(), 'the verified key back: verified again');
 
@@ -292,13 +293,14 @@ t_eq([$f, $g], array_map('intval', $row['listing_ids']), 'a third sale joins tha
 t_ok(ias_post_sent($row)['id'] === $awid && isset($S['scheduled'][(int) $awid]), '…and is not redrafted or replaced');
 t_ok((bool) ias_post_by_slot((string) $aw[0]['slot_key'] . ':' . $h2), '…the newcomer gets an Auction Week post of its own');
 
-// ---- 16. Back in the dry run: what is still on OneUp but no longer wanted is listed ----
-ias_settings_update(['dry_run' => true]);
+// ---- 16. Skipped: the plugin takes it off OneUp itself — nobody is sent into OneUp ----
+$did = ias_post_sent($lp($d))['id'];
+t_ok($did !== '' && isset($S['scheduled'][(int) $did]), 'a post on OneUp');
 $act('skip', ['ias_post' => $lp($d)['id']]);
-t_ok($lp($d)['status'] === 'skipped' && ias_post_sent($lp($d))['mode'] === 'live', 'skipped in the dry run: the plugin does not take it off OneUp itself');
-t_ok(strpos($screen(IAS_PAGE_CALENDAR), 'still scheduled on OneUp') !== false, '…and the calendar says it is still there, to delete by hand or go live again');
-
-ias_settings_update(['dry_run' => false]);
+ias_push_now([(int) $lp($d)['id']]); // what the calendar does next
+t_ok($lp($d)['status'] === 'skipped' && ias_post_sent($lp($d))['mode'] === '' && !isset($S['scheduled'][(int) $did]), 'skipped: the plugin takes it off OneUp itself, at once');
+$cal = $screen(IAS_PAGE_CALENDAR);
+t_ok(strpos($cal, 'still scheduled on OneUp') === false && stripos($cal, 'in OneUp by hand') === false && stripos($cal, 'dry run') === false, '…and the calendar never sends anyone into OneUp, nor speaks of a dry run');
 
 // ---- 17. Gone out by our clock, never confirmed by OneUp: flagged once, a day later ----
 $ep = $lp($e);
@@ -352,5 +354,5 @@ foreach ($S['drafts'] as $id => $row) if (strpos((string) $row['content'], 'form
 
 ias_t_oneup_off();
 ias_t_claude_off();
-ias_settings_update(['master' => false, 'dry_run' => true, 'paused' => false, 'types' => ['listing' => false, 'auction_week' => false]]);
+ias_settings_update(['master' => false, 'paused' => false, 'types' => ['listing' => false, 'auction_week' => false]]);
 delete_option('ias_oneup_verify');
