@@ -442,6 +442,40 @@ if (!function_exists('ias_media_for_post')) {
   }
 }
 
+/**
+ * No open house set: "Call for a private showing" — but not every time (DJ,
+ * Oct 14, 2026: "If no open house date is given then it's 'Call for private
+ * showing' but we don't always need to say that"). For a Listing or Auction
+ * Week post about one property (real estate) with no open house still ahead,
+ * about half the posts say it, chosen by the post itself (the same choice
+ * every rewrite); the rest leave showings out. '' when it does not apply.
+ */
+if (!function_exists('ias_showing_brief')) {
+  function ias_showing_brief(array $post, array $f): string {
+    if (!in_array((string) $post['type'], ['listing', 'auction_week'], true) || ($f['kind'] ?? '') === 'liquidation') return '';
+    if (ias_open_house_ahead($f)) return '';
+    return ias_says_showing((string) $post['slot_key'])
+      ? ' NO OPEN HOUSE IS SET: say "Call for a private showing" (with the lead\'s or the office\'s number from the facts). Never invent an open house.'
+      : ' No open house is set: leave showings out of this post, and never invent an open house.';
+  }
+}
+
+/** Is an open house still ahead? (A past one is no use to a reader.) */
+if (!function_exists('ias_open_house_ahead')) {
+  function ias_open_house_ahead(array $f): bool {
+    $now = function_exists('ias_now') ? ias_now() : new DateTimeImmutable('now');
+    foreach ((array) ($f['open_houses'] ?? []) as $oh) if (($oh['start'] ?? null) instanceof DateTimeInterface && $oh['start'] >= $now) return true;
+    return false;
+  }
+}
+
+/** Does this post mention a private showing? About half do, each the same way every time. Pure. */
+if (!function_exists('ias_says_showing')) {
+  function ias_says_showing(string $slot_key): bool {
+    return crc32('showing:' . $slot_key) % 2 === 0;
+  }
+}
+
 /** What the post is for, for Claude. */
 if (!function_exists('ias_type_brief')) {
   function ias_type_brief(array $post, array $facts_list): string {
@@ -451,7 +485,7 @@ if (!function_exists('ias_type_brief')) {
     $f = $facts_list[0];
     switch ($type) {
       case 'listing':
-        $b = 'LISTING POSTED — the first post this property gets, now that it has photos. Introduce it: what it is and where (town and county as given), the auction date and time, how bidding works, the starting bid and size if given, the open houses with their times, and who to call. About 80–150 words before the call to action.';
+        $b = 'LISTING POSTED — the first post this property gets, now that it has photos. Introduce it: what it is and where (town and county as given), the auction date and time, that it is Intel Phone Bidding when it is (an in-person auction need not be said), the starting bid and size if given, ' . (ias_open_house_ahead($f) ? 'the open houses with their times, ' : '') . 'and who to call. About 80–150 words before the call to action.' . ias_showing_brief($post, $f);
         if ($f['multi_parcel']) $b .= ' This is a MULTI-PARCEL sale: lead with the parcel breakdown and starting bids, one short line per parcel, exactly as the facts give them (if the facts do not list them, write [VERIFY: parcel breakdown]).';
         if ($f['kind'] === 'liquidation') $b .= ' This is a liquidation / contents sale: talk about what is selling, from the description; there is no land or house to describe.';
         return $b;
@@ -467,10 +501,11 @@ if (!function_exists('ias_type_brief')) {
         $when = $times ? implode(' and again ', $times) : '[VERIFY: open house time]';
         return 'OPEN HOUSE — invite people to walk the property at the open house on ' . $when . '. Give the day, '
           . (count($times) > 1 ? 'both sessions\' time ranges and how long each runs' : 'the time range and how long it runs')
-          . ', what they will be able to see (from the facts only), and the auction date and how bidding works. About 50–100 words before the call to action.';
+          . ', what they will be able to see (from the facts only), and the auction date (and that it is Intel Phone Bidding, when it is). About 50–100 words before the call to action.';
       case 'auction_week':
-        $b = 'AUCTION WEEK — the sale is coming up. An urgency angle without hype: the auction date and start time, the place, how bidding works, the starting bid if given, and who to call with questions. Name the date; do not say how many days away it is (the post\'s day can move). About 50–100 words before the call to action.';
-        if ($multi) $b .= ' SEVERAL PROPERTIES SELL THE SAME DAY: name each one on its own short line with its start time and how bidding works for it.';
+        $b = 'AUCTION WEEK — the sale is coming up. An urgency angle without hype: the auction date and start time, the place, that it is Intel Phone Bidding when it is (an in-person auction need not be said), the starting bid if given, and who to call with questions. Name the date; do not say how many days away it is (the post\'s day can move). About 50–100 words before the call to action.';
+        if ($multi) $b .= ' SEVERAL PROPERTIES SELL THE SAME DAY: name each one on its own short line with its start time, and say which of them are Intel Phone Bidding.';
+        else $b .= ias_showing_brief($post, $f);
         if (!empty($meta['uses_cover'])) $b .= ' This is the first post for a listing whose photos never arrived; the picture is its brochure cover.';
         return $b;
       case 'results':
@@ -533,7 +568,7 @@ if (!function_exists('ias_prompt_rules')) {
   function ias_prompt_rules(): string {
     return "VOICE: plainspoken and local, the way Intel talks at a sale. Short sentences. No stock marketing gloss (never \"don't miss out\", \"dream home\", \"nestled\", \"boasts\", \"stunning\", \"won't last\", \"opportunity of a lifetime\"). At most one emoji, and none is fine — unless the SHAPE asks for emoji-led lines. Never two exclamation points in a row. No words in all caps except abbreviations.\n"
       . "FACTS: use ONLY the facts in the FACTS block. Never invent or round acreage, prices, features, dates, times, names, phone numbers or history. If the post needs something the facts do not have, write [VERIFY: what is missing] in its place.\n"
-      . "BIDDING: when the facts say how bidding works, state it once, exactly as given, and in positive words — what it IS: \"bid by phone through Intel Phone Bidding\", or \"an in-person auction on site\". Never say what it is not (no \"no onsite auction\", \"not online\", \"no phone bids\"): saying phone bidding already tells people there is no crowd on site, and saying in-person already tells them there is no phone or online bidding. Never imply buyers can choose between them, and never mention online or internet bidding.\n"
+      . "BIDDING: when the sale is Intel Phone Bidding, say so once, in positive words — \"bid by phone through Intel Phone Bidding\". An in-person auction is the usual kind: it need not be said at all (\"on site\" is fine where it reads naturally). Never say what a sale is not (no \"no onsite auction\", \"not online\", \"no phone bids\"), never imply buyers can choose between phone and in person, and never mention online or internet bidding.\n"
       . "FAIR HOUSING: describe the property, never who should buy it or who the neighbours are. Never write things like \"perfect for families\", \"family-friendly\", \"safe neighborhood\", \"great for retirees\", or anything about race, religion, national origin, sex, disability or familial status.\n";
   }
 }

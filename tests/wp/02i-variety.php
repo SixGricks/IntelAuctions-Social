@@ -64,7 +64,7 @@ ias_sync(); ias_drafts_run(30);
 $pp = ias_post_by_slot('listing:' . $ph);
 $chk = ias_recheck_post($pp, "5 Phone Lane in Gap sells November 28 by Intel Phone Bidding — no onsite auction. Starting bid \$200,000.");
 t_eq([], array_values(array_filter($chk['holds'], function ($h) { return stripos($h, 'in-person') !== false || stripos($h, 'choose') !== false; })), 'a phone-bid post saying "no onsite auction" is not held as mentioning in-person bidding');
-t_ok(strpos((string) ($GLOBALS['ias_t_claude_last']['system'] ?? ''), 'Never say what it is not') !== false, 'and Claude is told to say how bidding works in positive words');
+t_ok(strpos((string) ($GLOBALS['ias_t_claude_last']['system'] ?? ''), 'Never say what a sale is not') !== false, 'and Claude is told to say how bidding works in positive words');
 
 // Talk it over keeps the shape the post was written in.
 if ($bul) {
@@ -75,3 +75,37 @@ if ($bul) {
 $old = $results[0]; unset($old['content']['shape']);
 [$sys_old] = ias_chat_prompt($old, ias_post_facts($old), null, [], 'Shorter.', 'Jacob');
 t_ok(strpos($sys_old, 'SHAPE:') === false, '…and a post written before shapes is given none');
+
+// ---- 0.15.0: only a phone-bid sale must say how bidding works; no open house: sometimes "Call for a private showing" ----
+$lpost = function (int $listing) { return ias_post_by_slot('listing:' . $listing); };
+$prompt_for = function (array $p) { [$sys, $user] = ias_prompt($p, ias_post_facts($p), (array) ($p['content']['media'] ?? []), 'place', 'call_lead', [], 'paragraphs'); return [$sys, $user]; };
+$inp = ias_t_listing(['title' => '9 Field Lane', 'address' => '9 Field Lane, Gap, PA 17527, USA', 'town' => 'Gap', 'county' => 'Lancaster',
+  'stage' => 'upcoming', 'sale' => '2026-11-27 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$300,000', 'gallery' => [ias_t_photo('Field 1'), ias_t_photo('Field 2'), ias_t_photo('Field 3')]]);
+ias_sync(); ias_drafts_run(30);
+$ip = $lpost($inp);
+[$sys, $user] = $prompt_for($ip);
+t_ok(strpos($sys, 'An in-person auction is the usual kind: it need not be said at all') !== false, 'Claude is told an in-person auction need not be said');
+$brief = ias_type_brief($ip, ias_post_facts($ip));
+t_ok(strpos($brief, 'an in-person auction need not be said') !== false && strpos($brief, 'how bidding works') === false, '…and the Listing brief asks only whether it is Intel Phone Bidding');
+t_ok(strpos($user, 'need not say how bidding works') !== false, '…the facts say so too');
+$chk = ias_recheck_post($ip, "9 Field Lane in Gap sells Friday, November 27 at 10:00 am. Starting bid \$300,000.\n\nCall the office.");
+t_eq([], array_values(array_filter($chk['holds'], function ($h) { return stripos($h, 'bidding') !== false || stripos($h, 'in-person') !== false; })), 'an in-person post that never says "in-person" is not held');
+$chk = ias_recheck_post($ip, "9 Field Lane in Gap sells November 27. Bid by phone through Intel Phone Bidding.\n\nCall the office.");
+t_ok((bool) array_filter($chk['holds'], function ($h) { return strpos($h, 'but this is an in-person auction') !== false; }), '…but one that says phone bidding is');
+$pp = $lpost($ph);
+[, $puser] = $prompt_for($pp);
+t_ok(strpos($puser, 'Intel Phone Bidding — buyers bid by phone with Intel (the post must say so, once)') !== false, 'a phone-bid sale\'s facts say the post must say so');
+// No open house: about half the posts say "Call for a private showing", each the same way every time.
+t_ok(strpos($user, ias_says_showing((string) $ip['slot_key']) ? 'say "Call for a private showing"' : 'leave showings out of this post') !== false, 'no open house set: the Listing brief says whether this post mentions a private showing (' . (ias_says_showing((string) $ip['slot_key']) ? 'it does' : 'it does not') . ')');
+$withoh = ias_t_listing(['title' => '2 Open Way', 'address' => '2 Open Way, Gap, PA 17527, USA', 'town' => 'Gap', 'county' => 'Chester',
+  'stage' => 'upcoming', 'sale' => '2026-11-28 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$300,000',
+  'gallery' => [ias_t_photo('Open 1'), ias_t_photo('Open 2'), ias_t_photo('Open 3')], 'oh' => [['2026-11-21 13:00', 2]]]);
+ias_sync(); ias_drafts_run(30);
+[, $ouser] = $prompt_for($lpost($withoh));
+t_ok(strpos($ouser, 'private showing') === false && strpos($ouser, 'leave showings out') === false && strpos($ouser, 'the open houses with their times') !== false, 'with an open house set: the open house, and nothing about showings');
+$pastoh = ias_t_listing(['title' => '4 Past Way', 'address' => '4 Past Way, Gap, PA 17527, USA', 'town' => 'Gap', 'county' => 'Chester',
+  'stage' => 'upcoming', 'sale' => '2026-11-28 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$300,000',
+  'gallery' => [ias_t_photo('Past 1'), ias_t_photo('Past 2'), ias_t_photo('Past 3')], 'oh' => [['2026-10-31 13:00', 2]]]);
+ias_sync(); ias_drafts_run(30);
+$pb = ias_type_brief($lpost($pastoh), ias_post_facts($lpost($pastoh)));
+t_ok(count((array) (ias_post_facts($lpost($pastoh))[0]['open_houses'] ?? [])) === 1 && strpos($pb, 'the open houses with their times') === false && (strpos($pb, 'private showing') !== false || strpos($pb, 'leave showings out') !== false), 'an open house already past: no open houses asked for, and the no-open-house line instead');

@@ -7,9 +7,12 @@
  * applied to the text silently because there is only one right answer:
  *
  *   hold  [VERIFY] markers — Claude was missing a fact it needed
- *   hold  bidding — a post that must say how bidding works says it wrongly,
- *         says both (buyers would think they can choose), says neither, or
- *         says "online"; or the listing itself does not say
+ *   hold  bidding — a phone-bid sale's post does not say it is Intel Phone
+ *         Bidding, or says in-person too (buyers would think they can
+ *         choose); an in-person sale's post mentions phone bidding; any post
+ *         says "online"; or the listing itself does not say which it is. An
+ *         in-person auction is the usual kind and need not be said (DJ, Oct
+ *         14, 2026: "We only need to say when it's a phone bid auction.")
  *   hold  a dollar figure or a phone number that is not on the listing
  *   hold  a fair-housing phrase (fairhousing.php)
  *   hold  more than three emoji (no emoji walls) — eight for an emoji-led post
@@ -148,16 +151,16 @@ if (!function_exists('ias_check_draft')) {
     $must_say = in_array($type, ['listing', 'open_house', 'auction_week'], true);
     if ($must_say) {
       if (in_array('', $types, true) || !$types) {
-        $holds[] = 'The listing does not say whether bidding is in person or by Intel Phone Bidding, and this post has to.';
+        $holds[] = 'The listing does not say whether it is Intel Phone Bidding or an in-person auction (its Auction type): a phone-bid sale has to say so.';
       } elseif (count($types) === 1) {
-        $want = $types[0];
-        $other = $want === 'phone' ? 'in_person' : 'phone';
-        if (!$said[$want]) $holds[] = 'It does not say this is ' . ($want === 'phone' ? 'Intel Phone Bidding' : 'an in-person auction') . '.';
-        if ($said[$other]) $holds[] = 'It mentions ' . ($other === 'phone' ? 'phone bidding' : 'in-person bidding') . ' too — buyers would think they can choose.';
-      } else {
-        foreach ($types as $want) {
-          if (!$said[$want]) $holds[] = 'One of these sales is ' . ($want === 'phone' ? 'Intel Phone Bidding' : 'an in-person auction') . ' and the post does not say so.';
+        if ($types[0] === 'phone') {
+          if (!$said['phone']) $holds[] = 'It does not say this is Intel Phone Bidding.';
+          if ($said['in_person']) $holds[] = 'It mentions in-person bidding too — buyers would think they can choose.';
+        } elseif ($said['phone']) {
+          $holds[] = 'It mentions phone bidding, but this is an in-person auction.'; // an in-person auction itself need not be said
         }
+      } elseif (in_array('phone', $types, true) && !$said['phone']) {
+        $holds[] = 'One of these sales is Intel Phone Bidding and the post does not say so.';
       }
     }
 

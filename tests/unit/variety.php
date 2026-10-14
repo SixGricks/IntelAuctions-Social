@@ -45,5 +45,5 @@ foreach (['selling', 'follow', 'save_date', 'share', 'thanks'] as $k) t_ok(isset
 
 // The rules: bidding in positive words.
 $rules = ias_prompt_rules();
-t_ok(strpos($rules, 'positive words') !== false && strpos($rules, 'Never say what it is not') !== false && strpos($rules, 'no onsite auction') !== false, 'Claude is told to say how bidding works in positive words, never what it is not');
+t_ok(strpos($rules, 'positive words') !== false && strpos($rules, 'Never say what a sale is not') !== false && strpos($rules, 'no onsite auction') !== false, 'Claude is told to say how bidding works in positive words, never what it is not');
 t_ok(strpos($rules, 'unless the SHAPE asks for emoji-led lines') !== false, '…and that the emoji-led shape may carry emoji');

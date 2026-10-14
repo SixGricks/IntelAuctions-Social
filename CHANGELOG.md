@@ -1,5 +1,30 @@
 # Intel Auctions Social changelog
 
+## 0.15.0 (2026-10-14) — Only phone bid has to be said; "Call for a private showing" sometimes
+DJ: "don't require 'in person auction' as part of the description. We only
+need to say when it's a phone bid auction." — and "If no open house date is
+given then it's 'Call for private showing' but we don't always need to say
+that."
+- **Only a phone-bid sale must say how bidding works.** The check no longer
+  holds an in-person sale's post for not saying "in-person auction"; it still
+  holds a phone-bid post that does not say Intel Phone Bidding (or says
+  in-person too), and now an in-person sale's post that mentions phone
+  bidding ("but this is an in-person auction"). Of several sales on one day,
+  only the phone-bid ones must be named. A listing that does not say which
+  it is still stops the post.
+- **The prompts say the same:** the rules ask for Intel Phone Bidding once
+  when it is one and say an in-person auction need not be mentioned; the
+  Listing, Open House and Auction Week briefs ask only whether it is Intel
+  Phone Bidding; the facts say "the post must say so" / "need not say".
+- **No open house set** (`ias_showing_brief()`, `ias_says_showing()`, `ias_open_house_ahead()`): a
+  Listing or Auction Week post about one property (real estate) with no open
+  house still ahead says "Call for a private showing" in about half the
+  posts — each post decides by its own key, the same every rewrite — and the
+  rest leave showings out; never an invented open house. The Listing brief
+  mentions open houses only when one is still ahead (a past one counts as none).
+- Tests: `tests/unit/showings.php`, the bidding rule in
+  `tests/unit/checks.php`, and `tests/wp/02i-variety.php`.
+
 ## 0.14.0 (2026-10-14) — A switch on every post; hover for a preview
 DJ: "I also want to be able to turn on skipped items and turn off others." —
 and "Hover over an item on the calendar should give a preview of the post."

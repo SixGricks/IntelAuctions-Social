@@ -120,7 +120,12 @@ it, and the spec stays verbatim, so they are recorded here:
   own openings (`ias_templates_results()`) and six calls to action. Bidding is
   said as what the sale *is*, never what it isn't; the check
   (`ias_negated_at()`) does not count a way of bidding the sentence denies, so
-  "no onsite auction" on a phone post is not held. The emoji cap is three, or
+  "no onsite auction" on a phone post is not held. **Only a phone-bid sale must
+  say how bidding works** (Oct 14, 2026: "We only need to say when it's a phone
+  bid auction"): an in-person post need not say "in-person", but may not say
+  phone bidding. With no open house ahead, about half the Listing and Auction
+  Week posts say "Call for a private showing" (`ias_showing_brief()`; Oct 14:
+  "we don't always need to say that"). The emoji cap is three, or
   eight on an emoji-led post (`ias_emoji_max()`).
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
