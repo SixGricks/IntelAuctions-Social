@@ -270,7 +270,7 @@ function ias_t_oneup(): void {
   $GLOBALS['ias_t_oneup'] = ['scheduled' => [], 'published' => [], 'drafts' => [], 'failed' => [], 'next' => 900001, 'calls' => [],
     'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true, 'lose_answer' => 0, 'net_error' => 0, 'delete_404' => 0,
     'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)', 'id_form' => 'any', 'docs' => false, 'ignore_start' => false, 'zero_new' => 0,
-    'fb_stats' => [], 'stats_code' => 200, 'comments' => [], 'comment_code' => 200, 'comment_lose' => 0];
+    'fb_stats' => [], 'stats_code' => 200, 'comments' => [], 'comment_code' => 200, 'comment_lose' => 0, 'resched_lose' => 0, 'resched_keep_failed' => false];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -353,6 +353,16 @@ function ias_t_oneup(): void {
         if ($S['lose_answer'] > 0) { $S['lose_answer']--; return $json(502, ['message' => 'Bad gateway']); }
         if ($S['docs']) return $json(200, ['message' => '1 new Posts Scheduled.', 'error' => false, 'data' => []]);
         return $json(200, $S['no_id'] ? ['error' => false, 'message' => 'Post scheduled successfully'] : ['error' => false, 'message' => 'Post scheduled successfully', 'data' => ['post_id' => $id]]);
+      case 'reschedulefailedpost': // a failed post goes back on the scheduled list at the new time (OneUp's docs)
+        $id = (int) ($params['post_id'] ?? 0);
+        if (!isset($S['failed'][$id])) return $json(400, ['error' => true, 'message' => 'Only failed posts can be rescheduled.']);
+        $row = $S['failed'][$id];
+        unset($row['fail_reason'], $row['failure_reason']);
+        $row['date_time'] = date('Y-m-d H:i:s', strtotime((string) $params['scheduled_date_time']));
+        $S['scheduled'][$id] = $row;
+        if (empty($S['resched_keep_failed'])) unset($S['failed'][$id]);
+        if ($S['resched_lose'] > 0) { $S['resched_lose']--; return $json(502, ['message' => 'Bad gateway']); }
+        return $json(200, ['message' => 'Post rescheduled successfully']);
       case 'deletepost': // the address the plugin once guessed: OneUp answers it with its 404 web page
         return ['headers' => [], 'body' => '<!doctype html><title>Page Not Found</title><h1>Page Not Found</h1><p>Sorry, the page you are looking for could not be found.</p>', 'response' => ['code' => 404, 'message' => 'Not Found'], 'cookies' => [], 'filename' => null];
       case 'deletescheduledpost':

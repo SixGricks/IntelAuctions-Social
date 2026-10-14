@@ -217,9 +217,9 @@ if (!function_exists('ias_oneup_adopt_attempt')) {
     $id = (int) $p['id'];
     $flags = $p['flags'];
     $try = (array) ($flags['sending'] ?? []);
-    unset($flags['sending'], $flags['push_fails'], $flags['push_error'], $flags['was_on_oneup']);
+    unset($flags['sending'], $flags['push_fails'], $flags['push_error'], $flags['was_on_oneup'], $flags['reuse_failed']);
     $flags['oneup'] = ['id' => $oneup_id, 'hash' => (string) ($try['hash'] ?? ''), 'at' => (string) ($try['at'] ?? ias_now_sql()), 'when' => (string) ($try['when'] ?? ''),
-      'text' => (string) ($try['text'] ?? ''), 'facts' => (array) ($try['facts'] ?? [])];
+      'text' => (string) ($try['text'] ?? ''), 'facts' => (array) ($try['facts'] ?? []), 'body' => (string) ($try['body'] ?? '')];
     ias_post_update($id, ['flags' => $flags, 'oneup_post_id' => mb_substr($oneup_id, 0, 64), 'pushed_at' => $flags['oneup']['at']]);
     ias_human_forget($oneup_id);
     ias_post_trail($id, 'Found on OneUp after all (its answer was lost): post #' . $oneup_id);
@@ -308,7 +308,39 @@ if (!function_exists('ias_push_live_send')) {
     }
 
     // Send, remembering the attempt until OneUp's answer is in.
-    $attempt = ['hash' => $hash, 'when' => (string) $req['params']['scheduled_date_time'], 'text' => (string) $req['params']['content'], 'at' => ias_now_sql(), 'facts' => ias_correction_facts($p)];
+    $attempt = ['hash' => $hash, 'when' => (string) $req['params']['scheduled_date_time'], 'text' => (string) $req['params']['content'], 'at' => ias_now_sql(), 'facts' => ias_correction_facts($p),
+      'body' => ias_request_body_hash($req)];
+
+    // Try again (0.19.0): OneUp's own failed copy is rescheduled for the new time rather than a second copy
+    // sent — when the post is as it was then. A clear no (it is not on the failed list any more, say) and a
+    // fresh copy goes instead, now; an answer that never came back is looked for, like any attempt.
+    $reuse = (array) ($flags['reuse_failed'] ?? []);
+    if ($reuse) {
+      unset($flags['reuse_failed']);
+      if (!empty($reuse['id']) && (string) ($reuse['body'] ?? '') === $attempt['body']) {
+        $flags['sending'] = $attempt + ['reuse' => (string) $reuse['id']];
+        ias_post_update($id, ['flags' => $flags]);
+        $r = ias_oneup_call('reschedule_failed', ['post_id' => (string) $reuse['id'], 'scheduled_date_time' => $attempt['when']]);
+        ias_oneup_scheduled_forget();
+        if ($r['ok']) {
+          unset($flags['sending'], $flags['push_fails'], $flags['push_error'], $flags['was_on_oneup']);
+          $flags['oneup'] = ['id' => (string) $reuse['id']] + $attempt;
+          ias_post_update($id, ['flags' => $flags, 'oneup_post_id' => mb_substr((string) $reuse['id'], 0, 64), 'pushed_at' => $attempt['at']]);
+          ias_post_trail($id, 'OneUp\'s failed copy (post #' . $reuse['id'] . ') rescheduled for ' . $when . ' — no second copy');
+          ias_log('pushed', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'oneup' => (string) $reuse['id'], 'summary' => 'Try again: OneUp\'s failed copy rescheduled for ' . $when . ' (post #' . $reuse['id'] . ').']);
+          return true;
+        }
+        if (ias_oneup_uncertain($r)) {
+          $flags['reuse_failed'] = $reuse; // looked for on the list first, then tried again
+          $flags['push_error'] = $r['error'];
+          ias_post_update($id, ['flags' => $flags]);
+          return $fail('OneUp did not answer clearly when rescheduling its failed copy for ' . $when . ': ' . $r['error'] . ' — looked for before anything is sent again.');
+        }
+        unset($flags['sending']);
+        ias_post_trail($id, 'OneUp would not reschedule its failed copy (' . $r['error'] . ') — a fresh copy goes');
+      }
+      ias_post_update($id, ['flags' => $flags]);
+    }
     $flags['sending'] = $attempt;
     ias_post_update($id, ['flags' => $flags]);
     $r = ias_oneup_call((string) $req['endpoint'], (array) $req['params']);
@@ -563,6 +595,7 @@ if (!function_exists('ias_readback_run')) {
       $oid = (string) ($row['post_id'] ?? '');
       $seen_fail[$oid] = true;
       if (!isset($ours[$oid]) || in_array($ours[$oid]['status'], ['failed', 'cancelled', 'skipped'], true)) continue;
+      if (isset($seen[$oid])) continue; // on the scheduled list too: a failed copy rescheduled by Try again, its old row not yet gone
       $p = $ours[$oid];
       $why = ias_oneup_fail_reason($row) ?: 'no reason given';
       ias_post_update((int) $p['id'], ['status' => 'failed', 'note' => 'OneUp could not publish it: ' . $why . ' — press Try again, or skip it.']);

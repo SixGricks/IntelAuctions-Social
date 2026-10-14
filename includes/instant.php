@@ -265,8 +265,12 @@ add_action('ias_calendar_action', function (string $action): void {
 
     case 'retry':
       if ($p['status'] !== 'failed') return;
-      // The copy OneUp could not publish stays on OneUp's failed list, by its id — a fresh copy goes instead.
-      if (!empty($flags['oneup']['id'])) $flags['failed_copies'][] = (string) $flags['oneup']['id'];
+      // OneUp's failed copy is rescheduled for the new time when the post is as it was (0.19.0, ias_push_live_send());
+      // otherwise it stays on OneUp's failed list, by its id, and a fresh copy goes instead.
+      if (!empty($flags['oneup']['id'])) {
+        $flags['failed_copies'][] = (string) $flags['oneup']['id'];
+        if (!empty($flags['oneup']['body'])) $flags['reuse_failed'] = ['id' => (string) $flags['oneup']['id'], 'body' => (string) $flags['oneup']['body'], 'at' => ias_now_sql()];
+      }
       unset($flags['oneup'], $flags['push_fails'], $flags['push_error'], $flags['unconfirmed'], $flags['missing_since']);
       $flags['was_on_oneup'] = true; // it was sent once: a new copy is not held back by the veto window
       $status = ias_back_on_plan_status(['flags' => $flags]);
@@ -277,7 +281,7 @@ add_action('ias_calendar_action', function (string $action): void {
         unset($fields['flags']['pinned'], $fields['flags']['pinned_by']);
       }
       ias_post_update($id, $fields);
-      ias_post_trail($id, 'Try again pressed — a fresh copy goes to OneUp', $actor);
+      ias_post_trail($id, 'Try again pressed — ' . (!empty($flags['reuse_failed']) ? 'OneUp\'s failed copy goes again at its new time' : 'a fresh copy goes to OneUp'), $actor);
       ias_log('planned', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => 'Try again: back on the plan'], $actor);
       if (!array_key_exists('scheduled_at', $fields) || $fields['scheduled_at'] !== null) {
         $flash('Back on the plan for ' . esc_html($fmt((string) $p['scheduled_at'])) . '.');

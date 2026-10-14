@@ -1,5 +1,26 @@
 # Intel Auctions Social changelog
 
+## 0.19.0 (2026-10-14) — Try again reuses OneUp's failed post
+DJ: "Yes" — Try again reuses the copy OneUp could not publish rather than
+sending a second one.
+- **Try again** keeps the failed copy's OneUp id (`flags.reuse_failed`), and
+  the push that follows asks OneUp to reschedule it for the post's time
+  (POST `reschedulefailedpost`: post_id, scheduled_date_time — OneUp's
+  docs). The post keeps its OneUp id; the copy leaves OneUp's failed list.
+- Only an unchanged post: what was sent keeps a fingerprint without its time
+  (`flags.oneup.body`, `ias_request_body_hash()`), and the reschedule is
+  asked only when the post's still matches. Changed since, refused by OneUp
+  (not on its failed list any more), or sent before 0.19.0 (no fingerprint):
+  a fresh copy goes in the same click, as before.
+- Never twice: the reschedule is an attempt like any send — a lost answer is
+  looked for on the scheduled list by its words and time and kept, and
+  nothing else is sent meanwhile. A failed row OneUp has not cleared yet
+  beside the rescheduled copy never fails the post again (the scheduled list
+  wins in the read-back).
+- The Failed card says what Try again does.
+- Tests: `tests/wp/07k-retry.php` (20 checks; 13 fail on 0.18.0), unit checks
+  in `tests/unit/oneup.php`; the fake OneUp's `reschedulefailedpost`.
+
 ## 0.18.0 (2026-10-14) — Correction comments posted by the plugin
 DJ: "Yes" — the correction comment for a post whose facts changed after it
 went out is posted by the plugin (OneUp's Intermediate plan has comments).

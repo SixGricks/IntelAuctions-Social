@@ -95,7 +95,7 @@ add_action('ias_post_view_side', function (array $p): void {
     if ($p['status'] === 'published') return;
   }
   if ($p['status'] === 'failed') {
-    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Press <strong>Try again</strong> (above) to send a fresh copy, or skip it.</p></div>';
+    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Press <strong>Try again</strong> (above): OneUp\'s own copy goes again at the time the plan gives it (a fresh copy, if the post changed since), or skip it.</p></div>';
     return;
   }
   echo '<div class="ias-card"><h3>' . ($sent['mode'] === 'live' ? 'What went to OneUp' : 'What goes to OneUp') . '</h3>';

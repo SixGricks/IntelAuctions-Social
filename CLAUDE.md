@@ -237,7 +237,10 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   the hourly run with `corrections_auto` (off at install) — master on, not
   paused, never Sunday, never `[VERIFY]`, and never twice (`sending` noted
   first; a lost answer is looked for with `fetch-top-comments`, and only a
-  person sends it again).
+  person sends it again). **Try again** (0.19.0) reschedules OneUp's own
+  failed copy (`reschedulefailedpost`, `flags.reuse_failed`) — only when the
+  post's fingerprint without its time (`flags.oneup.body`) is unchanged;
+  otherwise a fresh copy, as before.
 - **A person's decision holds.** Anything that puts a post back on the plan uses
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when

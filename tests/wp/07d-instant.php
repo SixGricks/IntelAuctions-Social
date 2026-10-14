@@ -128,8 +128,10 @@ $act('retry', ['ias_post' => $pid]);
 $p = $lp($a);
 t_ok(in_array($p['status'], ['planned', 'pushed'], true), 'Try again: back on the plan');
 $sent = ias_post_sent($p);
-t_ok($sent['mode'] === 'live' && (int) $sent['id'] !== $oid && isset($S['scheduled'][(int) $sent['id']]), '…and a fresh copy is on OneUp at once');
-t_eq([(string) $oid], (array) ($p['flags']['failed_copies'] ?? []), '…the failed copy remembered, never taken for this one');
+// 0.19.0 (DJ, Oct 14, 2026): Try again reschedules OneUp's own failed copy rather than sending a second one.
+t_ok($sent['mode'] === 'live' && (int) $sent['id'] === $oid && isset($S['scheduled'][$oid]) && !isset($S['failed'][$oid]), '…and OneUp\'s failed copy is back on its scheduled list at once — rescheduled, not a second copy');
+t_eq(1, count(ias_t_oneup_calls($n, 'reschedulefailedpost')), '…by one reschedule');
+t_eq([(string) $oid], (array) ($p['flags']['failed_copies'] ?? []), '…the failure remembered');
 ias_readback_run();
 t_ok($lp($a)['status'] !== 'failed', 'the old copy on OneUp\'s failed list does not fail it again');
 

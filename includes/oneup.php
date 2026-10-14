@@ -63,6 +63,7 @@ if (!function_exists('ias_oneup_endpoints')) {
       'drafts'         => ['GET', 'getdraftposts'],
       'failed'         => ['GET', 'getfailedposts'],
       'delete'         => ['POST', 'deletescheduledpost'], // OneUp's docs: post_id, unpublished posts only (Verify OneUp checks it on its test draft)
+      'reschedule_failed' => ['POST', 'reschedulefailedpost'], // OneUp's docs: post_id + scheduled_date_time, failed posts only (Try again, 0.19.0)
       'edit'           => ['POST', 'editpost'],    // not used: it changes only the words, so a changed post is deleted and scheduled again
       'fb_stats'       => ['GET', 'https://analyze.oneupapp.io/api/facebook/posts'], // each Facebook post's reactions, comments, shares, clicks, views (stats.php)
     ]);
@@ -101,6 +102,18 @@ if (!function_exists('ias_render_facebook')) {
     }
     $ep = ias_oneup_endpoints()[$endpoint];
     return ['action' => 'create', 'channel' => 'facebook', 'endpoint' => $endpoint, 'method' => $ep[0], 'url' => IAS_ONEUP_BASE . $ep[1], 'params' => $params, 'alt' => $alt];
+  }
+}
+
+/**
+ * The request's fingerprint without its time: what the post says and shows.
+ * Try again reschedules OneUp's failed copy only when this is unchanged
+ * (0.19.0) — the time is the one thing a reschedule changes. Pure.
+ */
+if (!function_exists('ias_request_body_hash')) {
+  function ias_request_body_hash(array $req): string {
+    unset($req['params']['scheduled_date_time']);
+    return md5((string) wp_json_encode($req));
   }
 }
 
