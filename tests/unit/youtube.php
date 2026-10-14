@@ -106,4 +106,4 @@ t_ok(strpos($row['content_joined'], '~~~') !== false, '…the joined text kept')
 $row = ias_oneup_row_split(['content' => 'A title~~~Words with ~~~ in them']);
 t_eq(['A title', 'Words with ~~~ in them'], [$row['title'], $row['content']], 'split at the first ~~~ only');
 t_eq(['content' => 'A Facebook post'], ias_oneup_row_split(['content' => 'A Facebook post']), 'a post with no title is left as it is');
-t_eq('Kept', ias_oneup_row_split(['content' => 'Other~~~Words', 'title' => 'Kept'])['title'], 'a title OneUp gave on its own is kept');
+t_eq(['content' => 'Other~~~Words', 'title' => 'Kept'], ias_oneup_row_split(['content' => 'Other~~~Words', 'title' => 'Kept']), 'a row OneUp gave a title of its own is left as it is');

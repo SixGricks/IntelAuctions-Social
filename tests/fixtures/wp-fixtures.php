@@ -28,6 +28,8 @@ function ias_t_reset(): void {
   unset($GLOBALS['ias_youtube_index']); // every file runs in one process: nothing read before this reset may carry over
   foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_youtube_verify', 'ias_youtube_playlists', 'ias_youtube_route'] as $o) delete_option($o);
   if (function_exists('ias_youtube_tmp_dir') && ($tmpdir = ias_youtube_tmp_dir()) !== '') foreach ((array) glob($tmpdir . '/*.part') as $f) @unlink((string) $f);
+  delete_transient('ias_youtube_tmp_sweep');
+  $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_yt\\_xfer\\_%'");
   $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
   update_option('ias_settings', [], true);
   // The dry run's one-time retirement (0.12.0) is its own test (07e): elsewhere it has already happened,
@@ -281,7 +283,7 @@ function ias_t_oneup(): void {
     'yt_pub_id' => 'video', 'yt_ids' => [], 'yt_stats' => [], 'feed' => [],
     // 0.22.2: `storage` 's3' (the docs' bucket, which lets a browser upload) or 'spaces' (the live account's
     // DigitalOcean bucket, which answers every browser 403); `put_file_fail` failed sends from this website.
-    'storage' => 's3', 'put_file_fail' => 0];
+    'storage' => 's3', 'put_file_fail' => 0, 'put_file_die' => 0];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -482,6 +484,7 @@ function ias_t_storage(): void {
     $S =& $GLOBALS['ias_t_oneup'];
     clearstatcache(true, (string) $path);
     $S['calls'][] = ['path' => 'put-file', 'method' => 'PUT', 'params' => ['url' => (string) $url, 'size' => (int) @filesize((string) $path), 'type' => (string) $type, 'body' => (int) @filesize((string) $path) <= 64 ? (string) @file_get_contents((string) $path) : ''], 'raw_sn' => null];
+    if ($S['put_file_die'] > 0) { $S['put_file_die']--; throw new RuntimeException('the PHP process was killed mid-send'); } // a time limit, a deploy
     if ($S['put_file_fail'] > 0) { $S['put_file_fail']--; return ['ok' => false, 'code' => 0, 'error' => 'the connection to OneUp\'s storage failed (Operation timed out)']; }
     if (!empty($S['put_refused'])) return ['ok' => false, 'code' => 403, 'error' => 'OneUp\'s storage refused the file (HTTP 403)'];
     $plain = (string) strtok((string) $url, '?');

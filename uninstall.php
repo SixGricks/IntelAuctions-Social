@@ -41,10 +41,13 @@ foreach ([
 }
 // Talk it over's per-post locks (ias_chat_lock_<post id>, written straight to the table like the push lock).
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
+// YouTube (0.22.3): the per-listing send-on lock (ias_yt_xfer_<listing id>, written the same way, held while a file goes on to OneUp's storage).
+$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_yt\\_xfer\\_%'");
 // The toolkit dispatcher's bookkeeping for this plugin's job ids (ias_*).
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ia\\_job\\_last\\_run\\_ias\\_%' OR option_name LIKE 'ia\\_job\\_last\\_duration\\_ias\\_%' OR option_name LIKE 'ia\\_job\\_last\\_issue\\_ias\\_%' OR option_name LIKE 'ia\\_job\\_lock\\_ias\\_%'");
 
-// Transients.
+// Transients — among them ias_youtube_page_check (Property Videos' read-back, at most every two minutes) and
+// ias_youtube_tmp_sweep (the daily sweep of stray files in uploads/intel-social/video-tmp).
 delete_transient('ias_updater_response');
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ias\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ias\\_%'");
 

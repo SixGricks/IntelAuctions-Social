@@ -345,9 +345,8 @@ add_action('deleted_post', function () { unset($GLOBALS['ias_youtube_index']); }
 if (!function_exists('ias_youtube_stale_upload')) {
   function ias_youtube_stale_upload(array $rec): bool {
     if (($rec['state'] ?? '') !== 'uploading' || !empty($rec['xfer'])) return false; // being sent on from this website: the hourly run sees it through
-    $last = strtotime((string) ($rec['up_at'] ?? ''));
-    $tmp = ias_youtube_tmp_path($rec);
-    if ($tmp !== '' && file_exists($tmp)) $last = max($last, (int) filemtime($tmp)); // through this website: from its last piece
+    // Site time throughout (never a file's own clock): from the start, or through this website from its last piece.
+    $last = max((int) strtotime((string) ($rec['up_at'] ?? '')), (int) strtotime((string) ($rec['piece_at'] ?? '')));
     return $last < strtotime(ias_now_sql()) - 2 * HOUR_IN_SECONDS;
   }
 }
@@ -364,8 +363,9 @@ if (!function_exists('ias_youtube_file')) {
 if (!function_exists('ias_youtube_row_is')) {
   function ias_youtube_row_is(array $row, array $sent, bool $published): bool {
     if (!ias_youtube_row_ok($row)) return false;
+    $row = ias_oneup_row_split($row); // OneUp lists a video as title~~~description
     if (ias_norm_text((string) ($row['content'] ?? '')) !== ias_norm_text((string) ($sent['text'] ?? ''))) return false;
-    // OneUp's lists carry the title too (split off by ias_oneup_row_split()): when both are known they must agree.
+    // OneUp's lists carry the title too (split off above): when both are known they must agree.
     if ((string) ($row['title'] ?? '') !== '' && (string) ($sent['title'] ?? '') !== '' && ias_norm_text((string) $row['title']) !== ias_norm_text((string) $sent['title'])) return false;
     if (!$published) return substr((string) ($row['date_time'] ?? ''), 0, 16) === substr((string) ($sent['when'] ?? ''), 0, 16);
     return ias_published_pick((string) ($row['content'] ?? ''), ias_oneup_time((string) ($row['created_at'] ?? $row['date_time'] ?? ''), true), ['x' => ['text' => (string) $sent['text'], 'when' => (string) $sent['when']]]) !== null;
@@ -378,7 +378,7 @@ if (!function_exists('ias_youtube_row_is')) {
  */
 if (!function_exists('ias_youtube_row_ours')) {
   function ias_youtube_row_ours(array $row): bool {
-    $text = ias_norm_text((string) ($row['content'] ?? ''));
+    $text = ias_norm_text((string) (ias_oneup_row_split($row)['content'] ?? '')); // a video is listed as title~~~description
     if ($text === '') return false;
     foreach (ias_youtube_all() as $rec) {
       foreach ([(array) ($rec['oneup'] ?? []), (array) ($rec['sending'] ?? [])] as $s) {
@@ -424,10 +424,11 @@ if (!function_exists('ias_youtube_route')) {
 
 /** Where a file waits on this website on its way to OneUp's storage ('' = it cannot). Never served: random names, no listing. */
 if (!function_exists('ias_youtube_tmp_dir')) {
-  function ias_youtube_tmp_dir(): string {
+  function ias_youtube_tmp_dir(bool $create = true): string {
     $up = wp_upload_dir(null, false);
     if (empty($up['basedir'])) return '';
     $dir = trailingslashit((string) $up['basedir']) . 'intel-social/video-tmp';
+    if (!$create) return is_dir($dir) ? $dir : ''; // a lookup never makes the folder
     if (!is_dir($dir) && !wp_mkdir_p($dir)) return '';
     if (!file_exists($dir . '/index.php')) @file_put_contents($dir . '/index.php', "<?php // Silence is golden.\n");
     if (!file_exists($dir . '/.htaccess')) @file_put_contents($dir . '/.htaccess', "Require all denied\nDeny from all\n");
@@ -440,7 +441,7 @@ if (!function_exists('ias_youtube_tmp_path')) {
   function ias_youtube_tmp_path(array $rec): string {
     $name = (string) ($rec['tmp'] ?? '');
     if (!preg_match('/^[A-Za-z0-9]{32}\.part$/', $name)) return '';
-    $dir = ias_youtube_tmp_dir();
+    $dir = ias_youtube_tmp_dir(false);
     return $dir === '' ? '' : $dir . '/' . $name;
   }
 }
@@ -465,7 +466,39 @@ if (!function_exists('ias_youtube_relay_blocker')) {
 if (!function_exists('ias_youtube_chunk_size')) {
   function ias_youtube_chunk_size(): int {
     $max = function_exists('wp_max_upload_size') ? (int) wp_max_upload_size() : 0;
-    return $max > 0 ? (int) min(IAS_YOUTUBE_CHUNK, max(MB_IN_BYTES, $max - 64 * KB_IN_BYTES)) : IAS_YOUTUBE_CHUNK;
+    return $max > 0 ? (int) min(IAS_YOUTUBE_CHUNK, max(64 * KB_IN_BYTES, $max - 64 * KB_IN_BYTES)) : IAS_YOUTUBE_CHUNK; // never above what PHP takes
+  }
+}
+
+/**
+ * One send-on per listing at a time: an option row claimed atomically (as
+ * ias_push_lock() does), held up to two hours — longer than curl's own
+ * one-hour limit, so a slow send never outlives its lock.
+ */
+if (!function_exists('ias_youtube_xfer_lock')) {
+  function ias_youtube_xfer_lock(int $lid): bool {
+    global $wpdb;
+    $name = 'ias_yt_xfer_' . $lid;
+    $now = time();
+    wp_cache_delete($name, 'options');
+    if ($wpdb->query($wpdb->prepare("INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $name, (string) $now))) return true;
+    $held = (string) $wpdb->get_var($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name));
+    if ((int) $held > $now - 2 * HOUR_IN_SECONDS) return false;
+    return (bool) $wpdb->query($wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", (string) $now, $name, $held));
+  }
+}
+if (!function_exists('ias_youtube_xfer_locked')) {
+  function ias_youtube_xfer_locked(int $lid): bool {
+    global $wpdb;
+    $held = (string) $wpdb->get_var($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'ias_yt_xfer_' . $lid));
+    return $held !== '' && (int) $held > time() - 2 * HOUR_IN_SECONDS;
+  }
+}
+if (!function_exists('ias_youtube_xfer_unlock')) {
+  function ias_youtube_xfer_unlock(int $lid): void {
+    global $wpdb;
+    $wpdb->delete($wpdb->options, ['option_name' => 'ias_yt_xfer_' . $lid]);
+    wp_cache_delete('ias_yt_xfer_' . $lid, 'options');
   }
 }
 
@@ -542,16 +575,17 @@ if (!function_exists('ias_youtube_upload_start')) {
       ias_youtube_drop_tmp($rec);
       $tmp = wp_generate_password(32, false) . '.part';
       if (@file_put_contents($dir . '/' . $tmp, '') === false) return $no('This website could not start the file — try again.');
-      ias_youtube_put($lid, $keep + $base + ['route' => 'site', 'tmp' => $tmp, 'file' => ''],
+      $key = strtolower(wp_generate_password(24, false)); // every piece, "done" and "fail" carry it (a second upload started over this one never takes its pieces); lower case, as sanitize_key() leaves it
+      ias_youtube_put($lid, $keep + $base + ['route' => 'site', 'tmp' => $tmp, 'file' => '', 'key' => $key],
         'Upload started: ' . sanitize_file_name($name) . ' (' . size_format($size) . ', through this website)' . $was, $actor, false);
-      return ['ok' => true, 'error' => '', 'route' => 'site', 'chunk' => ias_youtube_chunk_size(), 'upload_url' => '', 'file_path' => '', 'type' => $mime];
+      return ['ok' => true, 'error' => '', 'route' => 'site', 'chunk' => ias_youtube_chunk_size(), 'key' => $key, 'upload_url' => '', 'file_path' => '', 'type' => $mime];
     }
     $addr = ias_youtube_upload_address();
     if (isset($addr['error'])) return $no((string) $addr['error']);
     ias_youtube_drop_tmp($rec);
     ias_youtube_put($lid, $keep + $base + ['route' => 'direct', 'file' => $addr['file_path']],
       'Upload started: ' . sanitize_file_name($name) . ' (' . size_format($size) . ')' . $was, $actor, false);
-    return ['ok' => true, 'error' => '', 'route' => 'direct', 'chunk' => 0, 'upload_url' => $addr['upload_url'], 'file_path' => $addr['file_path'], 'type' => $mime];
+    return ['ok' => true, 'error' => '', 'route' => 'direct', 'chunk' => 0, 'key' => '', 'upload_url' => $addr['upload_url'], 'file_path' => $addr['file_path'], 'type' => $mime];
   }
 }
 
@@ -573,10 +607,11 @@ if (!function_exists('ias_youtube_file_there')) {
  * browser carries on from there. Returns ['ok', 'error', 'have'].
  */
 if (!function_exists('ias_youtube_upload_chunk')) {
-  function ias_youtube_upload_chunk(int $lid, int $offset, string $piece): array {
+  function ias_youtube_upload_chunk(int $lid, int $offset, string $piece, string $key): array {
     $rec = ias_youtube_get($lid);
     $no = function (string $why, int $have = -1) { return ['ok' => false, 'error' => $why, 'have' => $have]; };
-    if (($rec['state'] ?? '') !== 'uploading' || ($rec['route'] ?? '') !== 'site' || !empty($rec['xfer'])) return $no('That upload is not the one this listing is waiting for — upload the file again.');
+    if (($rec['state'] ?? '') !== 'uploading' || ($rec['route'] ?? '') !== 'site' || !empty($rec['xfer'])
+      || $key === '' || !hash_equals((string) ($rec['key'] ?? ''), $key)) return $no('That upload is not the one this listing is waiting for — upload the file again.');
     $path = ias_youtube_tmp_path($rec);
     if ($path === '' || !file_exists($path)) return $no('The upload\'s file on this website is gone — upload the file again.');
     clearstatcache(true, $piece);
@@ -599,6 +634,11 @@ if (!function_exists('ias_youtube_upload_chunk')) {
         ftruncate($out, $have);
         return $no('This website could not keep that piece (its disk may be full) — upload the file again.');
       }
+      // When the last piece came, in site time and at most every five minutes: an upload left halfway is let go two hours on.
+      if ((int) strtotime((string) ($rec['piece_at'] ?? $rec['up_at'] ?? '')) < strtotime(ias_now_sql()) - 5 * MINUTE_IN_SECONDS) {
+        $rec['piece_at'] = ias_now_sql();
+        ias_youtube_put($lid, $rec);
+      }
       return ['ok' => true, 'error' => '', 'have' => $have + $len];
     } finally {
       flock($out, LOCK_UN);
@@ -615,11 +655,17 @@ if (!function_exists('ias_youtube_upload_chunk')) {
  * run if that did not finish. Returns ['ok', 'error', 'message', 'moving'].
  */
 if (!function_exists('ias_youtube_upload_done')) {
-  function ias_youtube_upload_done(int $lid, string $path, string $actor): array {
+  function ias_youtube_upload_done(int $lid, string $path, string $actor, string $key = ''): array {
     $rec = ias_youtube_get($lid);
     $no = function (string $why) { return ['ok' => false, 'error' => $why, 'message' => '', 'moving' => false]; };
+    $mine = $key !== '' && hash_equals((string) ($rec['key'] ?? ''), $key);
+    if ($mine && ($rec['state'] ?? '') === 'uploading' && !empty($rec['xfer'])) { // "done" said twice (its answer was lost): already on its way
+      return ['ok' => true, 'error' => '', 'moving' => true, 'message' => 'Uploaded. The website is sending it on to OneUp\'s storage — you can leave this page.'];
+    }
+    if ($mine && in_array((string) ($rec['state'] ?? ''), ['ready', 'sent', 'live'], true)) return ['ok' => true, 'error' => '', 'moving' => false, 'message' => ias_youtube_line($lid)];
     if (($rec['state'] ?? '') !== 'uploading' || !empty($rec['xfer'])) return $no('That upload is not the one this listing is waiting for — upload the file again.');
     if (($rec['route'] ?? '') === 'site') {
+      if (!$mine) return $no('That upload is not the one this listing is waiting for — upload the file again.');
       $tmp = ias_youtube_tmp_path($rec);
       clearstatcache();
       $have = $tmp !== '' && file_exists($tmp) ? (int) filesize($tmp) : -1;
@@ -650,7 +696,7 @@ if (!function_exists('ias_youtube_uploaded')) {
   function ias_youtube_uploaded(int $lid, array $rec, string $actor): array {
     $rec['state'] = 'ready';
     $rec['up_at'] = ias_now_sql();
-    unset($rec['error'], $rec['err_at'], $rec['fails'], $rec['tmp'], $rec['xfer'], $rec['note']);
+    unset($rec['error'], $rec['err_at'], $rec['fails'], $rec['tmp'], $rec['xfer'], $rec['note'], $rec['piece_at']); // the key stays: a repeated "done" is answered
     ias_youtube_put($lid, $rec, 'Uploaded: ' . (string) ($rec['file_name'] ?? 'the video') . ' (' . size_format((int) ($rec['file_size'] ?? 0)) . ')', $actor);
     if (function_exists('ia_video_close_task')) ia_video_close_task($lid, 'done', 'Video uploaded — it goes to YouTube and the link onto the listing by itself');
     $sent = ias_youtube_send($lid, $actor);
@@ -674,29 +720,36 @@ if (!function_exists('ias_youtube_transfer')) {
     $rec = ias_youtube_get($lid);
     $no = function (string $why) { return ['ok' => false, 'error' => $why, 'message' => '']; };
     if (($rec['state'] ?? '') !== 'uploading' || ($rec['route'] ?? '') !== 'site' || empty($rec['xfer'])) return $no('There is no file here waiting to be sent on.');
-    $lock = 'ias_yt_xfer_' . $lid;
-    if (get_transient($lock)) return $no('It is being sent on already.');
-    set_transient($lock, 1, HOUR_IN_SECONDS);
+    if (!ias_youtube_xfer_lock($lid)) return $no('It is being sent on already.');
+    // Let go with the reason on the row: the file here is deleted and the row offers the upload again.
+    $give_up = function (array $now, string $why) use ($lid, $actor) {
+      ias_youtube_drop_tmp($now);
+      ias_youtube_put($lid, array_intersect_key($now, ['trail' => 1]) + ['note' => 'Could not be sent on to OneUp\'s storage (' . $why . ') — upload the file again.'],
+        'Not sent on to OneUp\'s storage after three tries (' . $why . ') — upload the file again', $actor);
+      return ['ok' => false, 'error' => 'It could not be sent on to OneUp\'s storage (' . $why . ') — upload the file again.', 'message' => ''];
+    };
     try {
+      $rec = ias_youtube_get($lid); // fresh, under the lock
       $tmp = ias_youtube_tmp_path($rec);
       if ($tmp === '' || !file_exists($tmp)) {
         ias_youtube_put($lid, array_intersect_key($rec, ['trail' => 1]) + ['note' => 'The file was lost on its way to OneUp\'s storage — upload it again.'], 'The file on this website is gone — upload it again', $actor);
         return $no('The file on this website is gone — upload it again.');
       }
+      // The try is counted before the file is sent: a run killed mid-send (a time limit, a deploy) still uses one of the three.
+      $tries = (int) ($rec['xfer']['tries'] ?? 0);
+      if ($tries >= 3) return $give_up($rec, (string) ($rec['xfer']['error'] ?? 'the send was cut short each time'));
+      $rec['xfer'] = ['at' => ias_now_sql(), 'tries' => $tries + 1, 'error' => (string) ($rec['xfer']['error'] ?? '')];
+      ias_youtube_put($lid, $rec);
+      ignore_user_abort(true);
+      if (function_exists('set_time_limit')) @set_time_limit(0); // a big file takes minutes; the hourly run calls this too
       $addr = ias_youtube_upload_address();
       $res = isset($addr['error']) ? ['ok' => false, 'error' => (string) $addr['error']] : ias_youtube_put_file((string) $addr['upload_url'], $tmp, (string) ($rec['file_type'] ?? 'video/mp4'));
       if ($res['ok'] && ias_youtube_file_there((string) $addr['file_path']) === false) $res = ['ok' => false, 'error' => 'it did not arrive on OneUp\'s storage'];
       $now = ias_youtube_get($lid);
       if ((string) ($now['tmp'] ?? '') !== (string) ($rec['tmp'] ?? '')) return $no('A new file took its place.'); // uploaded again meanwhile
       if (!$res['ok']) {
-        $tries = (int) ($now['xfer']['tries'] ?? 0) + 1;
-        if ($tries >= 3) {
-          ias_youtube_drop_tmp($now);
-          ias_youtube_put($lid, array_intersect_key($now, ['trail' => 1]) + ['note' => 'Could not be sent on to OneUp\'s storage (' . $res['error'] . ') — upload the file again.'],
-            'Not sent on to OneUp\'s storage after three tries (' . $res['error'] . ') — upload the file again', $actor);
-          return $no('It could not be sent on to OneUp\'s storage (' . $res['error'] . ') — upload the file again.');
-        }
-        $now['xfer'] = ['at' => ias_now_sql(), 'tries' => $tries, 'error' => (string) $res['error']];
+        if ($tries + 1 >= 3) return $give_up($now, (string) $res['error']);
+        $now['xfer'] = ['at' => ias_now_sql(), 'tries' => $tries + 1, 'error' => (string) $res['error']];
         ias_youtube_put($lid, $now, 'Not on OneUp\'s storage yet (' . $res['error'] . ') — tried again within the hour', $actor, false);
         return $no('Not on OneUp\'s storage yet (' . $res['error'] . ') — it is tried again within the hour.');
       }
@@ -705,7 +758,7 @@ if (!function_exists('ias_youtube_transfer')) {
       $now['file'] = (string) $addr['file_path'];
       return ias_youtube_uploaded($lid, $now, $actor);
     } finally {
-      delete_transient($lock);
+      ias_youtube_xfer_unlock($lid);
     }
   }
 }
@@ -1158,7 +1211,7 @@ if (!function_exists('ias_youtube_transfers_due')) {
     $changes = [];
     foreach (ias_youtube_all() as $lid => $rec) {
       if (($rec['state'] ?? '') !== 'uploading' || ($rec['route'] ?? '') !== 'site' || empty($rec['xfer'])) continue;
-      if (strtotime((string) ($rec['xfer']['at'] ?? '')) > strtotime(ias_now_sql()) - 10 * MINUTE_IN_SECONDS || get_transient('ias_yt_xfer_' . $lid)) continue;
+      if (strtotime((string) ($rec['xfer']['at'] ?? '')) > strtotime(ias_now_sql()) - 10 * MINUTE_IN_SECONDS || ias_youtube_xfer_locked((int) $lid)) continue;
       $r = ias_youtube_transfer((int) $lid);
       $changes[] = $r['ok'] ? 'a video file sent on to OneUp\'s storage' : 'a video file not sent on yet';
       break;
@@ -1176,12 +1229,19 @@ if (!function_exists('ias_youtube_transfers_due')) {
   }
 }
 
-/** The hourly run: send on what came through this website, read back what is out, send what is ready. */
+/** The hourly run: read back what is out, send what is ready. */
 add_filter('ias_job_run', function (array $result): array {
-  $changes = array_merge(ias_youtube_transfers_due(), ias_youtube_check(true));
+  $changes = ias_youtube_check(true);
   if ($changes) $result['parts'][] = 'YouTube: ' . implode(', ', array_unique($changes));
   return $result;
 }, 33);
+
+/** …and last of all, after every other part of the run, a file waiting on this website goes on (it may take minutes). */
+add_filter('ias_job_run', function (array $result): array {
+  $changes = ias_youtube_transfers_due();
+  if ($changes) $result['parts'][] = 'YouTube: ' . implode(', ', array_unique($changes));
+  return $result;
+}, 90);
 
 /* ---------------- The upload on the toolkit's Property Videos row ---------------- */
 
@@ -1192,7 +1252,7 @@ add_action('ia_missing_video_row', function ($row) {
   if ($lid <= 0) return;
   $rec = ias_youtube_get($lid);
   $state = ias_youtube_stale_upload($rec) ? '' : (string) ($rec['state'] ?? '');
-  $settings = '<a href="' . esc_url(admin_url('admin.php?page=' . IAS_PAGE_SETTINGS . '#ias-youtube')) . '">Social Settings → YouTube</a>';
+  $settings = '<a href="' . esc_url(ias_admin_url(IAS_PAGE_SETTINGS) . '#ias-youtube') . '">Social Settings → YouTube</a>';
   echo '<div class="ias-yt" data-listing="' . $lid . '" style="margin-top:6px">';
   if ($state === '' && !empty($rec['note'])) echo '<p style="margin:0 0 4px;color:#b32d2e">' . esc_html((string) $rec['note']) . '</p>';
   if ($state === 'uploading' && !empty($rec['xfer'])) {
@@ -1232,17 +1292,17 @@ add_action('wp_ajax_ias_youtube', function () {
   if ($step === 'start') {
     $r = ias_youtube_upload_start($lid, (string) wp_unslash($_POST['name'] ?? ''), (int) ($_POST['size'] ?? 0), sanitize_text_field((string) wp_unslash($_POST['type'] ?? '')), $actor);
     if (!$r['ok']) wp_send_json_error(['message' => $r['error']]);
-    wp_send_json_success(['route' => $r['route'], 'chunk' => $r['chunk'], 'upload_url' => $r['upload_url'], 'file_path' => $r['file_path'], 'type' => $r['type']]);
+    wp_send_json_success(['route' => $r['route'], 'chunk' => $r['chunk'], 'key' => $r['key'], 'upload_url' => $r['upload_url'], 'file_path' => $r['file_path'], 'type' => $r['type']]);
   }
   if ($step === 'chunk') { // one piece of an upload through this website
     $f = $_FILES['chunk'] ?? null;
     if (!is_array($f) || (int) ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file((string) ($f['tmp_name'] ?? ''))) wp_send_json_error(['message' => 'That piece of the file did not arrive — trying again.', 'have' => -1]);
-    $r = ias_youtube_upload_chunk($lid, (int) ($_POST['offset'] ?? -1), (string) $f['tmp_name']);
+    $r = ias_youtube_upload_chunk($lid, (int) ($_POST['offset'] ?? -1), (string) $f['tmp_name'], sanitize_key((string) ($_POST['key'] ?? '')));
     if (!$r['ok']) wp_send_json_error(['message' => $r['error'], 'have' => $r['have']]);
     wp_send_json_success(['have' => $r['have']]);
   }
   if ($step === 'done') {
-    $r = ias_youtube_upload_done($lid, trim((string) wp_unslash($_POST['file_path'] ?? '')), $actor); // only compared with the address OneUp gave
+    $r = ias_youtube_upload_done($lid, trim((string) wp_unslash($_POST['file_path'] ?? '')), $actor, sanitize_key((string) ($_POST['key'] ?? ''))); // only compared with what the record holds
     if (!$r['ok']) wp_send_json_error(['message' => $r['error']]);
     if (empty($r['moving'])) wp_send_json_success(['message' => $r['message'], 'moving' => false]);
     // Through this website: answer now, then send the file on in this same request — the page need not stay open.
@@ -1253,13 +1313,17 @@ add_action('wp_ajax_ias_youtube', function () {
     $rec = ias_youtube_get($lid);
     $state = (string) ($rec['state'] ?? '');
     $moving = $state === 'uploading' && !empty($rec['xfer']);
+    $unfinished = $state === 'uploading' && !$moving; // "done" never reached the website: the file is not on its way
     $words = $moving ? (empty($rec['xfer']['error']) ? 'Sending it on to OneUp\'s storage…' : 'Not on OneUp\'s storage yet (' . (string) $rec['xfer']['error'] . ') — tried again within the hour; you can leave this page.')
-      : ($state === '' ? (string) ($rec['note'] ?? 'The upload was let go — upload the file again.') : ias_youtube_line($lid));
-    wp_send_json_success(['moving' => $moving, 'retry' => $moving && !empty($rec['xfer']['error']), 'bad' => $state === '' || in_array($state, ['failed', 'lost'], true), 'message' => $words]);
+      : ($state === '' ? (string) ($rec['note'] ?? 'The upload was let go — upload the file again.')
+      : ($unfinished ? 'The upload did not finish — the website never heard it was done. Upload the file again.' : ias_youtube_line($lid)));
+    wp_send_json_success(['moving' => $moving, 'retry' => $moving && !empty($rec['xfer']['error']), 'bad' => $state === '' || $unfinished || in_array($state, ['failed', 'lost'], true), 'message' => $words]);
   }
   if ($step === 'fail') { // the browser could not send the file: the upload is forgotten, nothing else
     $rec = ias_youtube_get($lid);
-    if (($rec['state'] ?? '') === 'uploading' && empty($rec['xfer'])) {
+    $k = sanitize_key((string) ($_POST['key'] ?? ''));
+    $same = empty($rec['key']) || ($k !== '' && hash_equals((string) $rec['key'], $k)); // only the upload that failed, never one started over it
+    if (($rec['state'] ?? '') === 'uploading' && empty($rec['xfer']) && $same) {
       ias_youtube_drop_tmp($rec);
       ias_youtube_put($lid, array_intersect_key($rec, ['trail' => 1]), 'The upload did not finish (' . sanitize_text_field((string) wp_unslash($_POST['why'] ?? 'the browser stopped')) . ')', $actor, false);
     }
@@ -1351,29 +1415,32 @@ jQuery(function ($) {
         $bar.prop('hidden', false); $fill.css('width', '0');
         if (r.data.route === 'site') {
           // Through this website, a piece at a time: a dropped piece is sent again, and the website says where to carry on.
-          var size = r.data.chunk || 8388608, tries = 0;
+          var size = r.data.chunk || 8388608, key = r.data.key, tries = 0;
           (function send(offset) {
             if (offset >= file.size) {
               say($box, 'Checking the upload…');
-              post({ step: 'done', listing: listing })
-                .done(function (d) { if (d && d.success && d.data.moving) follow(d.data.message); else finished(d); })
-                .fail(function () { follow('Uploaded. The website is sending it on to OneUp\'s storage…'); });
+              // "done" is said again if its answer is lost (the website answers a repeat as the first); after three, ask how it stands.
+              (function finish(n) {
+                post({ step: 'done', listing: listing, key: key })
+                  .done(function (d) { if (d && d.success && d.data.moving) follow(d.data.message); else finished(d); })
+                  .fail(function () { if (n < 2) setTimeout(function () { finish(n + 1); }, 3000 * (n + 1)); else follow('Checking with the website…'); });
+              })(0);
               return;
             }
             var fd = new FormData(), xhr = new XMLHttpRequest();
             fd.append('action', 'ias_youtube'); fd.append('_wpnonce', nonce); fd.append('step', 'chunk');
-            fd.append('listing', listing); fd.append('offset', offset);
+            fd.append('listing', listing); fd.append('offset', offset); fd.append('key', key);
             fd.append('chunk', file.slice(offset, Math.min(offset + size, file.size)), 'piece');
             xhr.upload.onprogress = function (e) { if (e.lengthComputable) shown(Math.floor((offset + e.loaded) / file.size * 100)); };
             function again(have) {
-              if (++tries > 5) { post({ step: 'fail', listing: listing, why: 'a piece would not go after five tries' }); done('The upload kept failing — check the connection and try again.', true); return; }
+              if (++tries > 5) { post({ step: 'fail', listing: listing, key: key, why: 'a piece would not go after five tries' }); done('The upload kept failing — check the connection and try again.', true); return; }
               setTimeout(function () { send(have >= 0 ? have : offset); }, 2000 * tries);
             }
             xhr.onload = function () {
               var d = null; try { d = JSON.parse(xhr.responseText); } catch (e) {}
               if (d && d.success) { tries = 0; shown(Math.floor(d.data.have / file.size * 100)); send(d.data.have); return; }
               if (d && d.data && d.data.have >= 0) { again(d.data.have); return; } // out of step: carry on from what the website has
-              if (d && d.data && d.data.message && xhr.status === 200 && !/trying again/.test(d.data.message)) { done(d.data.message, true); return; }
+              if (d && d.data && d.data.message && xhr.status === 200 && !/trying again/.test(d.data.message)) { post({ step: 'fail', listing: listing, key: key, why: d.data.message }); done(d.data.message, true); return; } // it ends the upload: its file goes too
               again(-1);
             };
             xhr.onerror = function () { again(-1); };

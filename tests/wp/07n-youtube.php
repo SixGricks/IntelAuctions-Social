@@ -461,19 +461,29 @@ $size = strlen($bytes);
 $piece = function (int $off, int $len) use ($bytes) { $f = wp_tempnam('piece'); file_put_contents($f, substr($bytes, $off, $len)); return $f; };
 $c0 = count($S['calls']);
 $st = ias_youtube_upload_start($t1, 'walkthrough.mp4', $size, 'video/mp4', 'admin');
+t_eq($st['key'], sanitize_key($st['key']), 'the upload\'s key comes back through sanitize_key() unchanged, as the AJAX steps read it');
 t_ok($st['ok'] && $st['route'] === 'site' && $st['upload_url'] === '' && $st['chunk'] === $ch && $ch <= IAS_YOUTUBE_CHUNK && $ch >= MB_IN_BYTES && ias_t_oneup_calls($c0, 'uploadmedia') === [], 'started through the website: no address asked of OneUp yet (one lasts 20 minutes, and a big file over rural internet takes longer)');
-$r = ias_youtube_upload_chunk($t1, 0, $piece(0, $ch));
+$r = ias_youtube_upload_chunk($t1, 0, $piece(0, $ch), $st['key']);
 t_ok($r['ok'] && $r['have'] === $ch, 'the first piece is kept');
-$r = ias_youtube_upload_chunk($t1, 0, $piece(0, $ch));
+$r = ias_youtube_upload_chunk($t1, 0, $piece(0, $ch), $st['key']);
 t_ok($r['ok'] && $r['have'] === $ch, 'the same piece again (its answer was lost): taken as already here, never written twice');
-$r = ias_youtube_upload_chunk($t1, 2 * $ch, $piece(2 * $ch, 1000));
+$r = ias_youtube_upload_chunk($t1, 2 * $ch, $piece(2 * $ch, 1000), $st['key']);
 t_ok(!$r['ok'] && $r['have'] === $ch, 'a piece out of step: the website says how much it has, and the browser carries on from there');
-ias_youtube_upload_chunk($t1, $ch, $piece($ch, $ch));
-$r = ias_youtube_upload_chunk($t1, 2 * $ch, $piece(2 * $ch, 1000));
+ias_youtube_upload_chunk($t1, $ch, $piece($ch, $ch), $st['key']);
+$r = ias_youtube_upload_chunk($t1, 2 * $ch, $piece(2 * $ch, 1000), $st['key']);
 t_ok($r['ok'] && $r['have'] === $size, 'the last piece: the whole file is on the website');
 t_eq(md5($bytes), md5_file(ias_youtube_tmp_path($rec($t1))), '…byte for byte');
-$d = ias_youtube_upload_done($t1, '', 'admin');
+$d = ias_youtube_upload_done($t1, '', 'admin', $st['key']);
 t_ok($d['ok'] && $d['moving'] && $rec($t1)['state'] === 'uploading' && !empty($rec($t1)['xfer']), 'done: marked to be sent on to OneUp\'s storage (' . $d['message'] . ')');
+$d2 = ias_youtube_upload_done($t1, '', 'admin', $st['key']);
+t_ok($d2['ok'] && $d2['moving'], '"done" said again (its answer was lost): answered as the first, never as an error');
+t_ok(!ias_youtube_upload_done($t1, '', 'admin', 'wrongkey')['ok'], '…but never for another upload\'s key');
+// The send-on is one at a time: while another holds it, nothing is sent.
+ias_youtube_xfer_lock($t1);
+$c0 = count($S['calls']);
+$x = ias_youtube_transfer($t1, 'admin');
+t_ok(!$x['ok'] && strpos($x['error'], 'being sent on already') !== false && ias_t_oneup_calls($c0, 'put-file') === [] && (int) $rec($t1)['xfer']['tries'] === 0, 'while another run sends it on (the lock is held): nothing sent, no try used');
+ias_youtube_xfer_unlock($t1);
 t_ok(strpos(ia_video_pending($t1), 'on its way to OneUp') !== false && strpos($row($t1), 'being sent on now') !== false && strpos($row($t1), 'type="file"') === false, 'the row and the toolkit say it is on its way — no upload button meanwhile');
 t_ok(!ias_youtube_upload_start($t1, 'other.mp4', 1000, 'video/mp4', 'admin')['ok'], '…and no other file can start over it');
 $c0 = count($S['calls']);
@@ -494,10 +504,10 @@ t_ok($rec($t1)['state'] === 'live' && strpos($video($t1), 'youtube.com/watch?v='
 // Sending on fails: tried again by the hourly run, three tries in all, then let go with the reason on the row.
 $u1 = $mk('28 Uniform Way');
 $small = random_bytes(1000);
-ias_youtube_upload_start($u1, 'walkthrough.mp4', 1000, 'video/mp4', 'admin');
+$su = ias_youtube_upload_start($u1, 'walkthrough.mp4', 1000, 'video/mp4', 'admin');
 $f = wp_tempnam('piece'); file_put_contents($f, $small);
-ias_youtube_upload_chunk($u1, 0, $f);
-ias_youtube_upload_done($u1, '', 'admin');
+ias_youtube_upload_chunk($u1, 0, $f, $su['key']);
+ias_youtube_upload_done($u1, '', 'admin', $su['key']);
 $S['put_file_fail'] = 3;
 $x = ias_youtube_transfer($u1, 'admin');
 t_ok(!$x['ok'] && $rec($u1)['state'] === 'uploading' && (int) $rec($u1)['xfer']['tries'] === 1 && strpos($row($u1), 'Tried again within the hour') !== false, 'sending on fails: kept, and the row says it is tried again within the hour');
@@ -512,15 +522,15 @@ $S['put_file_fail'] = 0;
 
 // Half an upload is never sent on; an upload left halfway is let go two hours on, its file deleted.
 $h1 = $mk('29 Victor Road');
-ias_youtube_upload_start($h1, 'walkthrough.mp4', 2000, 'video/mp4', 'admin');
+$sh = ias_youtube_upload_start($h1, 'walkthrough.mp4', 2000, 'video/mp4', 'admin');
 $f = wp_tempnam('piece'); file_put_contents($f, $small);
-ias_youtube_upload_chunk($h1, 0, $f);
-$d = ias_youtube_upload_done($h1, '', 'admin');
+ias_youtube_upload_chunk($h1, 0, $f, $sh['key']);
+$d = ias_youtube_upload_done($h1, '', 'admin', $sh['key']);
 t_ok(!$d['ok'] && strpos($d['error'], 'Only part') !== false && ($rec($h1)['state'] ?? '') === '', '"done" with only part of the file here: not sent on — upload it again');
 $w1 = $mk('30 Whiskey Lane');
-ias_youtube_upload_start($w1, 'walkthrough.mp4', 2000, 'video/mp4', 'admin');
+$sw = ias_youtube_upload_start($w1, 'walkthrough.mp4', 2000, 'video/mp4', 'admin');
 $f = wp_tempnam('piece'); file_put_contents($f, $small);
-ias_youtube_upload_chunk($w1, 0, $f);
+ias_youtube_upload_chunk($w1, 0, $f, $sw['key']);
 $wtmp = ias_youtube_tmp_path($rec($w1));
 ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 121 * 60));
 ias_youtube_check(false);
@@ -532,6 +542,63 @@ add_filter('ias_youtube_free_space', $room);
 $r = ias_youtube_upload_start($w1, 'walkthrough.mp4', 2 * 1024 * MB_IN_BYTES, 'video/mp4', 'admin');
 t_ok(!$r['ok'] && strpos($r['error'], 'not enough to hold') !== false, 'not enough room on the website for the file: refused at once, saying so');
 remove_filter('ias_youtube_free_space', $room);
+
+// Two uploads for one listing (two tabs): the second takes over, and the first one's pieces never go into its file.
+$x1 = $mk('31 X-ray Street');
+$a1 = ias_youtube_upload_start($x1, 'first.mp4', 3000, 'video/mp4', 'admin');
+$f = wp_tempnam('piece'); file_put_contents($f, str_repeat('A', 1000));
+ias_youtube_upload_chunk($x1, 0, $f, $a1['key']);
+$a2 = ias_youtube_upload_start($x1, 'second.mp4', 3000, 'video/mp4', 'admin');
+$f = wp_tempnam('piece'); file_put_contents($f, str_repeat('A', 1000));
+$late = ias_youtube_upload_chunk($x1, 1000, $f, $a1['key']);
+t_ok(!$late['ok'] && $late['have'] === -1 && filesize(ias_youtube_tmp_path($rec($x1))) === 0, 'the first tab\'s next piece is refused outright (no "carry on from"), and the second upload\'s file is untouched');
+$f = wp_tempnam('piece'); file_put_contents($f, str_repeat('B', 1000));
+t_ok(ias_youtube_upload_chunk($x1, 0, $f, $a2['key'])['ok'], '…the second upload goes on');
+
+// A send-on cut short (a time limit, a deploy): the try was counted before the send, so three of them let the upload go.
+$y1 = $mk('32 Yankee Drive');
+$sy = ias_youtube_upload_start($y1, 'walkthrough.mp4', 1000, 'video/mp4', 'admin');
+$f = wp_tempnam('piece'); file_put_contents($f, $small);
+ias_youtube_upload_chunk($y1, 0, $f, $sy['key']);
+ias_youtube_upload_done($y1, '', 'admin', $sy['key']);
+$S['put_file_die'] = 3;
+foreach ([1, 2, 3] as $n) {
+  try { ias_youtube_transfer($y1, 'admin'); } catch (\RuntimeException $e) { /* the process died mid-send */ }
+  if ($n < 3) t_eq($n, (int) $rec($y1)['xfer']['tries'], 'cut short ' . $n . ': the try is counted all the same');
+}
+t_ok(!ias_youtube_xfer_locked($y1), '…and the lock is let go each time');
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 11 * 60));
+ias_youtube_transfers_due();
+t_ok(($rec($y1)['state'] ?? '') === '' && strpos((string) $rec($y1)['note'], 'Could not be sent on') !== false, 'three tries cut short: let go with the reason on the row — never retried every hour for ever');
+$S['put_file_die'] = 0;
+
+// Once a day, files left in the website's folder that no upload owns are deleted; one an upload still owns stays.
+$z1 = $mk('33 Zulu Court');
+$sz = ias_youtube_upload_start($z1, 'walkthrough.mp4', 5000, 'video/mp4', 'admin');
+$owned = ias_youtube_tmp_path($rec($z1));
+$stray = $tmpdir . '/' . str_repeat('s', 32) . '.part';
+file_put_contents($stray, 'left behind');
+touch($stray, time() - 2 * DAY_IN_SECONDS); touch($owned, time() - 2 * DAY_IN_SECONDS);
+delete_transient('ias_youtube_tmp_sweep');
+ias_youtube_transfers_due();
+t_ok(!file_exists($stray) && file_exists($owned), 'the daily sweep: a stray file a day old is deleted, an upload\'s own file stays');
+$fresh = $tmpdir . '/' . str_repeat('t', 32) . '.part'; file_put_contents($fresh, 'new');
+delete_transient('ias_youtube_tmp_sweep');
+ias_youtube_transfers_due();
+t_ok(file_exists($fresh), '…a stray file less than a day old stays (an upload may just be starting)');
+@unlink($fresh);
+
+// Pieces never bigger than PHP takes.
+$lim = function () { return 512 * KB_IN_BYTES; };
+add_filter('upload_size_limit', $lim);
+t_eq(448 * KB_IN_BYTES, ias_youtube_chunk_size(), 'PHP takes 512 KB: pieces of 448 KB (under it, with room for the form)');
+remove_filter('upload_size_limit', $lim);
+
+// A Facebook or Google post whose own words carry "~~~" is read as it is: only YouTube's rows are split.
+$S['scheduled'][880001] = ['post_id' => 880001, 'content' => "Big news ~~~ more to come", 'date_time' => '2026-12-01 09:00:00', 'social_network_username' => (string) $S['fb'], 'category_name' => 'Intel', 'video_url' => 'NA', 'content_image' => 'NA', 'source_url' => 'NA'];
+$listed = array_values(array_filter(ias_oneup_list('scheduled', 5)['rows'], function ($r) { return (string) ($r['post_id'] ?? '') === '880001'; }));
+t_ok(($listed[0]['content'] ?? '') === 'Big news ~~~ more to come' && !isset($listed[0]['title']), 'a Facebook post with "~~~" in its words is listed whole — never cut, never taken for a person\'s edit');
+unset($S['scheduled'][880001]);
 $S['storage'] = 's3';
 
 // A listing deleted for good while this request still holds the list: its record goes with it, and no write brings it back.

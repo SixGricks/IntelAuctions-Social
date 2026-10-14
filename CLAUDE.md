@@ -150,7 +150,9 @@ it, and the spec stays verbatim, so they are recorded here:
   hourly run retrying (three tries). A storage that does allow a browser
   gets the file straight from it. OneUp's lists give a post with a title as
   one `content`, "title~~~description": `ias_oneup_row_split()` splits it
-  as the lists are read — match YouTube rows on the split words. Then to the channel
+  where YouTube's rows are read, never in the shared list reader — a
+  Facebook or Google post may carry "~~~" in its own words. Every piece of an
+  upload carries its key; a send-on try is counted before the file goes. Then to the channel
   through OneUp, with a title and description built from the facts
   (`ias_youtube_words()`) — **never Claude's prose and never the starting
   bid**, which is why it needs no approval — and the YouTube link onto the

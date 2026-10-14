@@ -1,5 +1,39 @@
 # Intel Auctions Social changelog
 
+## 0.22.3 (2026-10-14) — review fixes for 0.22.2
+From the review of SixGricks/IntelAuctions-Social#11:
+- **Facebook and Google rows are read as they are.** 0.22.2 split every row
+  OneUp listed at its first "~~~", so a Facebook or Google post carrying "~~~"
+  in its own words read back shortened — taken for a person's edit in OneUp
+  and locked. The split now happens only where YouTube's rows are read
+  (`ias_youtube_row_is()`, `ias_youtube_row_ours()`, Verify for YouTube, the
+  test-draft clean-up), and never to a row OneUp gave a title of its own.
+- **A send-on cut short still counts.** The try is counted before the file
+  is sent, so a run killed mid-send (a time limit, a deploy) uses one of the
+  three, and three let the upload go — never an hourly retry for ever.
+- **One clock for an abandoned upload.** The two hours run from the last
+  piece in site time (`piece_at`, noted at most every five minutes), never a
+  file's own timestamp, which is UTC and shifted the window by the site's
+  offset (6–7 hours on intelauctions.com, none at all east of UTC+2).
+- **An upload's own key** on every piece, "done" and "fail": a second upload
+  started for the same listing never takes the first one's pieces, and a
+  repeated "done" (its answer lost) is answered as the first.
+- **The send-on lock** is an option row claimed atomically
+  (`ias_youtube_xfer_lock()`, as the push lock), held up to two hours —
+  longer than curl's own limit. The hourly send-on runs last in the run,
+  with no PHP time limit.
+- **The row's script**: a lost "done" is sent again (three times) and an
+  upload the website never heard finish is reported as unfinished, never as
+  success; an error that ends an upload deletes its file at once.
+- Pieces are never bigger than PHP takes (no 1 MB floor); the Settings link
+  uses `ias_admin_url()`; Verify's test-draft words are written once
+  (`ias_oneup_test_draft_text()`); the yes/no checks no longer touch the
+  disk; Verify never tells anyone to delete a test post in OneUp — an
+  undeletable one is kept by id and deleted first by the next Verify.
+- Tests for the sweep, the lock, a send cut short, two uploads at once, a
+  repeated "done", the piece size and a Facebook post with "~~~"; the guide
+  and uninstall name the new keys, the lock and the transients.
+
 ## 0.22.2 (2026-10-14) — YouTube on the live account
 DJ's first **Verify for YouTube** on intelauctions.com failed two steps, and
 both were the plugin's to fix:

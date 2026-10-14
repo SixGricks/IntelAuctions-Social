@@ -129,10 +129,11 @@ if (!function_exists('ias_oneup_scheduled_forget')) {
 
 /** A post on OneUp's scheduled list with this text and time: its id, '' when it is not there, null when the list could not be read. */
 if (!function_exists('ias_oneup_find_scheduled')) {
-  function ias_oneup_find_scheduled(string $text, string $when): ?string {
+  function ias_oneup_find_scheduled(string $text, string $when, bool $titled = false): ?string {
     $list = ias_oneup_scheduled();
     if (!$list['ok']) return null;
     foreach (array_reverse($list['rows']) as $row) {
+      if ($titled) $row = ias_oneup_row_split($row); // a post with a title (YouTube) is listed "title~~~words"
       if (ias_norm_text((string) ($row['content'] ?? '')) === ias_norm_text($text) && substr((string) ($row['date_time'] ?? ''), 0, 16) === substr($when, 0, 16)) {
         return (string) ($row['post_id'] ?? '');
       }
@@ -159,14 +160,24 @@ if (!function_exists('ias_oneup_gone')) {
   }
 }
 
+/** Verify's test draft words around its six-character code — written here only, so the clean-up below always matches them. */
+if (!function_exists('ias_oneup_test_draft_text')) {
+  function ias_oneup_test_draft_text(string $code): string {
+    return 'Intel Auctions Social connection test ' . $code . ' — a draft: it never publishes, and the plugin deletes it straight away.';
+  }
+}
+
 /**
  * Is a row of OneUp's draft list one of Verify's own test drafts? Only the
  * exact words Verify writes count (with its six-character code), so nobody
- * else's draft is ever taken for one.
+ * else's draft is ever taken for one. A YouTube one is listed
+ * "title~~~words".
  */
 if (!function_exists('ias_oneup_is_test_draft')) {
   function ias_oneup_is_test_draft(array $row): bool {
-    return (bool) preg_match('/^Intel Auctions Social connection test [A-Za-z0-9]{6} \x{2014} a draft: it never publishes, and the plugin deletes it straight away\.$/u', trim((string) ($row['content'] ?? '')));
+    [$before, $after] = explode('{code}', ias_oneup_test_draft_text('{code}'), 2);
+    $words = trim((string) (ias_oneup_row_split($row)['content'] ?? ''));
+    return (bool) preg_match('/^' . preg_quote($before, '/') . '[A-Za-z0-9]{6}' . preg_quote($after, '/') . '$/u', $words);
   }
 }
 
@@ -776,7 +787,9 @@ if (!function_exists('ias_oneup_verify')) {
 
     // 2. A draft (for Google, an "update" — the kind of post it will be sent; for YouTube, a video post with a title and, as a draft, no file).
     $when = ias_now()->modify('+30 days')->setTime(9, 17)->format('Y-m-d H:i');
-    $text = 'Intel Auctions Social connection test ' . wp_generate_password(6, false) . ' — a draft: it never publishes, and the plugin deletes it straight away.';
+    $text = ias_oneup_test_draft_text(wp_generate_password(6, false));
+    $words_of = function (array $row) use ($yt) { return (string) (($yt ? ias_oneup_row_split($row) : $row)['content'] ?? ''); }; // YouTube's rows are "title~~~words"
+    $keep_for_next = function (string $id) { update_option('ias_oneup_verify_leftovers', array_values(array_unique(array_merge(array_map('strval', (array) get_option('ias_oneup_verify_leftovers', [])), [$id]))), false); };
     $draft = ['category_id' => $cat, 'social_network_id' => $acct, 'scheduled_date_time' => $when, 'content' => $text, 'isDraftPost' => 'true'] + ($gbp ? ['google_post_type' => 'update'] : []) + ($yt ? ['title' => 'Intel Auctions Social connection test'] : []);
     // YouTube's draft goes the way its videos will (schedulevideopost; OneUp's docs: a draft needs no video_url) —
     // never a text draft instead, which could pass while every real upload is refused (0.22.1).
@@ -786,17 +799,18 @@ if (!function_exists('ias_oneup_verify')) {
     if (!$step('Save a draft (' . (string) (ias_oneup_endpoints()[$how][1] ?? $how) . ', as a draft)', $r['ok'], $r['ok'] ? 'OneUp accepted it' . ($r['id'] !== '' ? ' as post #' . $r['id'] : ' (its answer carried no post id — found below by its text)') . '.' : $r['error'])) {
       // No answer is not "no post": look on the scheduled list (and among the drafts) before giving up.
       if (ias_oneup_uncertain($r)) {
-        $found = (string) ias_oneup_find_scheduled($text, $when);
+        $found = (string) ias_oneup_find_scheduled($text, $when, $yt);
         $where = 'scheduled it as a real post';
         if ($found === '') {
           $where = 'saved the draft';
-          foreach (ias_oneup_list('drafts', 5)['rows'] as $row) if (ias_norm_text((string) ($row['content'] ?? '')) === ias_norm_text($text)) $found = (string) ($row['post_id'] ?? '');
+          foreach (ias_oneup_list('drafts', 5)['rows'] as $row) if (ias_norm_text($words_of($row)) === ias_norm_text($text)) $found = (string) ($row['post_id'] ?? '');
         }
         if ($found !== '') {
           $d = ias_oneup_call('delete', ['post_id' => $found]);
           ias_oneup_scheduled_forget();
+          if (!$d['ok']) $keep_for_next($found); // never a note sending anyone into OneUp: the next Verify deletes it first, by its id
           $step('The test post arrived anyway', false, 'OneUp ' . $where . ' (#' . $found . ', ' . $when . ') without answering; '
-            . ($d['ok'] ? 'it has been deleted.' : 'it could not be deleted: DELETE IT IN ONEUP NOW.'));
+            . ($d['ok'] ? 'it has been deleted.' : 'it could not be deleted (' . $d['error'] . '). It is set a month out: press Verify again — Verify deletes it first, and nothing is sent until Verify passes.'));
         }
       }
       return ias_oneup_verify_save($steps, $by, null, $ch);
@@ -805,13 +819,14 @@ if (!function_exists('ias_oneup_verify')) {
     // 3. Read it back: among the drafts — and make sure it is not on the scheduled list as a real post.
     $drafts = ias_oneup_list('drafts', 5);
     $found = null;
-    foreach ($drafts['rows'] as $row) if (ias_norm_text((string) ($row['content'] ?? '')) === ias_norm_text($text)) $found = $row;
-    $real = (string) ias_oneup_find_scheduled($text, $when);
+    foreach ($drafts['rows'] as $row) if (ias_norm_text($words_of($row)) === ias_norm_text($text)) $found = $row;
+    $real = (string) ias_oneup_find_scheduled($text, $when, $yt);
     if ($real !== '') {
       $d = ias_oneup_call('delete', ['post_id' => $real]);
       ias_oneup_scheduled_forget();
+      if (!$d['ok']) $keep_for_next($real);
       $step('Saved as a draft, not a post', false, 'OneUp did not save it as a draft: it scheduled it as a real post (#' . $real . ') for ' . $when . '. '
-        . ($d['ok'] ? 'It has been deleted. Nothing can be sent until OneUp keeps drafts as drafts.' : 'It could not be deleted (' . $d['error'] . '): DELETE IT IN ONEUP NOW.'));
+        . ($d['ok'] ? 'It has been deleted. Nothing can be sent until OneUp keeps drafts as drafts.' : 'It could not be deleted (' . $d['error'] . '). It is set a month out: press Verify again — Verify deletes it first, and nothing is sent until Verify passes.'));
       return ias_oneup_verify_save($steps, $by, null, $ch);
     }
     $draft_id = $r['id'] !== '' ? $r['id'] : (string) ($found['post_id'] ?? '');

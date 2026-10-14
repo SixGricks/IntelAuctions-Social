@@ -407,7 +407,7 @@ if (!function_exists('ias_oneup_list')) {
         $k = isset($row['post_id']) && (string) $row['post_id'] !== '' ? 'id:' . $row['post_id'] : 'row:' . md5((string) wp_json_encode($row));
         if (isset($seen[$k])) continue;
         $seen[$k] = true;
-        $rows[] = ias_oneup_row_split($row);
+        $rows[] = $row; // as OneUp gave it: a titled (YouTube) row is split where YouTube's are read, never Facebook's or Google's
         $new++;
       }
       if ($page && !$new) return ['ok' => true, 'rows' => $rows, 'complete' => false, 'error' => ''];
@@ -508,13 +508,16 @@ if (!function_exists('ias_oneup_rows')) {
 /**
  * A post with a title — a YouTube video — comes back on OneUp's lists as
  * one `content`: "title~~~description" (the live account, Oct 14, 2026).
- * Split so `content` is the words the plugin sent and `title` the title,
- * as for every other row; the joined text stays in `content_joined`.
+ * Split so `content` is the words the plugin sent and `title` the title;
+ * the joined text stays in `content_joined`. Only for a row that is a
+ * titled post (YouTube's read-back, its Verify, the test-draft clean-up):
+ * a Facebook or Google post may carry "~~~" in its own words, and is read
+ * as it is. A row OneUp already gave a title of its own is left alone.
  */
 if (!function_exists('ias_oneup_row_split')) {
   function ias_oneup_row_split(array $row): array {
     $c = $row['content'] ?? null;
-    if (!is_string($c) || strpos($c, '~~~') === false) return $row;
+    if (!is_string($c) || strpos($c, '~~~') === false || (string) ($row['title'] ?? '') !== '') return $row;
     [$title, $body] = explode('~~~', $c, 2);
     $row['content_joined'] = $c;
     $row['content'] = $body;
