@@ -230,8 +230,13 @@ if (!function_exists('ias_listing_facts')) {
     if ($featured > 0 && $featured === $shared) $featured = 0; // the shared "recently announced" picture is not a photo of this place
     $photos = array_values(array_unique(array_filter(array_merge($featured ? [$featured] : [], $gallery))));
 
+    // The video: the site's field (a YouTube link, say) and the file itself when there is one — uploaded on
+    // Property Videos (0.22.0: on OneUp's storage, `_ias_youtube`), else a field that is a direct file.
     $video = trim((string) ias_field(ia_acf_field_video(), $id));
-    $video_file = $video !== '' && (bool) preg_match('/\.(mp4|mov|m4v|webm)(\?|$)/i', $video);
+    $video_link = $video !== '' && !preg_match('/\.(mp4|mov|m4v|webm)(\?|$)/i', $video) ? $video : '';
+    $video_file_url = function_exists('ias_youtube_file') ? ias_youtube_file($id) : '';
+    if ($video_file_url === '' && $video !== '' && $video_link === '') $video_file_url = $video;
+    $video_file = $video_file_url !== '';
 
     $excerpt = function_exists('ia_get_excerpt_plain') ? ia_get_excerpt_plain($id) : '';
     if ($excerpt === '' && $post) $excerpt = trim(wp_strip_all_tags((string) $post->post_content));
@@ -285,7 +290,9 @@ if (!function_exists('ias_listing_facts')) {
       'photos'      => $photos,
       'has_photos'  => count($photos) > 0,
       'video'       => $video,
-      'video_file'  => $video_file,
+      'video_link'  => $video_link,      // the field when it is a link to watch (YouTube, Vimeo), not a file
+      'video_file'  => $video_file,      // there is a file a post can carry as its video
+      'video_file_url' => $video_file_url,
       'brochure'    => ias_brochure_cover_id($id),
       'excerpt'     => function_exists('mb_substr') ? mb_substr($excerpt, 0, 900) : substr($excerpt, 0, 900),
       'announced_at'=> ias_listing_day($id, '_ias_announced_at'),

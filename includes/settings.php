@@ -45,9 +45,12 @@ if (!function_exists('ias_settings_defaults')) {
       'review_hour' => 7,
 
       // More networks (DJ, Oct 13, 2026). Google Business Profile is sent (0.9.0): `on` posts it, once
-      // Verify for Google has passed. Instagram, X and LinkedIn are not sent yet: `on` shows a preview only.
+      // Verify for Google has passed; YouTube takes the property videos (0.22.0). Instagram, X and LinkedIn
+      // are not sent yet: `on` shows a preview only.
       'networks' => [
         'gbp'       => ['on' => false, 'account' => '', 'name' => '', 'types' => ['listing', 'open_house', 'auction_week', 'results']],
+        // YouTube (0.22.0): a property video uploaded on Property Videos goes to the channel, once Verify for YouTube has passed.
+        'youtube'   => ['on' => false, 'account' => '', 'name' => '', 'playlist' => '', 'playlist_name' => ''],
         'instagram' => ['on' => false, 'account' => ''],
         'x'         => ['on' => false, 'account' => ''],
         'linkedin'  => ['on' => false, 'account' => ''],

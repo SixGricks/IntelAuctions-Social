@@ -37,6 +37,7 @@ if (!function_exists('ias_log_events')) {
       'run'        => 'A planning run finished',
       'settings'   => 'Settings were saved',
       'paused'     => 'Posting was paused or resumed',
+      'video'      => 'A property video was uploaded, sent to YouTube, or its link put on the listing',
     ];
   }
 }

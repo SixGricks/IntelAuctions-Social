@@ -54,6 +54,19 @@ if (!function_exists('ias_settings_sanitize')) {
         $acct = function_exists('ias_oneup_directory_account') ? ias_oneup_directory_account($networks[$ch]['account']) : null;
         $networks[$ch]['name'] = $acct ? (string) $acct['name'] : ($networks[$ch]['account'] === (string) ($old['networks'][$ch]['account'] ?? '') ? (string) ($old['networks'][$ch]['name'] ?? '') : '');
       }
+      if ($ch === 'youtube') {
+        // The channel's name (the read-back finds its videos by it) and the playlist: chosen from what OneUp listed, never typed.
+        $acct = function_exists('ias_oneup_directory_account') ? ias_oneup_directory_account($networks[$ch]['account']) : null;
+        $same = $networks[$ch]['account'] === (string) ($old['networks'][$ch]['account'] ?? '');
+        $networks[$ch]['name'] = $acct ? (string) $acct['name'] : ($same ? (string) ($old['networks'][$ch]['name'] ?? '') : '');
+        $pl = isset($in['networks'][$ch]['playlist']) ? sanitize_text_field((string) $in['networks'][$ch]['playlist']) : ($same ? (string) ($old['networks'][$ch]['playlist'] ?? '') : '');
+        $known = get_option('ias_youtube_playlists', []);
+        $pname = '';
+        foreach ((array) (is_array($known) && ($known['account'] ?? '') === $networks[$ch]['account'] ? ($known['list'] ?? []) : []) as $row) if ((string) $row['id'] === $pl) $pname = (string) $row['name'];
+        if ($pl !== '' && $pname === '') $pl = $same && $pl === (string) ($old['networks'][$ch]['playlist'] ?? '') ? $pl : '';
+        $networks[$ch]['playlist'] = $pl;
+        $networks[$ch]['playlist_name'] = $pl === '' ? '' : ($pname !== '' ? $pname : (string) ($old['networks'][$ch]['playlist_name'] ?? ''));
+      }
     }
     $out['networks'] = $networks;
     $types = [];
@@ -125,7 +138,7 @@ if (!function_exists('ias_settings_sanitize')) {
     // An account OneUp lists under another category than the one chosen would be refused (a post names both).
     if (function_exists('ias_oneup_directory') && ias_oneup_directory() && $out['oneup_category_id'] !== '') {
       $where = ['Facebook page' => $out['oneup_account_id']];
-      foreach (($out['networks'] ?? []) as $ch => $n) if ((string) $n['account'] !== '') $where[(string) ias_channel($ch)['label'] . ' account'] = (string) $n['account'];
+      foreach (($out['networks'] ?? []) as $ch => $n) if ((string) $n['account'] !== '') $where[(string) (ias_channel($ch)['label'] ?? ($ch === 'youtube' ? 'YouTube' : $ch)) . ' account'] = (string) $n['account'];
       foreach ($where as $label => $id) {
         if ($id !== '' && ias_oneup_directory_account($id) && !ias_oneup_directory_account($id, $out['oneup_category_id'])) $problems[] = 'The ' . $label . ' chosen is not in the chosen OneUp category — choose them again after picking the category.';
       }
@@ -189,9 +202,9 @@ if (!function_exists('ias_oneup_pick_options')) {
     if ($cat !== '' && !$known) $html .= $opt($cat, 'Category ' . $cat . ' (saved — not in OneUp\'s list)', true);
     $out['ias-cat'] = $html;
 
-    foreach (array_keys(ias_channels()) as $ch) {
+    foreach (array_merge(array_keys(ias_channels()), ['youtube']) as $ch) { // YouTube takes the property videos, not posts (youtube.php)
       $id = (string) ($chosen[$ch] ?? '');
-      $label = (string) ias_channel($ch)['label'];
+      $label = (string) (ias_channel($ch)['label'] ?? 'YouTube');
       $groups = '';
       $found = false;
       $sole = '';
@@ -267,6 +280,12 @@ if (!function_exists('ias_settings_handle_post')) {
       $words = ias_push_switched_words(ias_push_switched());
       if ($words !== '') $html .= '<div class="notice notice-info"><p><strong>OneUp</strong> — ' . esc_html($words) . '</p></div>';
     }
+    // YouTube the same way: switched off, a video not out yet comes back off; switched on, an uploaded one goes.
+    $yt = function (array $x) { return wp_json_encode([!empty($x['master']), !empty($x['paused']), !empty($x['networks']['youtube']['on'])]); };
+    if ($yt($old) !== $yt(ias_settings()) && function_exists('ias_youtube_check')) {
+      $did = ias_youtube_check(true);
+      if ($did) $html .= '<div class="notice notice-info"><p><strong>YouTube</strong> — ' . esc_html(ucfirst(implode(', ', array_unique($did)))) . '.</p></div>';
+    }
     if ($problems) {
       $html .= '<div class="notice notice-warning"><p>' . implode('<br>', array_map('esc_html', $problems)) . '</p></div>';
     }
@@ -327,6 +346,7 @@ if (!function_exists('ias_settings_render')) {
     echo '</td></tr>';
     $chosen = ['category' => (string) $s['oneup_category_id'], 'facebook' => (string) $s['oneup_account_id']];
     foreach (array_keys(ias_channels()) as $ch) if ($ch !== 'facebook') $chosen[$ch] = ias_channel_settings($ch)['account'];
+    $chosen['youtube'] = ias_youtube_settings()['account'];
     $pick = ias_oneup_pick_options($chosen);
     $can = (bool) ias_setting('master', false) && ias_oneup_key() !== '';
     echo '<tr><th scope="row">Accounts</th><td id="ias-oneup-pick"><button type="submit" form="ias-oneup-lookup-form" class="button" id="ias-lookup"' . ($can ? '' : ' disabled title="' . esc_attr(!ias_setting('master', false) ? 'Turn the master switch on and save first — while it is off, the plugin never asks OneUp anything' : 'Add the OneUp key and save first') . '"') . ' data-ia-busy="Asking OneUp…">Look up accounts</button>'
@@ -355,6 +375,24 @@ if (!function_exists('ias_settings_render')) {
       echo '<label style="display:inline-block;margin:0 14px 6px 0"><input type="checkbox" name="ias[networks][gbp][types][]" value="' . esc_attr($type) . '" ' . checked(in_array($type, $g['types'], true), true, false) . '> ' . esc_html($def['short']) . '</label>';
     }
     echo '<br><span class="description">Each type still needs its own switch on (Safety switches, above) before it goes anywhere.</span></td></tr>';
+    echo '</table>';
+
+    // YouTube: the property videos (0.22.0) — one switch, sent once its own Verify has passed.
+    $y = ias_youtube_settings();
+    $ystate = ias_youtube_blockers();
+    echo '<h2 id="ias-youtube">YouTube</h2><p class="description" style="max-width:760px">A walkthrough uploaded on <strong>Auctions → Add Missing Content → Property Videos</strong> (<strong>Upload video file</strong> on the listing\'s row) goes to the channel through OneUp, by itself: its title and description are built from the listing — the address, the sale date, the open houses, the listing link, a Subscribe line and the office\'s name, address and phone, never the starting bid — so nobody has to write or approve them. Once YouTube has it, its link goes on the listing. The same file is the video Facebook posts carry. Never on a Sunday. Off, nothing goes to YouTube and a video not out yet comes back off.</p><table class="form-table" role="presentation">';
+    echo '<tr><th scope="row">YouTube</th><td>' . $check('ias[networks][youtube][on]', $y['on'], '<strong>On</strong> — send uploaded property videos to YouTube',
+      'Needs the master switch on and <a href="#ias-verify-youtube">Verify for YouTube</a> passed for this channel. Files can be uploaded while it is off; they go when it is on. ' . ($y['on'] && !$ystate ? ia_ui_badge('Sending', 'ok') : ($y['on'] ? ia_ui_badge('Not yet', 'warn') . ' ' . esc_html(ucfirst(implode('; ', $ystate))) . '.' : ''))) . '</td></tr>';
+    echo '<tr><th scope="row"><label for="ias-net-youtube">Channel</label></th><td><select id="ias-net-youtube" name="ias[networks][youtube][account]" class="ias-pick ias-acct-pick">' . $pick['ias-net-youtube'] . '</select>'
+      . ($y['name'] !== '' && !ias_oneup_directory_account($y['account']) ? ' ' . ia_ui_badge($y['name'], 'ok') : '') . '<br><span class="description">The YouTube channel in the category above (connect it in OneUp once, then Look up accounts).</span></td></tr>';
+    $lists = get_option('ias_youtube_playlists', []);
+    $known = is_array($lists) && ($lists['account'] ?? '') === $y['account'] ? (array) ($lists['list'] ?? []) : [];
+    $popts = '<option value="">— none (the channel\'s uploads only) —</option>';
+    $has = false;
+    foreach ($known as $row) { $popts .= '<option value="' . esc_attr((string) $row['id']) . '"' . selected($y['playlist'], (string) $row['id'], false) . '>' . esc_html((string) ($row['name'] !== '' ? $row['name'] : $row['id'])) . '</option>'; if ((string) $row['id'] === $y['playlist']) $has = true; }
+    if ($y['playlist'] !== '' && !$has) $popts .= '<option value="' . esc_attr($y['playlist']) . '" selected>' . esc_html($y['playlist_name'] !== '' ? $y['playlist_name'] : $y['playlist']) . ' (saved)</option>';
+    echo '<tr><th scope="row"><label for="ias-yt-playlist">Playlist</label></th><td><select id="ias-yt-playlist" name="ias[networks][youtube][playlist]">' . $popts . '</select>'
+      . '<br><span class="description">' . ($known ? 'The channel\'s playlists, as Verify for YouTube last read them.' : 'Verify for YouTube reads the channel\'s playlists; choose one here afterwards.') . ' A playlist such as "Properties for auction" keeps the walkthroughs together on the channel.</span></td></tr>';
     echo '</table>';
 
     echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram, X and LinkedIn are set up but cannot post yet — that needs a later release giving each one its own Verify. Tick <strong>Show a preview</strong> to see, on each post\'s page, the words and pictures it would get. A preview is not a switch: nothing goes to these networks. Choose each one\'s account from the OneUp category above.</p><table class="form-table" role="presentation">';
