@@ -382,6 +382,63 @@ if (!function_exists('ias_free_minute')) {
 }
 
 /**
+ * The posting windows as people name them (DJ, Oct 14, 2026: "choose the
+ * morning, afternoon, or evening time slot"): index (in time order, as the
+ * engine numbers them) => ['name', 'from', 'to' (as "6:00 am"), 'a', 'b'
+ * (minutes after midnight)]. Named by when they start: before 11:00 the
+ * Morning, before 5:00 pm the Afternoon, then the Evening; a second window
+ * of the same part of the day is "… 2". $slots: Settings rows ['06:00',
+ * '07:30']. Pure.
+ */
+if (!function_exists('ias_slot_names')) {
+  function ias_slot_names(array $slots): array {
+    $rows = [];
+    foreach ($slots as $row) {
+      $hm = [(string) ($row[0] ?? ''), (string) ($row[1] ?? '')];
+      if (!preg_match('/^\d{1,2}:\d{2}$/', $hm[0]) || !preg_match('/^\d{1,2}:\d{2}$/', $hm[1])) continue;
+      $a = ias_hm_to_min($hm[0]);
+      $b = ias_hm_to_min($hm[1]);
+      if ($b < $a) continue;
+      $rows[] = [$a, $b];
+    }
+    usort($rows, function ($x, $y) { return $x[0] <=> $y[0]; });
+    $fmt = function (int $m) { $h = intdiv($m, 60); return ($h % 12 === 0 ? 12 : $h % 12) . ':' . sprintf('%02d', $m % 60) . ($h < 12 ? ' am' : ' pm'); };
+    $out = [];
+    $seen = [];
+    foreach ($rows as $i => [$a, $b]) {
+      $name = $a < 660 ? 'Morning' : ($a < 1020 ? 'Afternoon' : 'Evening');
+      $seen[$name] = ($seen[$name] ?? 0) + 1;
+      $out[$i] = ['name' => $name . ($seen[$name] > 1 ? ' ' . $seen[$name] : ''), 'from' => $fmt($a), 'to' => $fmt($b), 'a' => $a, 'b' => $b];
+    }
+    return $out;
+  }
+}
+
+/** Which window minute $t falls in (an index of ias_slot_names()), or -1. Pure. */
+if (!function_exists('ias_slot_index')) {
+  function ias_slot_index(array $named, int $t): int {
+    foreach ($named as $i => $w) if ($t >= $w['a'] && $t <= $w['b']) return (int) $i;
+    return -1;
+  }
+}
+
+/**
+ * The minute a post moved into window [$a, $b] takes: its own shifted time
+ * (the same shift the plan gives it, from its slot key), else the nearest free
+ * minute to it — never within $gap minutes of $taken, never on the hour,
+ * never before $not_before. null = no room in that window. Pure.
+ */
+if (!function_exists('ias_slot_minute')) {
+  function ias_slot_minute(int $a, int $b, string $key, int $jitter, array $taken, int $gap, int $not_before = 0): ?int {
+    $from = max($a, $not_before);
+    if ($from > $b) return null;
+    $j = $jitter > 0 ? 1 + (crc32($key) % $jitter) : 0;
+    $target = max($from, min($b, $a + $j));
+    return ias_free_minute($from, $b, $target, array_values($taken), $gap, $jitter > 0);
+  }
+}
+
+/**
  * The scheduler's view of the posts table: which rows take part, which are
  * fixed in place, and what each must come after. $rows are decoded post rows;
  * $lead is the Lane B floor in minutes. Pure.

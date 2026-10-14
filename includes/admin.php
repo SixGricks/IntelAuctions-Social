@@ -121,6 +121,28 @@ if (!function_exists('ias_admin_styles')) {
       .ias-chip.st-approved,.ias-chip.st-pushed,.ias-chip.st-published{border-color:#00a32a;background:#edfaef}
       .ias-chip.st-dropped,.ias-chip.st-skipped,.ias-chip.st-cancelled,.ias-chip.st-notsent{border-color:#8c8f94;background:#f6f7f7;color:#8c8f94;text-decoration:line-through}
       .ias-chip.st-human{border-color:#8c8f94;background:#fff}
+      .ias-chip.drag{cursor:grab}.ias-chip.is-dragging{opacity:.45}
+      .ias-chip-row{position:relative}.ias-chip.has-onoff{padding-right:34px}
+      .ias-onoff-form{position:absolute;top:5px;right:5px;margin:0;line-height:0}
+      .ias-onoff{display:block;position:relative;width:26px;height:14px;padding:0;border:0;border-radius:8px;background:#a7aaad;cursor:pointer}
+      .ias-onoff.is-on{background:#00a32a}.ias-onoff:hover{filter:brightness(.92)}.ias-onoff:focus-visible{outline:2px solid #2271b1;outline-offset:2px}
+      .ias-onoff .knob{position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}
+      .ias-onoff.is-on .knob{left:14px}
+      .ias-pv{position:fixed;z-index:100001;width:340px;max-width:calc(100vw - 24px);background:#fff;border:1px solid #c3c4c7;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.2);pointer-events:none;overflow:hidden;font-size:13px;line-height:1.45;color:#1d2327}
+      .ias-pv-head{padding:10px 12px 2px;font-weight:600}.ias-pv-meta{padding:0 12px 8px;color:#50575e;font-size:12px}
+      .ias-pv-img{position:relative;background:#f0f0f1}.ias-pv-img img{display:block;width:100%;height:170px;object-fit:cover}
+      .ias-pv-more{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px}
+      .ias-pv-text{padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:12;overflow:hidden}
+      .ias-pv-text.empty{color:#8c8f94;font-style:italic}
+      .ias-pv-comment{margin:0 12px;padding:8px 0 10px;border-top:1px solid #f0f0f1;color:#50575e;font-size:12px;overflow-wrap:anywhere}
+      .ias-pv-hint{padding:6px 12px;background:#f6f7f7;color:#8c8f94;font-size:11px}
+      body.ias-dragging .ias-day[data-drop="1"]{outline:1px dashed #8c8f94;outline-offset:-3px}
+      .ias-day.ias-drop-ok,.ias-day.ias-drop-target{outline:2px solid #2271b1 !important;outline-offset:-2px;background:#f0f6fc}
+      .ias-drop-pop{position:absolute;z-index:100000;background:#fff;border:1px solid #c3c4c7;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 14px;max-width:min(92vw,460px)}
+      .ias-drop-pop .ias-drop-q{margin:0 0 8px}.ias-drop-pop .description{margin:6px 0 0}
+      .ias-drop-slots{display:flex;flex-wrap:wrap;gap:6px}.ias-drop-slots .button{height:auto;line-height:1.3;padding:6px 10px;text-align:left}
+      .ias-drop-cancel{margin-top:6px}
+      .ias-move-slots{border:0;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}.ias-move-slot{white-space:nowrap}
       .ias-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 14px}
       .ias-cols{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:20px;max-width:1880px}
       .ias-card{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:12px 16px;margin:0 0 16px}
@@ -258,6 +280,7 @@ if (!function_exists('ias_admin_styles')) {
       @media (max-width:782px){.ias-cal{display:flex;flex-direction:column;gap:6px}.ias-cal-head{display:none}
         .ias-day{min-height:0}.ias-day:not(.has):not(.today),.ias-day.past{display:none}.ias-day.floor{background:#fff}
         .ias-today{display:inline}.ias-day-date{font-size:13px}.ias-chip{padding:6px 8px;font-size:13px}.ias-chip .s{font-size:12px}
+        .ias-chip.has-onoff{padding-right:52px}.ias-onoff-form{top:50%;right:8px;transform:translateY(-50%)}.ias-onoff{width:36px;height:20px;border-radius:11px}.ias-onoff .knob{width:16px;height:16px}.ias-onoff.is-on .knob{left:18px}
         .ias-cal-gap{display:block;color:#8c8f94;font-size:12px;padding:2px 8px;border-left:2px dotted #c3c4c7;margin-left:8px}}
       @media (max-width:600px){.ias-pics{grid-template-columns:repeat(3,minmax(0,1fr))}}
     </style>';

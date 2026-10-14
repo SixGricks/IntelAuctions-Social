@@ -1,6 +1,6 @@
 # Intel Auctions Social
 
-A WordPress plugin (**v0.12.0**) for intelauctions.com, the sister of the
+A WordPress plugin (**v0.16.0**) for intelauctions.com, the sister of the
 [Intel Auctions Toolkit](https://github.com/SixGricks/IntelAuction). It turns
 each auction into a set of Facebook posts (and Google Business Profile posts, once switched on), plans them three a day through OneUp, and keeps
 a person in the loop on the posts that carry hard facts.
@@ -48,7 +48,7 @@ posts) or off (nothing goes, and what is on OneUp comes back off) — there is n
 | `includes/channels.php` | Google, Instagram, X and LinkedIn: their rules, words and renderers (Instagram, X and LinkedIn preview only) |
 | `includes/live.php` | Phase 5: sending to OneUp, taking back, the hourly read-back, Verify OneUp (and for Google), corrections |
 | `includes/gbp.php` | Google Business Profile sent for real: its switches, record, sends, take-backs and read-back |
-| `includes/instant.php` | Nobody needs OneUp: Move, Publish now, Try again, Edit it here again, and asking OneUp every minute while the calendar is open |
+| `includes/instant.php` | Nobody needs OneUp: Move (and dragging on the calendar, by morning, afternoon or evening), Publish now, Try again, Edit it here again, and asking OneUp every minute while the calendar is open |
 | `includes/summary.php` | The monthly summary (with site visits from Google Analytics through the toolkit) |
 | `includes/approval.php` | Lane A approval emails, the signed one-time links and their page, reminders, the Monday email |
 | `includes/admin*.php` | The Social Calendar (and each post's view), Brand voice, Settings, Log and Guide screens, and the listing panel |

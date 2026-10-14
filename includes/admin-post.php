@@ -42,7 +42,7 @@ add_action('ias_calendar_action', function (string $action): void {
   $p = $id > 0 ? ias_post_get($id) : null;
   if (!$p) return;
   $back = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]);
-  $_POST['ias_back'] = $back;
+  if (($_POST['ias_from'] ?? '') !== 'calendar' || empty($_POST['ias_back'])) $_POST['ias_back'] = $back; // a drag or a switch on the calendar comes back to the calendar
   $flash = function (string $html, string $level = 'success') { ia_flash_set('<div class="notice notice-' . $level . '"><p>' . $html . '</p></div>'); };
 
   switch ($action) {
@@ -154,7 +154,7 @@ add_action('ias_calendar_action', function (string $action): void {
       ias_post_update($id, ['status' => 'skipped', 'flags' => $flags, 'note' => 'Skipped by ' . $actor . ($why !== '' ? ': ' . $why : '')]);
       ias_post_trail($id, 'Skipped' . ($why !== '' ? ': ' . $why : ''), $actor);
       ias_log('skipped', (int) $p['listing_id'], ['post' => $id, 'summary' => $why !== '' ? $why : 'Skipped'], $actor);
-      $flash('Skipped. It stays off the plan until you press Restore.');
+      $flash('Turned off. It stays off — and off OneUp — until you turn it back on.');
       return;
 
     case 'restore':
@@ -165,9 +165,12 @@ add_action('ias_calendar_action', function (string $action): void {
       unset($flags['skipped_by'], $flags['cancelled_by'], $flags['dropped_by']);
       $status = ias_back_on_plan_status(['flags' => $flags]);
       ias_post_update($id, ['status' => $status, 'flags' => $flags, 'note' => $status === 'held' ? 'Needs a decision: ' . (string) ($flags['holds'][0] ?? '') : '']);
-      ias_post_trail($id, 'Restored to the plan', $actor);
-      ias_log('planned', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Restored to the plan'], $actor);
-      $flash('Back on the plan.');
+      ias_post_trail($id, 'Turned back on: restored to the plan', $actor);
+      ias_log('planned', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Turned back on: restored to the plan'], $actor);
+      // The plan gives it a time now (its old one may be gone or inside the 48 hours), and OneUp follows in this request.
+      if (function_exists('ias_plan_run')) ias_plan_run($actor);
+      $q = ias_post_get($id) ?: $p;
+      $flash('Turned back on' . ($q['status'] === 'held' ? ' — it needs a decision before it goes anywhere' : ($q['status'] === 'dropped' ? ', but the plan has no room for it in its window: move it to a day yourself' : (!empty($q['scheduled_at']) ? ': it goes ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $q['scheduled_at']))) : ': the plan gives it a time'))) . '.');
       return;
 
     case 'correction_done':
@@ -222,12 +225,12 @@ if (!function_exists('ias_rewrite_confirm')) {
   }
 }
 
-/** "Skip this post…", folded: the reason and the button open on a click. */
+/** "Turn this post off…" (Skip), folded: the reason and the button open on a click. */
 if (!function_exists('ias_skip_details')) {
   function ias_skip_details(array $p): string {
     if (!in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'dropped', 'failed'], true) || $p['type'] === 'human') return '';
-    return '<details class="ias-skip"><summary>Skip this post…</summary>'
-      . ias_post_action_form($p, 'skip', 'Skip it', 'button', '<input type="text" name="ias_why" placeholder="Why? (optional)" class="regular-text" style="width:220px">') . '</details>';
+    return '<details class="ias-skip"><summary>Turn this post off…</summary>'
+      . ias_post_action_form($p, 'skip', 'Turn it off', 'button', '<input type="text" name="ias_why" placeholder="Why? (optional)" class="regular-text" style="width:220px">') . '</details>';
   }
 }
 
@@ -272,8 +275,8 @@ add_action('ias_post_view_bar', function (array $p): void {
     $lines = '<p>' . esc_html((string) $p['note']) . '</p>';
   } elseif (in_array($p['status'], ['skipped', 'cancelled', 'dropped'], true)) {
     $level = 'info';
-    $lines = '<p><strong>' . esc_html(ias_statuses()[$p['status']]['label']) . '.</strong> ' . esc_html((string) $p['note']) . ' It stays off the plan until you restore it.</p>';
-    $buttons = $form('restore', 'Restore to the plan', 'button');
+    $lines = '<p><strong>' . esc_html(ias_statuses()[$p['status']]['label']) . '.</strong> ' . esc_html((string) $p['note']) . ' It stays off until you turn it back on.</p>';
+    $buttons = $form('restore', 'Turn it back on', 'button');
   } elseif ($p['status'] === 'failed') {
     $level = 'error';
     $lines = '<p><strong>Failed.</strong> ' . esc_html((string) $p['note']) . '</p>';

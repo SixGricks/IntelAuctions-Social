@@ -69,3 +69,18 @@ t_ok(!ias_negated_at('No crowds. Onsite auction at 10.', strpos('No crowds. Onsi
 $emo = "📍 Narvon\n📅 Nov 18\n⏰ 10:00 am\n💲 Starting bid $250,000\n📞 717-555-0101\n🏡 Intel Phone Bidding";
 t_eq([], ias_check_draft($emo, array_merge($ctx, ['emoji_max' => 8]))['holds'], 'an emoji-led post with one emoji a line passes');
 t_ok((bool) array_filter(ias_check_draft($emo, $ctx)['holds'], function ($h) { return strpos($h, 'emoji') !== false; }), '…the same in any other shape is held');
+
+// Only a phone-bid sale has to say how bidding works (DJ, Oct 14, 2026: "don't require 'in person auction' as part
+// of the description. We only need to say when it's a phone bid auction.").
+$inp = array_merge($ctx, ['bidding' => ['in_person']]);
+t_eq([], ias_check_draft("5940 Plank Road sells Saturday, Nov 21 at 10:00 am. Starting bid $250,000.", $inp)['holds'], 'an in-person sale need not say it is in person');
+t_eq([], ias_check_draft("Sells Nov 21 — an in-person auction on site.", $inp)['holds'], '…and may');
+$r = ias_check_draft("Sells Nov 21. Bid by phone through Intel Phone Bidding.", $inp);
+t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'but this is an in-person auction') !== false; }), 'an in-person sale\'s post that says phone bidding: held, saying why');
+$r = ias_check_draft("Sells Nov 21. Starting bid $250,000.", $ctx);
+t_ok((bool) array_filter($r['holds'], function ($h) { return $h === 'It does not say this is Intel Phone Bidding.'; }), 'a phone-bid sale must still say so');
+$two = array_merge($ctx, ['type' => 'auction_week', 'bidding' => ['in_person', 'phone']]);
+t_eq([], ias_check_draft("Two sales Nov 18. The lot is Intel Phone Bidding.", $two)['holds'], 'two sales, one by phone: only the phone one need be named');
+$r = ias_check_draft("Two sales Nov 18 in Narvon.", $two);
+t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'One of these sales is Intel Phone Bidding') === 0; }), '…and when the phone one is not: held');
+t_eq([], ias_check_draft("Two farms sell Nov 18 in Narvon.", array_merge($two, ['bidding' => ['in_person', 'in_person']]))['holds'], 'two in-person sales: nothing to say');

@@ -194,7 +194,7 @@ if (!function_exists('ias_push_now')) {
 /** The post actions whose change goes to OneUp at once (approve sends its own run). */
 if (!function_exists('ias_push_now_actions')) {
   function ias_push_now_actions(): array {
-    return (array) apply_filters('ias_push_now_actions', ['edit', 'media', 'media_reset', 'regenerate', 'skip', 'restore', 'release', 'move', 'unpin', 'retry', 'unlock', 'gbp_off', 'gbp_on', 'gbp_unlock', 'publish_now']);
+    return (array) apply_filters('ias_push_now_actions', ['edit', 'media', 'media_reset', 'regenerate', 'skip', 'restore', 'release', 'move', 'unpin', 'retry', 'unlock', 'gbp_off', 'gbp_on', 'gbp_unlock', 'publish_now', 'move_slot']);
   }
 }
 

@@ -390,20 +390,35 @@ if (!function_exists('ias_gbp_readback')) {
       $count[$moved ? 'moved' : 'edited']++;
     }
 
+    // Published: by OneUp's id, or — the docs give the network's own id here — by words, location and time.
     $seen_pub = [];
+    $by_key = $ours;
+    $in_ours = [];
+    foreach ($ours as $p) $in_ours[(int) $p['id']] = true;
+    foreach ($noid as $p) if (empty($in_ours[(int) $p['id']]) && !empty($p['flags']['gbp'])) $by_key['p:' . (int) $p['id']] = $p;
+    $pub_cands = [];
+    foreach ($by_key as $k => $p) {
+      $g = (array) ($p['flags']['gbp'] ?? []);
+      if (!empty($g['text']) && !empty($g['when'])) $pub_cands[(string) $k] = ['text' => (string) $g['text'], 'when' => (string) $g['when']];
+    }
+    $name = ias_gbp_name();
     foreach ($pub['ok'] ? $pub['rows'] : [] as $row) {
       $oid = (string) ($row['post_id'] ?? '');
-      if ($oid === '' || !isset($ours[$oid])) continue;
-      $seen_pub[$oid] = true;
-      $p = $ours[$oid];
-      if (!empty($p['flags']['gbp']['published'])) continue;
       $at = ias_oneup_time((string) ($row['created_at'] ?? $row['date_time'] ?? ''), true);
+      $key = $oid !== '' && isset($ours[$oid]) ? $oid : null;
+      if ($key === null && $name !== '' && trim((string) ($row['social_network_username'] ?? '')) === $name) $key = ias_published_pick((string) ($row['content'] ?? ''), $at, $pub_cands);
+      if ($key === null) continue;
+      unset($pub_cands[$key]);
+      $seen_pub[$key] = true;
+      $p = $by_key[$key];
+      if (!empty($p['flags']['gbp']['published'])) continue;
       $flags = $p['flags'];
       $flags['gbp']['published'] = $at !== '' ? $at : $now;
+      if ($oid !== '' && $oid !== $key) $flags['gbp']['published_id'] = mb_substr($oid, 0, 64);
       unset($flags['gbp_missing']);
       ias_post_update((int) $p['id'], ['flags' => $flags]);
       ias_post_trail((int) $p['id'], 'Google: published' . ($at !== '' ? ' ' . date_i18n('D M j, g:i a', strtotime($at)) : ''));
-      ias_log('readback', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'channel' => 'gbp', 'summary' => 'Google: published (OneUp #' . $oid . ').']);
+      ias_log('readback', (int) $p['listing_id'], ['post' => (int) $p['id'], 'type' => $p['type'], 'channel' => 'gbp', 'summary' => 'Google: published' . ($oid !== '' ? ' (' . ($oid === $key ? 'OneUp #' : '') . $oid . ')' : '') . '.']);
       $count['published']++;
     }
 
@@ -414,7 +429,7 @@ if (!function_exists('ias_gbp_readback')) {
       $seen_fail[$oid] = true;
       $p = $ours[$oid];
       if (($p['flags']['gbp_off'] ?? '') === 'failed') continue;
-      $why = (string) ($row['failure_reason'] ?? $row['reason'] ?? $row['error'] ?? $row['message'] ?? 'no reason given');
+      $why = ias_oneup_fail_reason($row) ?: 'no reason given';
       ias_gbp_switch_off($p, 'failed', 'OneUp could not publish it on Google: ' . $why . ' — Send it to Google again, or leave it; the Facebook post is not affected.', false);
       $count['failed']++;
     }

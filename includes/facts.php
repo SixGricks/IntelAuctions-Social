@@ -313,8 +313,8 @@ if (!function_exists('ias_facts_for_prompt')) {
       'state'      => $f['state'],
       'auction_date' => $f['date'] ? $f['date']->format('l, F j, Y') : '',
       'auction_time' => $f['date'] && !empty($f['has_time']) ? $f['date']->format('g:i a') : '', // unknown, not "12:00 am"
-      'bidding'    => $f['bidding'] === 'phone' ? 'Intel Phone Bidding — buyers bid by phone with Intel; there is no in-person bidding at this sale'
-                    : ($f['bidding'] === 'in_person' ? 'In-person auction — bidding happens on site; there is no phone or online bidding at this sale' : ''),
+      'bidding'    => $f['bidding'] === 'phone' ? 'Intel Phone Bidding — buyers bid by phone with Intel (the post must say so, once)'
+                    : ($f['bidding'] === 'in_person' ? 'In-person auction on site — the usual kind, so the post need not say how bidding works' : ''),
       'starting_bid' => $f['starting_bid_raw'],
       'size'       => $f['size_raw'],
       'open_houses' => array_map(function ($oh) {

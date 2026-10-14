@@ -1,5 +1,118 @@
 # Intel Auctions Social changelog
 
+## 0.16.0 (2026-10-14) — OneUp as its documentation says
+DJ shared OneUp's API documentation (docs.oneupapp.io), unreachable when the
+OneUp side was built. Every call the plugin makes was checked against it.
+What did not match, and could have gone wrong once more than a few posts
+were on OneUp, is fixed; where the live account has answered differently
+from the documentation (`posts` and `next_start` in its lists), both are read.
+- **Lists past the first 50** (`ias_oneup_list()`, `ias_oneup_next_start()`):
+  the documented lists come up to 50 a page from `start`, with no
+  `next_start`. The plugin read one page and called it the whole list, so a
+  post of ours past the first 50 was never found: OneUp gives a new post no
+  id, so it could not be taken back when switched off, nor replaced — and
+  with ids, it could be taken for "deleted in OneUp by a person" while still
+  going out. Now every page is read (a full page means ask again from where
+  it ended; a short page is the end; a `next_start` is followed), and a page
+  that only repeats rows ends the reading as not complete, so nothing is
+  concluded from it.
+- **Gone out, confirmed** (`ias_published_pick()`): the published list's
+  `post_id` is documented as the network's own id ("FB_…"). A post that went
+  out was never confirmed ("OneUp has not confirmed this went out" a day
+  later) and was taken for a person's own post, counting toward the day's
+  three. A published row that is not ours by id is now matched by its words,
+  on our page, at its time (15 minutes before to a day after); the network's
+  id is kept (`flags.oneup.published_id`, `flags.gbp.published_id`). Google's
+  read-back the same. Only a status is read this way — nothing is deleted or
+  replaced by a match of words.
+- **POST** for scheduletextpost / scheduleimagepost / schedulevideopost (and
+  `editpost`, unused), as documented; a 405 is still retried the other way.
+- **"0 new Posts Scheduled."** with no error flag is a refusal
+  (`ias_oneup_error_in()`): nothing was created, and nothing is looked for.
+- **OneUp's failure reason**: the failed list's `fail_reason`
+  (`ias_oneup_fail_reason()`), for Facebook and Google.
+- `ias_norm_text()` moved to `oneup.php`.
+- Tests: a docs-shaped fake OneUp (`docs`, `ignore_start`, `zero_new`; the
+  fake now reads a POST body as a server does), `tests/wp/07h-oneup-docs.php`
+  (Verify and POST; 60 posts on the list; nothing taken for deleted; take-back
+  from the second page; "0 new"; `fail_reason`; published by words, and a
+  person's own still theirs — 15 of its 24 checks fail on 0.15.0), Google's
+  published match in `tests/wp/07c-google.php`, and unit tests in
+  `tests/unit/oneup.php`.
+
+## 0.15.0 (2026-10-14) — Only phone bid has to be said; "Call for a private showing" sometimes
+DJ: "don't require 'in person auction' as part of the description. We only
+need to say when it's a phone bid auction." — and "If no open house date is
+given then it's 'Call for private showing' but we don't always need to say
+that."
+- **Only a phone-bid sale must say how bidding works.** The check no longer
+  holds an in-person sale's post for not saying "in-person auction"; it still
+  holds a phone-bid post that does not say Intel Phone Bidding (or says
+  in-person too), and now an in-person sale's post that mentions phone
+  bidding ("but this is an in-person auction"). Of several sales on one day,
+  only the phone-bid ones must be named. A listing that does not say which
+  it is still stops the post.
+- **The prompts say the same:** the rules ask for Intel Phone Bidding once
+  when it is one and say an in-person auction need not be mentioned; the
+  Listing, Open House and Auction Week briefs ask only whether it is Intel
+  Phone Bidding; the facts say "the post must say so" / "need not say".
+- **No open house set** (`ias_showing_brief()`, `ias_says_showing()`, `ias_open_house_ahead()`): a
+  Listing or Auction Week post about one property (real estate) with no open
+  house still ahead says "Call for a private showing" in about half the
+  posts — each post decides by its own key, the same every rewrite — and the
+  rest leave showings out; never an invented open house. The Listing brief
+  mentions open houses only when one is still ahead (a past one counts as none).
+- Tests: `tests/unit/showings.php`, the bidding rule in
+  `tests/unit/checks.php`, and `tests/wp/02i-variety.php`.
+
+## 0.14.0 (2026-10-14) — A switch on every post; hover for a preview
+DJ: "I also want to be able to turn on skipped items and turn off others." —
+and "Hover over an item on the calendar should give a preview of the post."
+- **An on/off switch on each post on the calendar** (`ias_calendar_onoff()`):
+  green on a post on its way — press it to turn the post off (Skip, off
+  OneUp at once); grey on a skipped, cancelled or dropped post — press it to
+  turn it back on (Restore). None on a post that went out, a person's own, or
+  one whose time came before posting was on. It comes back to the calendar
+  (`ias_from=calendar`, which the drag's form now sends too).
+- **Turning a post back on re-plans at once** (Restore, from the calendar or
+  its page): the plan gives it a time — its old one may be gone or inside the
+  48 hours — and OneUp follows in the same request; the notice says when it
+  goes, or that the plan had no room for it.
+- **Words:** Skip is **Turn this post off…** / **Turn it off**, Restore is
+  **Turn it back on**, and the notices say turned off / turned back on.
+- **Hover a post for its preview** (`ias_calendar_preview()`): its type and
+  listing, where it stands and when, the lead picture and how many more, the
+  words, the start of the first comment — or that it has no draft yet.
+  Carried on the chip, so no request; built as text, never HTML; not on a
+  device without hover; Escape, moving away or scrolling hides it. It
+  replaces the chip's old tooltip.
+- Tests: `tests/wp/07g-onoff-preview.php`.
+
+## 0.13.0 (2026-10-14) — Drag posts on the calendar; morning, afternoon or evening
+DJ: "I want to be able to drag posts around on the calendar and choose the
+morning, afternoon, or evening time slot."
+- **Drag a post** (desktop) onto any day from today to 30 days out, or onto
+  its own, and choose **Morning**, **Afternoon** or **Evening** — the posting
+  windows from Settings, named by when they start (`ias_slot_names()`).
+  Cancel or Escape puts it back. Sundays take no drop; a post that went out,
+  or one changed inside OneUp, is not draggable (`ias_movable()`).
+- **The choice is a move** (`ias_move_to_window()`, action `move_slot`): the
+  post's own minute in that window — the shift the plan gives it, never on
+  the hour (`ias_slot_minute()`) — pinned like a Move, so it holds and goes
+  to OneUp at once (inside the 48 hours too). It keeps clear of the posts
+  that stay put (`ias_move_fixed()`: published, human, changed in OneUp,
+  moved there, on OneUp inside the 48 hours); a window they hold, or one
+  already gone today, is refused, naming why. The plan then runs at once:
+  the posts in the way get new times, their copies on OneUp follow
+  (`ias_push_now()`), and the notice names what moved — or was dropped.
+  A drag comes back to the calendar.
+- **The post's Move** offers the same three times of day, or an exact time.
+- Tests: `tests/unit/windows.php` (names, minutes, gaps, today) and
+  `tests/wp/07f-drag.php` (the calendar's drag markup, a drop, the same day,
+  a Sunday, a passed window, a held window, making room and OneUp
+  following, the Move form, what cannot be dragged, a drop that leaves no
+  room for another post).
+
 ## 0.12.0 (2026-10-14) — On or off: the dry run is gone; Publish now
 DJ: "I want to turn dry run off and remove it. Either things are active or
 inactive." — and "I also want a "Publish now" button if a post is past it's

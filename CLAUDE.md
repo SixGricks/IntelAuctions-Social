@@ -98,6 +98,20 @@ it, and the spec stays verbatim, so they are recorded here:
   time pinned like a Move; on Lane A pressing it is the approval. Never while
   its switches are off, never on a Sunday, never with holds, a `[VERIFY]` or a
   stale draft.
+- **Drag on the calendar, by time of day** (Oct 14, 2026: "I want to be able
+  to drag posts around on the calendar and choose the morning, afternoon, or
+  evening time slot"). A drop, and the post's Move, choose a posting window
+  (`ias_windows()`), never a free-typed minute by default: the post takes its
+  own shifted minute there (`ias_slot_minute()`), pinned like a Move, clear of
+  the posts that stay put (`ias_move_fixed()`); the plan then runs at once and
+  OneUp follows for every post it moved. The exact time stays on the post's
+  Move for a person who wants it. Phones use the post's Move (no drag).
+- **A switch on every post, and a preview on hover** (Oct 14, 2026: "I also
+  want to be able to turn on skipped items and turn off others" and "Hover
+  over an item on the calendar should give a preview of the post"). The
+  calendar's switch is Skip / Restore (`ias_calendar_onoff()`), worded as
+  turning a post off and back on; Restore re-plans at once. The preview is
+  data on the chip (`ias_calendar_preview()`), rendered with `.text()` only.
 - **Variety, and bidding said positively** (Oct 13, 2026: "We need more
   variety in the Results posts… sometimes paragraphs and sometimes bullets…
   1 out of every 5 posts… emoji heavy… Positive statements are better").
@@ -106,7 +120,12 @@ it, and the spec stays verbatim, so they are recorded here:
   own openings (`ias_templates_results()`) and six calls to action. Bidding is
   said as what the sale *is*, never what it isn't; the check
   (`ias_negated_at()`) does not count a way of bidding the sentence denies, so
-  "no onsite auction" on a phone post is not held. The emoji cap is three, or
+  "no onsite auction" on a phone post is not held. **Only a phone-bid sale must
+  say how bidding works** (Oct 14, 2026: "We only need to say when it's a phone
+  bid auction"): an in-person post need not say "in-person", but may not say
+  phone bidding. With no open house ahead, about half the Listing and Auction
+  Week posts say "Call for a private showing" (`ias_showing_brief()`; Oct 14:
+  "we don't always need to say that"). The emoji cap is three, or
   eight on an emoji-led post (`ias_emoji_max()`).
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
@@ -194,12 +213,22 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   finds moved or edited by a person in OneUp is `locked`: never replaced, taken
   back only if skipped or cancelled. Status `pushed` is a display status
   (`ias_post_shown_status()`), never stored.
-- **OneUp's API is only partly documented where this was built** (its site was
-  unreachable): the endpoint names and methods live in `ias_oneup_endpoints()`,
-  answers are read loosely (`ias_oneup_rows()`, `ias_oneup_find_id()`,
-  `ias_oneup_error_in()`), and **Verify OneUp** checks the real thing with a
-  draft. The list rows' shape (post_id, content, date_time in the account's time
-  zone, created_at in UTC, social_network_username) is from the real account.
+- **OneUp's API is documented at docs.oneupapp.io** (unreachable when this was
+  built; checked against it Oct 14, 2026, 0.16.0 — read it before changing a
+  call). The endpoint names and methods live in `ias_oneup_endpoints()`
+  (scheduling and delete are POST); answers are read loosely
+  (`ias_oneup_rows()`, `ias_oneup_find_id()`, `ias_oneup_error_in()`) because the
+  live account has answered differently from the docs (`posts`/`next_start`
+  vs `data`), and **Verify OneUp** checks the real thing with a draft. What the
+  docs settle: a new post's answer carries **no post id** (it is found on the
+  list by words and time; "0 new Posts Scheduled." is a refusal); lists come
+  **50 a page** from `start` — always read every page (`ias_oneup_list()`),
+  never take one page for the whole list; the **published** list's `post_id`
+  is the network's own id, so a published row is matched by id or by words,
+  page and time (`ias_published_pick()`) — a status only, never a delete; a
+  failed row's reason is `fail_reason`. Row times: date_time in the account's
+  time zone, created_at in UTC. Analytics (`analyze.oneupapp.io`) and comments
+  (`feed.oneupapp.io`) need OneUp's Intermediate plan or above.
 - **A person's decision holds.** Anything that puts a post back on the plan uses
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when

@@ -280,6 +280,7 @@ $act('edit', ['ias_post' => $cp['id'], 'ias_text' => "3 Charlie Court sells Nove
 add_filter('pre_http_request', $refuse = function ($pre, $args, $url) use ($GBP) {
   if (strpos((string) $url, 'oneupapp.io/api/schedule') === false) return $pre;
   parse_str((string) (wp_parse_url((string) $url)['query'] ?? ''), $q);
+  $q = array_merge($q, is_array($args['body'] ?? null) ? $args['body'] : []); // POST (0.16.0): the account is in the body
   $sn = json_decode((string) ($q['social_network_id'] ?? ''), true); // the account goes as a one-item list
   if ((is_array($sn) ? (string) ($sn[0] ?? '') : '') === $GBP) $GLOBALS['ias_t_oneup']['fail_next'] = 1;
   return $pre;
@@ -300,6 +301,18 @@ ias_t_oneup_publish($gid);
 ias_push_run();
 $bp = $lp($b);
 t_ok(!empty($gb($bp)['published']), 'published on Google: noted on the post');
+// 0.16.0: OneUp's docs give the network's own id on the published list, not OneUp's — Google's copy is
+// matched by its words, location and time.
+$S['docs'] = true;
+$e = $mk('6 Echo Way', '2026-11-24 10:00');
+ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();
+$gid = (int) ($gb($lp($e))['id'] ?? 0);
+t_ok($gid > 0, 'another listing goes to Google (its id found by its words: OneUp\'s documented answer carries none)');
+ias_t_oneup_publish($gid);
+ias_push_run();
+$g = $gb($lp($e));
+t_ok(!empty($g['published']) && ($g['published_id'] ?? '') === 'GBP_' . $gid, 'published on Google under Google\'s own id: still noted on the post, with that id (' . ($g['published_id'] ?? '') . ')');
+$S['docs'] = false;
 
 // ---- 13. Skipped: the Google copy comes off ----
 $d = $mk('5 Delta Drive', '2026-11-25 10:00');
