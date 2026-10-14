@@ -531,6 +531,7 @@ jQuery(function ($) {
     }
     $pv.append($('<div class="ias-pv-text"></div>').toggleClass('empty', !!d.empty).text(d.text));
     if (d.comment) $pv.append($('<div class="ias-pv-comment"></div>').text('First comment: ' + d.comment));
+    if (d.stats) $pv.append($('<div class="ias-pv-stats"></div>').text(d.stats));
     $pv.append($('<div class="ias-pv-hint"></div>').text(d.hint));
     $('body').append($pv);
     place();

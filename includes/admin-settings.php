@@ -43,7 +43,7 @@ if (!function_exists('ias_settings_sanitize')) {
       $out[$key] = $v;
     };
 
-    foreach (['master', 'paused', 'link_in_comment', 'voice_auto'] as $key) $out[$key] = !empty($in[$key]);
+    foreach (['master', 'paused', 'link_in_comment', 'voice_auto', 'stats_on'] as $key) $out[$key] = !empty($in[$key]);
     $networks = [];
     foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
       $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
@@ -337,6 +337,7 @@ if (!function_exists('ias_settings_render')) {
       . ((string) $s['oneup_account_name'] !== '' && !ias_oneup_directory_account((string) $s['oneup_account_id']) ? ' ' . ia_ui_badge((string) $s['oneup_account_name'], 'ok') : '') // the list names it already
       . '<br><span class="description">A different page (or category) means pressing <strong>Verify OneUp</strong> again before anything is sent.</span></td></tr>';
     echo '<tr><th scope="row">Listing link</th><td>' . $check('ias[link_in_comment]', !empty($s['link_in_comment']), 'Put the link in the first comment', 'Facebook shows posts with a link in them to fewer people. Untick only if OneUp cannot post first comments: the link then goes at the end of the post.') . '</td></tr>';
+    echo '<tr><th scope="row">How posts did</th><td>' . $check('ias[stats_on]', !empty($s['stats_on']), 'Read each post\'s Facebook numbers once a day', 'Reactions, comments, shares, clicks and views, from OneUp\'s analytics (its Intermediate plan or above), shown on each post and in the monthly summary. It only reads. <a href="#ias-stats">Last read</a>.') . '</td></tr>';
     echo '</table>';
 
     // Google Business Profile: one switch, sent once its own Verify has passed.

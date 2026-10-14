@@ -238,6 +238,7 @@ if (!function_exists('ias_calendar_preview')) {
       'text'    => $text !== '' ? $cut($text, 700) : (!empty($p['flags']['gen_error']) ? 'No draft yet: ' . (string) $p['flags']['gen_error'] : 'No draft written yet.'),
       'empty'   => $text === '',
       'comment' => $comment !== '' ? $cut($comment, 160) : '',
+      'stats'   => function_exists('ias_post_stats') && ($st = ias_post_stats($p)) ? 'On Facebook: ' . ias_stats_line($st) : '',
       'hint'    => 'Click to open' . ($drag ? ' · drag to move' : ''),
     ];
   }

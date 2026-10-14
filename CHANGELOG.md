@@ -1,5 +1,35 @@
 # Intel Auctions Social changelog
 
+## 0.17.0 (2026-10-14) — How each post did on Facebook
+DJ is on OneUp's Intermediate plan, which has the analytics. The spec: "Every
+post records when it went out and how it did."
+- **Once a day** (the hourly run, 20 hours apart; `ias_stats_due()`), one GET
+  to OneUp's analytics (`analyze.oneupapp.io/api/facebook/posts`, the page's
+  plain id, the last 31 days to yesterday, the site's time zone):
+  reactions, comments, shares, clicks and views for each of the page's posts
+  (`ias_stats_run()`). Each is matched to ours by Facebook's id (once known,
+  or the published list's network id — `ias_fb_ids_match()`) or by its words
+  at its time (`ias_published_pick()`), and kept on the post: `flags.stats`
+  with the engagement rate (`ias_stats_rate()`: the four over the views),
+  when read and the address on Facebook, and Facebook's id as
+  `flags.oneup.fb_id` ("<page>_<post>", `ias_fb_post_id()`) — what 0.18.0's
+  correction comments need. Unchanged numbers are not rewritten.
+- **Shown** on the post's page (How it did on Facebook, See it on Facebook),
+  in its hover preview, and in the monthly summary (Reactions, Comments,
+  Shares, Clicks, Views and Engagement by post type and division — so in the
+  Monday email's summary too).
+- **A read only**: the master switch, the key and the page, like every read;
+  **How posts did** in Settings (`stats_on`, on) turns it off; nothing asked
+  when nothing of ours went out in the last month. A plan without analytics
+  (403) is said in Settings and asked again a week later; numbers already
+  read stay. Settings shows the last read with **Read now**
+  (`ias_stats_last`).
+- The OneUp client takes full addresses (OneUp's analytics and comments
+  hosts) and JSON bodies; only the scheduling calls send the account as a
+  list.
+- Tests: `tests/wp/07i-stats.php` (33 checks), `tests/unit/stats.php`, and
+  the fake OneUp's analytics (`ias_t_fb_stat()`).
+
 ## 0.16.0 (2026-10-14) — OneUp as its documentation says
 DJ shared OneUp's API documentation (docs.oneupapp.io), unreachable when the
 OneUp side was built. Every call the plugin makes was checked against it.

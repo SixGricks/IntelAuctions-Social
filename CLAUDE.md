@@ -228,7 +228,10 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   page and time (`ias_published_pick()`) — a status only, never a delete; a
   failed row's reason is `fail_reason`. Row times: date_time in the account's
   time zone, created_at in UTC. Analytics (`analyze.oneupapp.io`) and comments
-  (`feed.oneupapp.io`) need OneUp's Intermediate plan or above.
+  (`feed.oneupapp.io`) need OneUp's Intermediate plan or above — DJ has it
+  (Oct 14, 2026). **How each post did** (0.17.0, `stats.php`) is a daily read
+  of the analytics into `flags.stats`, matched by Facebook's id
+  (`flags.oneup.fb_id`) or words and time; a read only, never a write.
 - **A person's decision holds.** Anything that puts a post back on the plan uses
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when

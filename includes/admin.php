@@ -135,6 +135,7 @@ if (!function_exists('ias_admin_styles')) {
       .ias-pv-text{padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:12;overflow:hidden}
       .ias-pv-text.empty{color:#8c8f94;font-style:italic}
       .ias-pv-comment{margin:0 12px;padding:8px 0 10px;border-top:1px solid #f0f0f1;color:#50575e;font-size:12px;overflow-wrap:anywhere}
+      .ias-pv-stats{margin:0 12px;padding:8px 0 10px;border-top:1px solid #f0f0f1;color:#1d2327;font-size:12px;font-weight:600}
       .ias-pv-hint{padding:6px 12px;background:#f6f7f7;color:#8c8f94;font-size:11px}
       body.ias-dragging .ias-day[data-drop="1"]{outline:1px dashed #8c8f94;outline-offset:-3px}
       .ias-day.ias-drop-ok,.ias-day.ias-drop-target{outline:2px solid #2271b1 !important;outline-offset:-2px;background:#f0f6fc}

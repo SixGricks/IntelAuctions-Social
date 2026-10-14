@@ -59,6 +59,7 @@ if (!function_exists('ias_settings_defaults')) {
       'oneup_account_name' => '',   // how OneUp's lists name that page (filled in by Check connection / Verify OneUp)
       'oneup_calendar_url' => 'https://www.oneupapp.io/',
       'link_in_comment'    => true, // false = OneUp cannot post first comments; the link ends the post instead
+      'stats_on'           => true, // read how each post did on Facebook once a day (OneUp analytics: its Intermediate plan or above); a read, never a write
       // The words before the listing link in the first comment (DJ, Oct 13, 2026: never "How it sold" — "View full listing").
       'comment_leads'      => [
         'listing'    => 'Photos, terms and the full listing:',
