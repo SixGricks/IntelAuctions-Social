@@ -1,5 +1,22 @@
 # Intel Auctions Social changelog
 
+## 0.21.0 (2026-10-14) — One colour per status
+DJ: "I want to see the 'Key' cleaned up. Pushed and Published should not
+match. Dropped, skipped, and Human should not match. red for dropped. Yellow
+for needs a decision." — and "yes" to the proposed colours.
+- Each status has its own colour (`ias_statuses()`: line, fill, text): Planned
+  blue, Waiting for approval purple, Approved teal, Pushed light green,
+  Published solid Intel navy, Needs a decision yellow, Failed orange, Dropped
+  red, Skipped grey, Cancelled charcoal, Human a pink outline, Not sent pale
+  grey and dashed. Dropped, Skipped, Cancelled and Not sent are struck
+  through on the calendar.
+- The calendar's posts (`ias_status_chip_css()`) and every status badge — the
+  key, the post's page, the listing panel — use the same colours; a badge
+  carries them inline (`ias_status_badge_style()`), so it looks the same on
+  any screen. Every status's words are at least 4.5:1 on its fill.
+- The guide's status table says each status's colour.
+- Tests: `tests/unit/statuses.php`.
+
 ## 0.20.0 (2026-10-14) — Moves are instant; the plan waits until you are done
 DJ: "When moving calendar items they move VERY slowly. I think the AI does a
 full planning agent again. Can it just move them and wait to run the agent

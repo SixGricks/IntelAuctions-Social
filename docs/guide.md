@@ -1,6 +1,6 @@
 # Intel Auctions Social — Guide
 
-> **Documented version: 0.20.0.** The canonical user documentation, rendered inside
+> **Documented version: 0.21.0.** The canonical user documentation, rendered inside
 > WordPress at **Auctions → Social Calendar → Guide**. If you change a post type,
 > rule, screen, setting, email or anything the plugin stores, update this file in
 > the same commit (see `CLAUDE.md`). What the plugin is built to do is DJ's spec,
@@ -30,6 +30,7 @@ The plugin is built in phases. Each ships with publishing off and is checked bef
 | Nobody needs OneUp | Every change made here reaches OneUp at once; while anyone has the calendar open, OneUp is asked every minute what changed; Move, Try again and Edit it here again, so nothing is ever done in OneUp | 0.10.0 |
 | Google, accounts from a list, the calendar | Google Business Profile posts through OneUp, with their own switch and Verify (sent once DJ turns them on); OneUp's accounts looked up and chosen from lists instead of typed; the calendar as whole weeks, and a list on a phone | 0.9.0 |
 | Variety | Results posts with openings of their own, more calls to action, and shapes that rotate — paragraphs, bullets, short, emoji-led; bidding said in positive words | 0.11.0 |
+| One colour per status | The calendar key and the posts on it: each status its own colour — dropped red, needs a decision yellow, published solid navy | 0.21.0 |
 | Moves are instant; the plan waits | A move changes only the post moved and answers at once; OneUp has it a moment later; the plan tidies around a batch of moves 15 minutes after the last one, or on Plan now | 0.20.0 |
 | Try again reuses OneUp's copy | Try again reschedules the copy OneUp could not publish instead of sending a second one | 0.19.0 |
 | Correction comments | A correction posted on the Facebook post as a comment by the plugin — at a click, or by itself with Post corrections automatically on | 0.18.0 |
@@ -58,21 +59,22 @@ Everything is under **Auctions → Social Calendar**, one menu item with five ta
 
 ### Calendar
 
-The next 30 days at a glance, in whole weeks, Monday to Sunday: the days of this week already gone are greyed and show what went out, and the days of the last week past the 30 are faint. Each post is a chip with its type, its time and the property, coloured by status (the key above the grid lists the statuses on the calendar now). A post with no time yet sits on its best day, its time reading *no time yet*, with a dashed edge:
+The next 30 days at a glance, in whole weeks, Monday to Sunday: the days of this week already gone are greyed and show what went out, and the days of the last week past the 30 are faint. Each post is a chip with its type, its time and the property, in its status's colour (the key above the grid lists the statuses on the calendar now; every status badge on the plugin's screens uses the same colours — DJ, Oct 14, 2026). Posts that will not go out are struck through. A post with no time yet sits on its best day, its time reading *no time yet*, with a dashed edge:
 
-| Status | Means |
-|---|---|
-| Planned | In the plan, not yet sent anywhere |
-| Needs a decision | Stopped for a person: a fair-housing phrase, a missing fact or a `[VERIFY]` marker in the draft, or the listing changed after a person edited the post |
-| Waiting for approval | A roundup or Results post emailed for a yes (Lane A) |
-| Approved | Someone said yes; it goes to OneUp on the next run |
-| Pushed | On the OneUp calendar (posting on); its view shows the OneUp post id |
-| Published | Live on the Facebook page |
-| Not sent | A post whose time came in the old dry run (before 0.12.0): nothing went out. **Publish now** can still send it |
-| Dropped | A post that could be dropped had no room in its window (the reason is logged) |
-| Skipped / Cancelled | A person skipped it (here — or by deleting it in OneUp, if anyone ever does), or the listing was unpublished or deleted |
-| Failed | OneUp refused it three times in a row, or could not publish it — it waits for a person: **Try again** on its page, or skip it |
-| Human | A post a person scheduled for the page in OneUp; the plan works around it and never touches it |
+| Status | Colour | Means |
+|---|---|---|
+| Planned | Blue | In the plan, not yet sent anywhere |
+| Waiting for approval | Purple | A roundup or Results post emailed for a yes (Lane A) |
+| Approved | Teal | Someone said yes; it goes to OneUp on the next run |
+| Pushed | Light green | On the OneUp calendar (posting on); its view shows the OneUp post id |
+| Published | Intel navy, solid | Live on the Facebook page |
+| Needs a decision | Yellow | Stopped for a person: a fair-housing phrase, a missing fact or a `[VERIFY]` marker in the draft, or the listing changed after a person edited the post |
+| Failed | Orange | OneUp refused it three times in a row, or could not publish it — it waits for a person: **Try again** on its page, or skip it |
+| Dropped | Red, struck through | A post that could be dropped had no room in its window (the reason is logged) |
+| Skipped | Grey, struck through | A person turned it off (here — or by deleting it in OneUp, if anyone ever does) |
+| Cancelled | Charcoal, struck through | The listing was unpublished or deleted, or Cancel posts was pressed |
+| Human | Pink outline | A post a person scheduled for the page in OneUp; the plan works around it and never touches it |
+| Not sent | Pale grey, dashed, struck through | A post whose time came in the old dry run (before 0.12.0): nothing went out. **Publish now** can still send it |
 
 Sundays never carry a post, so their column is narrow. The hatched days are inside the 48-hour veto window, where nothing new is scheduled. Each day shows how many of its three places are taken (hover it: "2 of the 3 posts a day"). Today has a blue edge. On a phone the calendar is a list instead: **Today**, then each day that carries a post, with each run of empty days as one grey line ("Tue Oct 27 – Fri Oct 30 · nothing planned").
 
