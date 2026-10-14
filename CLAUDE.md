@@ -103,9 +103,16 @@ it, and the spec stays verbatim, so they are recorded here:
   evening time slot"). A drop, and the post's Move, choose a posting window
   (`ias_windows()`), never a free-typed minute by default: the post takes its
   own shifted minute there (`ias_slot_minute()`), pinned like a Move, clear of
-  the posts that stay put (`ias_move_fixed()`); the plan then runs at once and
-  OneUp follows for every post it moved. The exact time stays on the post's
-  Move for a person who wants it. Phones use the post's Move (no drag).
+  the posts that stay put (`ias_move_fixed()`). The exact time stays on the
+  post's Move for a person who wants it. Phones use the post's Move (no drag).
+  **A move moves only that post** (Oct 14, 2026: "just move them and wait to
+  run the agent until later … a bunch of changes without AI changing things
+  at the same time"): no plan run — `ias_plan_hold()` makes the plan wait
+  until nothing has moved for `IAS_PLAN_QUIET` (15) minutes (the hourly run)
+  or Plan now — and the page answers before OneUp is called: the post goes
+  after the response (`ias_push_later()`, drained by the pulse and the hourly
+  run too). Never put a plan run or a OneUp call back in front of a move's
+  answer.
 - **A switch on every post, and a preview on hover** (Oct 14, 2026: "I also
   want to be able to turn on skipped items and turn off others" and "Hover
   over an item on the calendar should give a preview of the post"). The

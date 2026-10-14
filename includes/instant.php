@@ -154,17 +154,22 @@ if (!function_exists('ias_move_to_window')) {
     ias_post_trail($id, $words, $actor);
     ias_log('moved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $words], $actor);
 
-    // The plan makes room at once: posts in the way move, and their copies on OneUp follow.
-    $changed = ias_plan_run_follow($id, $actor);
-    $moved = $changed['moved'];
-    $dropped = $changed['dropped'];
+    // Only this post moves (0.20.0): the plan waits until the person is done, and OneUp has it once the page has answered.
+    ias_plan_hold($actor);
+    if (function_exists('ias_push_later')) ias_push_later($id);
     $n = ias_move_day_count($day, $id);
     $cap = (int) ias_setting('daily_cap', 3);
-    $msg = 'Moved to <strong>' . esc_html(date_i18n('D M j', strtotime($day))) . ', ' . esc_html($label) . '</strong> (' . esc_html(date_i18n('g:i a', strtotime($when))) . '). It stays there; the plan works around it.'
-      . ($moved ? ' To make room the plan moved ' . esc_html(implode(', ', array_map(function ($o) use ($fmt) { return ias_post_type((string) $o['type'])['short'] . ' · ' . ias_post_subject($o) . (!empty($o['scheduled_at']) ? ' to ' . $fmt((string) $o['scheduled_at']) : ' off the plan for now'); }, $moved))) . '.' : '')
-      . ($dropped ? ' <strong>The plan dropped ' . esc_html(implode(', ', array_map(function ($o) { return ias_post_type((string) $o['type'])['short'] . ' · ' . ias_post_subject($o); }, $dropped))) . '</strong> — ' . esc_html(rtrim((string) $dropped[0]['note'], '.')) . '. Restore it on its page, or move this one again.' : '')
-      . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . ').' : '');
-    return ['ok' => true, 'message' => $msg, 'when' => $when, 'level' => $n >= $cap || $dropped ? 'warning' : 'success'];
+    $msg = 'Moved to <strong>' . esc_html(date_i18n('D M j', strtotime($day))) . ', ' . esc_html($label) . '</strong> (' . esc_html(date_i18n('g:i a', strtotime($when))) . '). It stays there' . ias_move_after_words()
+      . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . '): the plan moves one of the others when it tidies up.' : '');
+    return ['ok' => true, 'message' => $msg, 'when' => $when, 'level' => $n >= $cap ? 'warning' : 'success'];
+  }
+}
+
+/** What happens after a move, for its notice: OneUp follows, and the plan waits. */
+if (!function_exists('ias_move_after_words')) {
+  function ias_move_after_words(): string {
+    $live = ias_push_mode() === 'live' ? '; OneUp has it in a moment' : '';
+    return $live . '. Nothing else moves while you work: the plan tidies around your changes ' . IAS_PLAN_QUIET . ' minutes after your last move (on the next hourly run), or press <strong>Plan now</strong> when you are done.';
   }
 }
 
@@ -268,10 +273,12 @@ add_action('ias_calendar_action', function (string $action): void {
       $words = 'Moved' . ($was !== '' ? ' from ' . $fmt($was) : '') . ' to ' . $fmt($when) . ' by ' . ias_actor_name($actor);
       ias_post_trail($id, $words, $actor);
       ias_log('moved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $words], $actor);
+      ias_plan_hold($actor);
+      ias_push_later($id);
       $n = ias_move_day_count(substr($when, 0, 10), $id);
       $cap = (int) ias_setting('daily_cap', 3);
-      $flash('Moved to <strong>' . esc_html($fmt($when)) . '</strong>. It stays there; the morning plan works around it.'
-        . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . ').' : ''), $n >= $cap ? 'warning' : 'success');
+      $flash('Moved to <strong>' . esc_html($fmt($when)) . '</strong>. It stays there' . ias_move_after_words()
+        . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . '): the plan moves one of the others when it tidies up.' : ''), $n >= $cap ? 'warning' : 'success');
       return;
 
     case 'unpin':
@@ -596,6 +603,7 @@ if (!function_exists('ias_oneup_pulse')) {
     if ($fb && $g) return ['state' => 'off', 'why' => $fb[0]] + $last;
     $wait = $force ? 10 : 55;
     if (time() - (int) $last['ts'] < $wait) return $last + ['cached' => true];
+    if (function_exists('ias_push_queue_run')) ias_push_queue_run(0); // a move that has not reached OneUp yet goes first
     if (!ias_push_lock()) return ['state' => 'busy'] + $last;
     try {
       unset($GLOBALS['ias_readback_lists']);

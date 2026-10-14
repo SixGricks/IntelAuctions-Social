@@ -28,6 +28,7 @@ $act = function (string $action, array $post) {
   do_action('ias_calendar_action', $action);
   $id = (int) ($post['ias_post'] ?? 0);
   if ($id && in_array($action, ias_push_now_actions(), true)) ias_push_now_flash($id); // what the calendar's handler does next
+  ias_push_queue_run(0); // and the end of the request
   $_POST = [];
   delete_transient('ia_flash_' . get_current_user_id());
 };
@@ -60,12 +61,15 @@ t_ok(in_array($cp['status'], ias_live_statuses(), true), 'Restore re-plans: room
 t_ok(ias_post_sent($cp)['mode'] === 'live', '…and goes to OneUp in the same click, not on the next hourly run');
 t_ok(ias_post_sent(ias_post_get($aid))['mode'] === 'live', '…as does the restored post');
 
-// ---- A drag ----
+// ---- A drag (0.20.0: it does not re-plan; the plan runs when the person is done) ----
 $drop($cid);
 $day = substr((string) ias_post_get($bid)['scheduled_at'], 0, 10) === '2026-11-10' ? '2026-11-11' : '2026-11-10';
 $act('move_slot', ['ias_post' => $bid, 'ias_day' => $day, 'ias_slot' => '0', 'ias_from' => 'calendar', 'ias_back' => ias_admin_url(IAS_PAGE_CALENDAR)]);
+t_eq('dropped', ias_post_get($cid)['status'], 'a drag moves only its post: the dropped one stays dropped while the person works');
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + (IAS_PLAN_QUIET + 1) * 60));
+ias_job_run();
 $cp = ias_post_get($cid);
-t_ok(in_array($cp['status'], ias_live_statuses(), true) && ias_post_sent($cp)['mode'] === 'live', 'a drag that re-plans brings the dropped post back, and OneUp has it at once');
+t_ok(in_array($cp['status'], ias_live_statuses(), true) && ias_post_sent($cp)['mode'] === 'live', '…and comes back, on OneUp, when the plan tidies up');
 
 // ---- Let the plan choose ----
 $drop($cid);

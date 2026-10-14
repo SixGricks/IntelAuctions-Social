@@ -42,6 +42,12 @@ add_action('ias_calendar_before_grid', function (): void {
     echo '<p class="description">Not planned yet — the first plan runs on the next hourly run after ' . (int) ias_setting('plan_hour', 5) . ':00, or press Plan now.</p>';
     return;
   }
+  $hold = function_exists('ias_plan_hold_get') ? ias_plan_hold_get() : [];
+  if ($hold) {
+    $from = date_i18n('g:i a', strtotime((string) $hold['last']) + IAS_PLAN_QUIET * 60);
+    $one = (int) $hold['n'] === 1;
+    echo '<div class="notice notice-info inline"><p><strong>The plan is waiting while you work.</strong> ' . (int) $hold['n'] . ' post' . ($one ? '' : 's') . ' moved since ' . esc_html(date_i18n('g:i a', strtotime((string) $hold['first']))) . ' — ' . ($one ? 'it stays where you put it' : 'they stay where you put them') . ', and nothing else moves until the plan tidies around ' . ($one ? 'it' : 'them') . ': on the next hourly run from ' . esc_html($from) . ', or now with <strong>Plan now</strong>. Until then a day can show more posts than it will keep.</p></div>';
+  }
   $bits = [(int) $last['placed'] . ' placed'];
   foreach (['moved', 'dropped', 'late'] as $k) if (!empty($last[$k])) $bits[] = (int) $last[$k] . ' ' . $k;
   echo '<p class="description">Last planned ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $last['at']))) . ($last['by'] !== 'system' ? ' by ' . esc_html((string) $last['by']) : '') . ': ' . esc_html(implode(', ', $bits)) . '. Times shown are when each post would go out.</p>';

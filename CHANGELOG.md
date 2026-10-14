@@ -1,5 +1,32 @@
 # Intel Auctions Social changelog
 
+## 0.20.0 (2026-10-14) — Moves are instant; the plan waits until you are done
+DJ: "When moving calendar items they move VERY slowly. I think the AI does a
+full planning agent again. Can it just move them and wait to run the agent
+until later. This will allow a human to make a bunch of changes without AI
+changing things at the same time."
+No AI ran on a move; the time went on the plan (0.02 s) and on OneUp: a drag
+with 36 posts on OneUp made 11 calls before the page answered — 4.5 s at
+400 ms a call, more on a slow day and with Google on.
+- **A move (Move, a drag) changes only the post moved.** No plan run: the
+  plan waits (`ias_plan_hold`, `ias_plan_hold()`), and the calendar says
+  **The plan is waiting while you work** with how many posts moved. The
+  hourly run tidies around the moves once nothing has moved for 15 minutes
+  (`IAS_PLAN_QUIET`, `ias_plan_hold_ready()`), or **Plan now** does at once;
+  any plan run ends the wait. A move that fills a day says the plan moves
+  one of the others when it tidies up.
+- **The page answers before OneUp is called** (0 calls, 0.02 s): the moved
+  post is queued (`ias_push_later()`, `ias_push_queue`) and sent at the end of
+  the request once the browser has its page (`fastcgi_finish_request()` /
+  `litespeed_finish_request()` where the host has them), waiting up to 30 s
+  for another run; what is still queued goes with the open calendar's next
+  check (`ias_oneup_pulse()`) or the hourly run (`ias_push_queue_run()`).
+  Move and move_slot left `ias_push_now_actions()`.
+- Restore, Let the plan choose, Try again and Plan now still plan at once.
+- Tests: `tests/wp/07m-quick-moves.php` (24 checks); `07f-drag`, `07d-instant`
+  and `07l-replan-follow` follow the new behaviour (the tidy-up is checked
+  when the plan runs).
+
 ## 0.19.1 (2026-10-14) — Everything a re-plan changes follows at once
 From the Codex review of SixGricks/IntelAuctions-Social#8 (two findings, one
 cause): a click that re-plans sent OneUp only the post clicked, or the
