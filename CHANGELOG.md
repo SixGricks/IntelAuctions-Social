@@ -1,5 +1,137 @@
 # Intel Auctions Social changelog
 
+## 0.21.0 (2026-10-14) — One colour per status
+DJ: "I want to see the 'Key' cleaned up. Pushed and Published should not
+match. Dropped, skipped, and Human should not match. red for dropped. Yellow
+for needs a decision." — and "yes" to the proposed colours.
+- Each status has its own colour (`ias_statuses()`: line, fill, text): Planned
+  blue, Waiting for approval purple, Approved teal, Pushed light green,
+  Published solid Intel navy, Needs a decision yellow, Failed orange, Dropped
+  red, Skipped grey, Cancelled charcoal, Human a pink outline, Not sent pale
+  grey and dashed. Dropped, Skipped, Cancelled and Not sent are struck
+  through on the calendar.
+- The calendar's posts (`ias_status_chip_css()`) and every status badge — the
+  key, the post's page, the listing panel — use the same colours; a badge
+  carries them inline (`ias_status_badge_style()`), so it looks the same on
+  any screen. Every status's words are at least 4.5:1 on its fill.
+- The guide's status table says each status's colour.
+- Tests: `tests/unit/statuses.php`.
+
+## 0.20.0 (2026-10-14) — Moves are instant; the plan waits until you are done
+DJ: "When moving calendar items they move VERY slowly. I think the AI does a
+full planning agent again. Can it just move them and wait to run the agent
+until later. This will allow a human to make a bunch of changes without AI
+changing things at the same time."
+No AI ran on a move; the time went on the plan (0.02 s) and on OneUp: a drag
+with 36 posts on OneUp made 11 calls before the page answered — 4.5 s at
+400 ms a call, more on a slow day and with Google on.
+- **A move (Move, a drag) changes only the post moved.** No plan run: the
+  plan waits (`ias_plan_hold`, `ias_plan_hold()`), and the calendar says
+  **The plan is waiting while you work** with how many posts moved. The
+  hourly run tidies around the moves once nothing has moved for 15 minutes
+  (`IAS_PLAN_QUIET`, `ias_plan_hold_ready()`), or **Plan now** does at once;
+  any plan run ends the wait. A move that fills a day says the plan moves
+  one of the others when it tidies up.
+- **The page answers before OneUp is called** (0 calls, 0.02 s): the moved
+  post is queued (`ias_push_later()`, `ias_push_queue`) and sent at the end of
+  the request once the browser has its page (`fastcgi_finish_request()` /
+  `litespeed_finish_request()` where the host has them), waiting up to 30 s
+  for another run; what is still queued goes with the open calendar's next
+  check (`ias_oneup_pulse()`) or the hourly run (`ias_push_queue_run()`).
+  Move and move_slot left `ias_push_now_actions()`.
+- Restore, Let the plan choose, Try again and Plan now still plan at once.
+- Tests: `tests/wp/07m-quick-moves.php` (24 checks); `07f-drag`, `07d-instant`
+  and `07l-replan-follow` follow the new behaviour (the tidy-up is checked
+  when the plan runs).
+
+## 0.19.1 (2026-10-14) — Everything a re-plan changes follows at once
+From the Codex review of SixGricks/IntelAuctions-Social#8 (two findings, one
+cause): a click that re-plans sent OneUp only the post clicked, or the
+posts the plan moved — not a post it dropped back onto the plan when room
+opened, and, for Restore, nothing else at all — so those waited for the
+hourly run.
+- `ias_plan_run_follow()`: runs the plan and sends OneUp, in the same
+  request, every other post it moved, dropped or brought back (a snapshot of
+  the live and dropped posts before and after). Restore, Move, a drag, Let
+  the plan choose and Try again use it; Plan now and an approval already
+  push everything after planning.
+- Tests: `tests/wp/07l-replan-follow.php` (11 checks; Restore, the drag and
+  Let the plan choose fail without it).
+
+## 0.19.0 (2026-10-14) — Try again reuses OneUp's failed post
+DJ: "Yes" — Try again reuses the copy OneUp could not publish rather than
+sending a second one.
+- **Try again** keeps the failed copy's OneUp id (`flags.reuse_failed`), and
+  the push that follows asks OneUp to reschedule it for the post's time
+  (POST `reschedulefailedpost`: post_id, scheduled_date_time — OneUp's
+  docs). The post keeps its OneUp id; the copy leaves OneUp's failed list.
+- Only an unchanged post: what was sent keeps a fingerprint without its time
+  (`flags.oneup.body`, `ias_request_body_hash()`), and the reschedule is
+  asked only when the post's still matches. Changed since, refused by OneUp
+  (not on its failed list any more), or sent before 0.19.0 (no fingerprint):
+  a fresh copy goes in the same click, as before.
+- Never twice: the reschedule is an attempt like any send — a lost answer is
+  looked for on the scheduled list by its words and time and kept, and
+  nothing else is sent meanwhile. A failed row OneUp has not cleared yet
+  beside the rescheduled copy never fails the post again (the scheduled list
+  wins in the read-back).
+- The Failed card says what Try again does.
+- Tests: `tests/wp/07k-retry.php` (20 checks; 13 fail on 0.18.0), unit checks
+  in `tests/unit/oneup.php`; the fake OneUp's `reschedulefailedpost`.
+
+## 0.18.0 (2026-10-14) — Correction comments posted by the plugin
+DJ: "Yes" — the correction comment for a post whose facts changed after it
+went out is posted by the plugin (OneUp's Intermediate plan has comments).
+- **Post it as a comment** (`ias_correction_post()`): POST
+  `feed.oneupapp.io/api/reply-to-post` with a JSON body — platform facebook,
+  Facebook's id for the post (`ias_correction_fb_id()`: the analytics' id, or
+  the published list's "FB_…"), the words, the page's id. On the calendar's
+  corrections card (beside **I posted it**, was Comment posted, and **Not
+  needed**) and on the post's page, which then says who posted it.
+- **Post corrections automatically** (`corrections_auto`, off at install):
+  the hourly run posts each new correction itself, up to five a run.
+- Needs the master switch on, nothing paused, the key and Facebook's id;
+  never on a Sunday, never with `[VERIFY]` (`ias_correction_blockers()`).
+- **Never twice**: the try is noted before it is sent; a lost answer is
+  looked for among the page's comments (GET `fetch-top-comments`,
+  `ias_correction_find()`) and marked posted when found; otherwise only a
+  person sends it again (**Post it again**). Three refusals stop the
+  automatic tries for it; a plan without comments (403) is said and not tried
+  again for a week (`ias_comments_no_plan`).
+- The Monday email points to **Post it as a comment**.
+- Tests: `tests/wp/07j-corrections.php` (32 checks), `tests/unit/corrections.php`;
+  the fake OneUp's comments (`reply-to-post`, `fetch-top-comments`).
+
+## 0.17.0 (2026-10-14) — How each post did on Facebook
+DJ is on OneUp's Intermediate plan, which has the analytics. The spec: "Every
+post records when it went out and how it did."
+- **Once a day** (the hourly run, 20 hours apart; `ias_stats_due()`), one GET
+  to OneUp's analytics (`analyze.oneupapp.io/api/facebook/posts`, the page's
+  plain id, the last 31 days to yesterday, the site's time zone):
+  reactions, comments, shares, clicks and views for each of the page's posts
+  (`ias_stats_run()`). Each is matched to ours by Facebook's id (once known,
+  or the published list's network id — `ias_fb_ids_match()`) or by its words
+  at its time (`ias_published_pick()`), and kept on the post: `flags.stats`
+  with the engagement rate (`ias_stats_rate()`: the four over the views),
+  when read and the address on Facebook, and Facebook's id as
+  `flags.oneup.fb_id` ("<page>_<post>", `ias_fb_post_id()`) — what 0.18.0's
+  correction comments need. Unchanged numbers are not rewritten.
+- **Shown** on the post's page (How it did on Facebook, See it on Facebook),
+  in its hover preview, and in the monthly summary (Reactions, Comments,
+  Shares, Clicks, Views and Engagement by post type and division — so in the
+  Monday email's summary too).
+- **A read only**: the master switch, the key and the page, like every read;
+  **How posts did** in Settings (`stats_on`, on) turns it off; nothing asked
+  when nothing of ours went out in the last month. A plan without analytics
+  (403) is said in Settings and asked again a week later; numbers already
+  read stay. Settings shows the last read with **Read now**
+  (`ias_stats_last`).
+- The OneUp client takes full addresses (OneUp's analytics and comments
+  hosts) and JSON bodies; only the scheduling calls send the account as a
+  list.
+- Tests: `tests/wp/07i-stats.php` (33 checks), `tests/unit/stats.php`, and
+  the fake OneUp's analytics (`ias_t_fb_stat()`).
+
 ## 0.16.0 (2026-10-14) — OneUp as its documentation says
 DJ shared OneUp's API documentation (docs.oneupapp.io), unreachable when the
 OneUp side was built. Every call the plugin makes was checked against it.

@@ -111,16 +111,12 @@ if (!function_exists('ias_admin_styles')) {
       .ias-day-date .n{font-weight:400;color:#8c8f94;cursor:help}
       .ias-today{display:none}
       .ias-chip{display:block;border-left:3px solid #2271b1;background:#f0f6fc;border-radius:3px;padding:3px 5px;margin:0 0 4px;text-decoration:none;color:#1d2327;line-height:1.3}
-      .ias-chip:hover{background:#e5effa}
+      .ias-chip:hover{filter:brightness(.96)}
       .ias-chip .t{font-weight:600}
       .ias-chip .tm{white-space:nowrap}
       .ias-chip.untimed{border-left-style:dashed}.ias-chip.untimed .tm{color:#8c8f94;font-style:italic}
-      .ias-chip .s{display:block;color:#50575e;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .ias-chip.st-waiting{border-color:#dba617;background:#fcf9e8}
-      .ias-chip.st-held,.ias-chip.st-failed{border-color:#d63638;background:#fcf0f1}
-      .ias-chip.st-approved,.ias-chip.st-pushed,.ias-chip.st-published{border-color:#00a32a;background:#edfaef}
-      .ias-chip.st-dropped,.ias-chip.st-skipped,.ias-chip.st-cancelled,.ias-chip.st-notsent{border-color:#8c8f94;background:#f6f7f7;color:#8c8f94;text-decoration:line-through}
-      .ias-chip.st-human{border-color:#8c8f94;background:#fff}
+      .ias-chip .s{display:block;color:inherit;opacity:.85;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      ' . ias_status_chip_css() . '
       .ias-chip.drag{cursor:grab}.ias-chip.is-dragging{opacity:.45}
       .ias-chip-row{position:relative}.ias-chip.has-onoff{padding-right:34px}
       .ias-onoff-form{position:absolute;top:5px;right:5px;margin:0;line-height:0}
@@ -135,6 +131,7 @@ if (!function_exists('ias_admin_styles')) {
       .ias-pv-text{padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:12;overflow:hidden}
       .ias-pv-text.empty{color:#8c8f94;font-style:italic}
       .ias-pv-comment{margin:0 12px;padding:8px 0 10px;border-top:1px solid #f0f0f1;color:#50575e;font-size:12px;overflow-wrap:anywhere}
+      .ias-pv-stats{margin:0 12px;padding:8px 0 10px;border-top:1px solid #f0f0f1;color:#1d2327;font-size:12px;font-weight:600}
       .ias-pv-hint{padding:6px 12px;background:#f6f7f7;color:#8c8f94;font-size:11px}
       body.ias-dragging .ias-day[data-drop="1"]{outline:1px dashed #8c8f94;outline-offset:-3px}
       .ias-day.ias-drop-ok,.ias-day.ias-drop-target{outline:2px solid #2271b1 !important;outline-offset:-2px;background:#f0f6fc}

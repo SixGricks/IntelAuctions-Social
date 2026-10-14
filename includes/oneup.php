@@ -44,7 +44,12 @@ if (!defined('ABSPATH')) exit;
 if (!defined('IAS_ONEUP_BASE')) define('IAS_ONEUP_BASE', 'https://www.oneupapp.io/api/');
 if (!defined('IAS_ONEUP_PAGE')) define('IAS_ONEUP_PAGE', 50); // rows a list page holds at most (OneUp's docs)
 
-/** Endpoint name => [HTTP method, path]. */
+/**
+ * Endpoint name => [HTTP method, path or full address, 'json' when the body
+ * goes as JSON]. A path is under IAS_ONEUP_BASE; OneUp's analytics
+ * (analyze.oneupapp.io) and comments (feed.oneupapp.io) live on hosts of
+ * their own and need its Intermediate plan or above.
+ */
 if (!function_exists('ias_oneup_endpoints')) {
   function ias_oneup_endpoints(): array {
     return (array) apply_filters('ias_oneup_endpoints', [
@@ -58,7 +63,9 @@ if (!function_exists('ias_oneup_endpoints')) {
       'drafts'         => ['GET', 'getdraftposts'],
       'failed'         => ['GET', 'getfailedposts'],
       'delete'         => ['POST', 'deletescheduledpost'], // OneUp's docs: post_id, unpublished posts only (Verify OneUp checks it on its test draft)
+      'reschedule_failed' => ['POST', 'reschedulefailedpost'], // OneUp's docs: post_id + scheduled_date_time, failed posts only (Try again, 0.19.0)
       'edit'           => ['POST', 'editpost'],    // not used: it changes only the words, so a changed post is deleted and scheduled again
+      'fb_stats'       => ['GET', 'https://analyze.oneupapp.io/api/facebook/posts'], // each Facebook post's reactions, comments, shares, clicks, views (stats.php)
     ]);
   }
 }
@@ -95,6 +102,18 @@ if (!function_exists('ias_render_facebook')) {
     }
     $ep = ias_oneup_endpoints()[$endpoint];
     return ['action' => 'create', 'channel' => 'facebook', 'endpoint' => $endpoint, 'method' => $ep[0], 'url' => IAS_ONEUP_BASE . $ep[1], 'params' => $params, 'alt' => $alt];
+  }
+}
+
+/**
+ * The request's fingerprint without its time: what the post says and shows.
+ * Try again reschedules OneUp's failed copy only when this is unchanged
+ * (0.19.0) — the time is the one thing a reschedule changes. Pure.
+ */
+if (!function_exists('ias_request_body_hash')) {
+  function ias_request_body_hash(array $req): string {
+    unset($req['params']['scheduled_date_time']);
+    return md5((string) wp_json_encode($req));
   }
 }
 
@@ -230,12 +249,18 @@ if (!function_exists('ias_oneup_call')) {
     if (!isset($eps[$endpoint])) return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'Unknown OneUp call: ' . $endpoint, 'id' => ''];
     $key = ias_oneup_key();
     if ($key === '') return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'No OneUp key: add it under Settings → OneUp (or INTEL_ONEUP_API_KEY in wp-config.php).', 'id' => ''];
-    [$method, $path] = $eps[$endpoint];
-    $send = function (string $method, array $params) use ($path, $key) {
-      $url = IAS_ONEUP_BASE . $path;
+    $method = (string) $eps[$endpoint][0];
+    $path = (string) $eps[$endpoint][1];
+    $as_json = ($eps[$endpoint][2] ?? '') === 'json';
+    $send = function (string $method, array $params) use ($path, $key, $as_json) {
+      $url = preg_match('#^https://#', $path) ? $path : IAS_ONEUP_BASE . $path;
       $args = ['timeout' => 30, 'method' => $method];
       if ($method === 'GET') {
         $url = add_query_arg(array_map('rawurlencode', array_merge(['apiKey' => $key], array_map('strval', $params))), $url);
+      } elseif ($as_json) { // the comment calls take a JSON body, the key in the query (OneUp's docs)
+        $url = add_query_arg(['apiKey' => rawurlencode($key)], $url);
+        $args['headers'] = ['Content-Type' => 'application/json'];
+        $args['body'] = (string) wp_json_encode(array_map('strval', $params));
       } else {
         // The docs name apiKey a query parameter, and their POST examples send it in the form: both.
         $url = add_query_arg(['apiKey' => rawurlencode($key)], $url);
@@ -264,7 +289,8 @@ if (!function_exists('ias_oneup_call')) {
       if ($err !== '') return $fail($code, $data, 'OneUp said: ' . $err);
       return ['ok' => true, 'code' => $code, 'data' => $data, 'error' => '', 'id' => ias_oneup_find_id($data)];
     };
-    if (!isset($params['social_network_id'])) return $once($params);
+    // Only the scheduling calls take the account as a list; the analytics ask for one account by its plain id.
+    if (!isset($params['social_network_id']) || strpos((string) $eps[$endpoint][1], 'schedule') !== 0) return $once($params);
 
     // OneUp takes the account as a list, even of one ("Social Network ID must be an array"). It is written
     // the way its documentation shows — a JSON list — and, should OneUp refuse that with the same words,

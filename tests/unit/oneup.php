@@ -83,3 +83,11 @@ t_eq(null, ias_published_pick("12 Alpha Road sells Nov 28.\n\nCall Jacob.", '', 
 t_eq('The image size exceeds the platform limit.', ias_oneup_fail_reason(['post_id' => '987654', 'fail_reason' => 'The image size exceeds the platform limit.', 'message' => 'x']), 'a failed row\'s fail_reason (the documented field)');
 t_eq('Token expired', ias_oneup_fail_reason(['failure_reason' => 'Token expired']), '…or another name for it');
 t_eq('', ias_oneup_fail_reason(['post_id' => '1']), '…or none');
+
+// ---- 0.19.0: the fingerprint without the time (Try again reschedules only an unchanged post) ----
+$req = ['action' => 'create', 'endpoint' => 'schedule_image', 'params' => ['content' => 'Hello', 'scheduled_date_time' => '2026-11-04 19:24', 'image_url' => 'a.jpg']];
+$moved = $req; $moved['params']['scheduled_date_time'] = '2026-11-09 06:12';
+$edited = $req; $edited['params']['content'] = 'Hello again';
+t_eq(ias_request_body_hash($req), ias_request_body_hash($moved), 'a new time leaves the fingerprint as it was');
+t_ok(ias_request_body_hash($req) !== ias_request_body_hash($edited), 'new words change it');
+t_eq(['POST', 'reschedulefailedpost'], ias_oneup_endpoints()['reschedule_failed'], 'Try again\'s call is OneUp\'s documented reschedulefailedpost, a POST');

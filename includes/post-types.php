@@ -67,19 +67,22 @@ if (!function_exists('ias_post_type')) {
  */
 if (!function_exists('ias_statuses')) {
   function ias_statuses(): array {
+    // One colour per status (0.21.0, DJ, Oct 14, 2026: "Pushed and Published should not match. Dropped, skipped,
+    // and Human should not match … red for dropped. Yellow for needs a decision"): [line, fill, text], used by the
+    // calendar's posts and every status badge alike. `off` = it will not go out (struck through on the calendar).
     return [
-      'planned'   => ['label' => 'Planned',              'badge' => 'info'],
-      'held'      => ['label' => 'Needs a decision',     'badge' => 'bad'],
-      'waiting'   => ['label' => 'Waiting for approval', 'badge' => 'warn'],
-      'approved'  => ['label' => 'Approved',             'badge' => 'ok'],
-      'pushed'    => ['label' => 'Pushed',               'badge' => 'ok'],
-      'published' => ['label' => 'Published',            'badge' => 'ok'],
-      'dropped'   => ['label' => 'Dropped',              'badge' => 'muted'],
-      'skipped'   => ['label' => 'Skipped',              'badge' => 'muted'],
-      'cancelled' => ['label' => 'Cancelled',            'badge' => 'muted'],
-      'failed'    => ['label' => 'Failed',               'badge' => 'bad'],
-      'human'     => ['label' => 'Human',                'badge' => 'muted'],
-      'notsent'   => ['label' => 'Not sent',             'badge' => 'muted'], // shown only (ias_post_shown_status()): its time came in the dry run, before 0.12.0
+      'planned'   => ['label' => 'Planned',              'badge' => 'info',  'color' => ['#2271b1', '#f0f6fc', '#135e96']], // blue
+      'held'      => ['label' => 'Needs a decision',     'badge' => 'warn',  'color' => ['#dba617', '#fcf6dc', '#6b5200']], // yellow
+      'waiting'   => ['label' => 'Waiting for approval', 'badge' => 'info',  'color' => ['#7b3fc0', '#f5effc', '#5b2a96']], // purple
+      'approved'  => ['label' => 'Approved',             'badge' => 'ok',    'color' => ['#0a7f86', '#e6f6f7', '#06656b']], // teal
+      'pushed'    => ['label' => 'Pushed',               'badge' => 'ok',    'color' => ['#00a32a', '#edfaef', '#00661a']], // light green
+      'published' => ['label' => 'Published',            'badge' => 'ok',    'color' => ['#233a66', '#233a66', '#ffffff']], // Intel navy, solid
+      'dropped'   => ['label' => 'Dropped',              'badge' => 'bad',   'color' => ['#d63638', '#fcf0f1', '#a51d1f'], 'off' => true], // red
+      'skipped'   => ['label' => 'Skipped',              'badge' => 'muted', 'color' => ['#8c8f94', '#f6f7f7', '#50575e'], 'off' => true], // grey
+      'cancelled' => ['label' => 'Cancelled',            'badge' => 'muted', 'color' => ['#3c434a', '#eceeef', '#2c3338'], 'off' => true], // charcoal
+      'failed'    => ['label' => 'Failed',               'badge' => 'bad',   'color' => ['#e26f00', '#fff2e5', '#9a4a00']], // orange
+      'human'     => ['label' => 'Human',                'badge' => 'muted', 'color' => ['#c2306b', '#ffffff', '#a3245a']], // pink outline
+      'notsent'   => ['label' => 'Not sent',             'badge' => 'muted', 'color' => ['#c3c4c7', '#fafafa', '#6c7074'], 'off' => true], // pale grey, dashed — shown only (ias_post_shown_status()): its time came in the dry run, before 0.12.0
     ];
   }
 }
@@ -124,7 +127,33 @@ if (!function_exists('ias_status_badge')) {
   function ias_status_badge(string $status): string {
     $all = ias_statuses();
     $s = $all[$status] ?? ['label' => ucfirst($status), 'badge' => 'muted'];
-    return ia_ui_badge($s['label'], $s['badge']);
+    if (empty($s['color'])) return ia_ui_badge($s['label'], $s['badge']);
+    // The toolkit's badge shape with this status's own colours, inline so it looks the same on any screen.
+    return '<span class="ia-badge ias-st ias-st-' . esc_attr($status) . '" style="' . esc_attr(ias_status_badge_style($status)) . '">' . esc_html($s['label']) . '</span>';
+  }
+}
+
+/** A status badge's colours as inline CSS ('' for an unknown status). Pure. */
+if (!function_exists('ias_status_badge_style')) {
+  function ias_status_badge_style(string $status): string {
+    $c = ias_statuses()[$status]['color'] ?? null;
+    if (!$c) return '';
+    [$line, $fill, $text] = $c;
+    return 'background:' . $fill . ';color:' . $text . ';' . ($status === 'notsent' ? 'outline:1px dashed ' . $line . ';outline-offset:-1px' : 'box-shadow:inset 0 0 0 1px ' . $line)
+      . ';display:inline-block;padding:1px 9px;border-radius:999px;font-size:11px;font-weight:600;line-height:1.8;white-space:nowrap'; // the badge's shape too, where the toolkit's stylesheet is not loaded
+  }
+}
+
+/** The calendar's posts in their status's colours (CSS rules). Pure. */
+if (!function_exists('ias_status_chip_css')) {
+  function ias_status_chip_css(): string {
+    $css = '';
+    foreach (ias_statuses() as $k => $s) {
+      if (empty($s['color'])) continue;
+      [$line, $fill, $text] = $s['color'];
+      $css .= '.ias-chip.st-' . $k . '{border-color:' . $line . ';background:' . $fill . ';color:' . $text . (!empty($s['off']) ? ';text-decoration:line-through' : '') . '}';
+    }
+    return $css . '.ias-chip.st-human{border:1px solid ' . ias_statuses()['human']['color'][0] . ';border-left-width:3px}.ias-chip.st-notsent{border-left-style:dashed}';
   }
 }
 

@@ -37,6 +37,7 @@ $act = function (string $action, array $post) use (&$back) {
   $back = (string) ($_POST['ias_back'] ?? '');
   $id = (int) ($post['ias_post'] ?? 0);
   if ($id && in_array($action, ias_push_now_actions(), true)) ias_push_now_flash($id); // what the calendar's handler does next
+  ias_push_queue_run(0); // and what the end of the request does, once the page has answered (0.20.0: a move goes to OneUp then)
   $_POST = [];
 };
 $flash = function () { $k = 'ia_flash_' . get_current_user_id(); $h = (string) get_transient($k); delete_transient($k); return $h; };
@@ -78,7 +79,7 @@ t_eq($day, substr($at, 0, 10), 'dropped on Thu Nov 12: it is on that day');
 t_eq($want, $min($at), '…in the evening, at its own minute there (' . substr($at, 11, 5) . ')');
 t_ok(($p['flags']['pinned'] ?? '') === substr($at, 0, 16) && ($p['flags']['pinned_by'] ?? '') !== '', '…held there for the plan to work around, like a Move');
 $sent = ias_post_sent($p);
-t_eq(substr($at, 0, 16), substr((string) ($S['scheduled'][(int) $sent['id']]['date_time'] ?? ''), 0, 16), '…and on OneUp at that time, at once');
+t_eq(substr($at, 0, 16), substr((string) ($S['scheduled'][(int) $sent['id']]['date_time'] ?? ''), 0, 16), '…and on OneUp at that time, once the page has answered');
 $fl = $flash();
 t_ok(strpos($fl, 'Moved to <strong>Thu Nov 12, evening</strong>') !== false, 'the page says where it went');
 t_eq(ias_admin_url(IAS_PAGE_CALENDAR), $back, 'a drag on the calendar comes back to the calendar');
@@ -129,10 +130,17 @@ $fl = $flash();
 $bp = ias_post_get($bid);
 $cp = ias_post_get($cid);
 t_ok(substr((string) $bp['scheduled_at'], 0, 10) === $cday && ias_slot_index($W, $min((string) $bp['scheduled_at'])) === $csi, 'dropped into the window it had: the dragged post takes it');
-t_ok(abs(strtotime((string) $bp['scheduled_at']) - strtotime((string) $cp['scheduled_at'])) >= 3 * HOUR_IN_SECONDS, 'the post that was there moved out of its way (' . $cp['scheduled_at'] . ')');
-t_ok(strpos($fl, 'To make room the plan moved Listing · 3 Charlie Court') !== false, '…and the page says so');
+// 0.20.0: a move moves only that post — the plan waits until the person is done.
+t_ok(abs(strtotime((string) $bp['scheduled_at']) - strtotime((string) $cp['scheduled_at'])) < 3 * HOUR_IN_SECONDS, 'the post that was there stays put for now: nothing else moves while a person works');
+t_ok(strpos($fl, 'Nothing else moves while you work') !== false && strpos($fl, 'Plan now') !== false, '…and the page says the plan waits');
+t_ok(strpos($calendar(), 'The plan is waiting while you work') !== false, '…as does the calendar');
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + (IAS_PLAN_QUIET + 1) * 60));
+ias_job_run();
+$cp = ias_post_get($cid);
+t_ok(abs(strtotime((string) ias_post_get($bid)['scheduled_at']) - strtotime((string) $cp['scheduled_at'])) >= 3 * HOUR_IN_SECONDS, IAS_PLAN_QUIET . ' minutes after the last move, the hourly run tidies up: the post that was there moved out of its way (' . $cp['scheduled_at'] . ')');
 $csent = ias_post_sent($cp);
-t_eq(substr((string) $cp['scheduled_at'], 0, 16), substr((string) ($S['scheduled'][(int) $csent['id']]['date_time'] ?? ''), 0, 16), '…and its copy on OneUp followed at once');
+t_eq(substr((string) $cp['scheduled_at'], 0, 16), substr((string) ($S['scheduled'][(int) $csent['id']]['date_time'] ?? ''), 0, 16), '…and its copy on OneUp followed');
+t_ok(strpos($calendar(), 'The plan is waiting while you work') === false && !ias_plan_hold_get(), '…and the plan is no longer waiting');
 
 // ---- 7. The post's own Move: the same three choices, or an exact time ----
 $h = $view($cid);
@@ -169,8 +177,10 @@ t_eq('2026-11-16', substr((string) ias_post_get((int) $oh['id'])['scheduled_at']
 ias_post_update($cid, ['status' => 'planned']);
 $all = '';
 foreach ([[$aid, 0], [$bid, 1], [$cid, 2]] as [$pid, $si]) { $act('move_slot', ['ias_post' => $pid, 'ias_day' => '2026-11-16', 'ias_slot' => (string) $si]); $all .= $flash(); }
-t_eq('dropped', ias_post_get((int) $oh['id'])['status'], 'with the morning, afternoon and evening of its one day taken by hand, the plan drops it');
-t_ok(strpos($all, 'The plan dropped Open house · 4 Oscar Way') !== false, '…and the page says so, with how to put it back');
+t_ok(ias_post_get((int) $oh['id'])['status'] !== 'dropped' && strpos($all, 'the plan moves one of the others when it tidies up') !== false, 'three moves fill its one day: nothing is dropped while the person works, and the page says the day is over');
+ias_plan_run('admin'); // the plan, when it runs (the window narrowed above is the test's: a sync would widen it again)
+t_eq('dropped', ias_post_get((int) $oh['id'])['status'], 'when the plan runs: with the morning, afternoon and evening of its one day taken by hand, it drops it');
+t_ok((string) ias_post_get((int) $oh['id'])['note'] !== '', '…and says why on the post (' . ias_post_get((int) $oh['id'])['note'] . ')');
 
 ias_t_oneup_off();
 ias_t_claude_off();

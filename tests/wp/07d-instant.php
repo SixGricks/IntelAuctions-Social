@@ -40,6 +40,7 @@ $act = function (string $action, array $post) {
   do_action('ias_calendar_action', $action);
   $id = (int) ($post['ias_post'] ?? 0);
   if ($id && in_array($action, ias_push_now_actions(), true)) ias_push_now_flash($id); // what the calendar's handler does next
+  ias_push_queue_run(0); // and the end of the request, once the page has answered (0.20.0: a move goes to OneUp then)
   $_POST = [];
 };
 $flash = function () { $k = 'ia_flash_' . get_current_user_id(); $h = (string) get_transient($k); delete_transient($k); return $h; };
@@ -93,7 +94,7 @@ $p = $lp($a);
 t_eq('2026-11-03 12:10:00', (string) $p['scheduled_at'], 'Move puts it at the person\'s day and time');
 t_eq('2026-11-03 12:10', (string) ($p['flags']['pinned'] ?? ''), '…and it holds');
 $sent = ias_post_sent($p);
-t_ok(isset($S['scheduled'][(int) $sent['id']]) && substr((string) $S['scheduled'][(int) $sent['id']]['date_time'], 0, 16) === '2026-11-03 12:10', '…on OneUp at once, at that time — inside the veto window: the person said yes');
+t_ok(isset($S['scheduled'][(int) $sent['id']]) && substr((string) $S['scheduled'][(int) $sent['id']]['date_time'], 0, 16) === '2026-11-03 12:10', '…on OneUp at that time once the page has answered — inside the veto window: the person said yes');
 t_ok(strpos($flash(), 'Moved to') !== false, '…saying so');
 ias_plan_run();
 t_eq('2026-11-03 12:10:00', (string) $lp($a)['scheduled_at'], 'the morning plan keeps it where the person put it');
@@ -128,8 +129,10 @@ $act('retry', ['ias_post' => $pid]);
 $p = $lp($a);
 t_ok(in_array($p['status'], ['planned', 'pushed'], true), 'Try again: back on the plan');
 $sent = ias_post_sent($p);
-t_ok($sent['mode'] === 'live' && (int) $sent['id'] !== $oid && isset($S['scheduled'][(int) $sent['id']]), '…and a fresh copy is on OneUp at once');
-t_eq([(string) $oid], (array) ($p['flags']['failed_copies'] ?? []), '…the failed copy remembered, never taken for this one');
+// 0.19.0 (DJ, Oct 14, 2026): Try again reschedules OneUp's own failed copy rather than sending a second one.
+t_ok($sent['mode'] === 'live' && (int) $sent['id'] === $oid && isset($S['scheduled'][$oid]) && !isset($S['failed'][$oid]), '…and OneUp\'s failed copy is back on its scheduled list at once — rescheduled, not a second copy');
+t_eq(1, count(ias_t_oneup_calls($n, 'reschedulefailedpost')), '…by one reschedule');
+t_eq([(string) $oid], (array) ($p['flags']['failed_copies'] ?? []), '…the failure remembered');
 ias_readback_run();
 t_ok($lp($a)['status'] !== 'failed', 'the old copy on OneUp\'s failed list does not fail it again');
 

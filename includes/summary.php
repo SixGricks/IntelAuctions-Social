@@ -12,6 +12,10 @@
  * `ia_stats_ga4()` runs the report (an optional helper: without Site Kit the
  * summary shows the counts alone).
  *
+ * And, from 0.17.0, how they did on Facebook: the reactions, comments,
+ * shares, clicks and views OneUp's analytics gave for each post (stats.php),
+ * added up by type and division, with the engagement rate over them.
+ *
  * Shown at the top of the Log screen (this month and last), and last month's
  * goes in the first weekly email of each month.
  */
@@ -50,16 +54,19 @@ if (!function_exists('ias_summary_visits')) {
 
 /**
  * The month's numbers ($ym = 'Y-m'): ['month', 'types' => [type => row],
- * 'divisions' => [division => row], 'human' => n, 'visits' => bool]. A row:
- * out, dry_run (not sent: its time came in the dry run, before 0.12.0),
- * upcoming, dropped, skipped, cancelled, failed, late, visits.
+ * 'divisions' => [division => row], 'human' => n, 'visits' => bool, 'stats' =>
+ * bool (any post has Facebook numbers)]. A row: out, dry_run (not sent: its
+ * time came in the dry run, before 0.12.0), upcoming, dropped, skipped,
+ * cancelled, failed, late, visits, and the Facebook numbers — counted (posts
+ * with numbers), reactions, comments, shares, clicks, views.
  */
 if (!function_exists('ias_summary_month')) {
   function ias_summary_month(string $ym): array {
     $first = $ym . '-01';
     $last = date('Y-m-t', strtotime($first));
-    $blank = ['out' => 0, 'dry_run' => 0, 'upcoming' => 0, 'dropped' => 0, 'skipped' => 0, 'cancelled' => 0, 'failed' => 0, 'late' => 0, 'visits' => 0];
-    $out = ['month' => $ym, 'types' => [], 'divisions' => [], 'human' => 0, 'visits' => false];
+    $blank = ['out' => 0, 'dry_run' => 0, 'upcoming' => 0, 'dropped' => 0, 'skipped' => 0, 'cancelled' => 0, 'failed' => 0, 'late' => 0, 'visits' => 0,
+      'counted' => 0, 'reactions' => 0, 'comments' => 0, 'shares' => 0, 'clicks' => 0, 'views' => 0];
+    $out = ['month' => $ym, 'types' => [], 'divisions' => [], 'human' => 0, 'visits' => false, 'stats' => false];
     foreach (ias_post_types() as $type => $def) if ($type !== 'human') $out['types'][$type] = $blank;
     $visits = ias_summary_visits($first, min($last, ias_now()->format('Y-m-d')));
     $out['visits'] = $visits !== null;
@@ -79,6 +86,14 @@ if (!function_exists('ias_summary_month')) {
       $v = (int) ($visits['by_post'][(int) $p['id']] ?? 0);
       $out['types'][$type]['visits'] += $v;
       $out['divisions'][$div]['visits'] += $v;
+      $st = $p['status'] === 'published' && function_exists('ias_post_stats') ? ias_post_stats($p) : null;
+      if ($st) {
+        $out['stats'] = true;
+        foreach (['types' => $type, 'divisions' => $div] as $group => $k) {
+          $out[$group][$k]['counted']++;
+          foreach (['reactions', 'comments', 'shares', 'clicks', 'views'] as $m) $out[$group][$k][$m] += (int) ($st[$m] ?? 0);
+        }
+      }
     }
     // A campaign's visits that carried no post id (an old link, a shared one) still count for its type.
     foreach ((array) ($visits['by_campaign'] ?? []) as $campaign => $n) {
@@ -96,6 +111,7 @@ if (!function_exists('ias_summary_html')) {
     $s = ias_summary_month($ym);
     $cols = ['out' => 'Went out', 'upcoming' => 'Still to come', 'dropped' => 'Dropped', 'skipped' => 'Skipped', 'cancelled' => 'Cancelled', 'failed' => 'Failed', 'late' => 'Ran late'];
     if ($s['visits']) $cols['visits'] = 'Site visits';
+    if ($s['stats']) $cols += ['reactions' => 'Reactions', 'comments' => 'Comments', 'shares' => 'Shares', 'clicks' => 'Clicks', 'views' => 'Views', 'rate' => 'Engagement'];
     $any_dry = array_sum(array_column($s['types'], 'dry_run')) > 0;
     if ($any_dry) $cols = ['dry_run' => 'Not sent (before posting was on)'] + $cols;
     $th = 'style="text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid #dcdcde;font-size:13px"';
@@ -107,7 +123,10 @@ if (!function_exists('ias_summary_html')) {
       foreach ($rows as $key => $row) {
         if (!array_sum($row)) continue;
         $html .= '<tr><td ' . $td . '>' . esc_html($label((string) $key)) . '</td>';
-        foreach (array_keys($cols) as $c) $html .= '<td ' . $td . '>' . (int) $row[$c] . '</td>';
+        foreach (array_keys($cols) as $c) {
+          if ($c === 'rate') { $r = function_exists('ias_stats_rate') ? ias_stats_rate($row) : null; $html .= '<td ' . $td . '>' . ($r === null ? '—' : esc_html(number_format($r, 1) . '%')) . '</td>'; continue; }
+          $html .= '<td ' . $td . '>' . esc_html(number_format((int) $row[$c])) . '</td>';
+        }
         $html .= '</tr>';
       }
       return $html . '</tbody></table>';
@@ -120,6 +139,7 @@ if (!function_exists('ias_summary_html')) {
     $notes = [];
     if ($s['human']) $notes[] = $s['human'] . ' post' . ($s['human'] === 1 ? '' : 's') . ' by a person on the page as well.';
     $notes[] = $s['visits'] ? 'Site visits come from Google Analytics (Site Kit, through the toolkit): sessions that arrived on a post\'s tagged link.' : 'Connect Site Kit (Google Analytics) in the toolkit to see the visits each post type brings.';
+    if ($s['stats']) $notes[] = 'Reactions, comments, shares, clicks and views are Facebook\'s, from OneUp, as last read; engagement is all four over the views.';
     $html .= '<p style="font-size:12px;color:#646970;margin-top:0">' . esc_html(implode(' ', $notes)) . '</p>';
     return $html;
   }

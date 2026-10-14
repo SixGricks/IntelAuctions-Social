@@ -42,6 +42,12 @@ add_action('ias_calendar_before_grid', function (): void {
     echo '<p class="description">Not planned yet — the first plan runs on the next hourly run after ' . (int) ias_setting('plan_hour', 5) . ':00, or press Plan now.</p>';
     return;
   }
+  $hold = function_exists('ias_plan_hold_get') ? ias_plan_hold_get() : [];
+  if ($hold) {
+    $from = date_i18n('g:i a', strtotime((string) $hold['last']) + IAS_PLAN_QUIET * 60);
+    $one = (int) $hold['n'] === 1;
+    echo '<div class="notice notice-info inline"><p><strong>The plan is waiting while you work.</strong> ' . (int) $hold['n'] . ' post' . ($one ? '' : 's') . ' moved since ' . esc_html(date_i18n('g:i a', strtotime((string) $hold['first']))) . ' — ' . ($one ? 'it stays where you put it' : 'they stay where you put them') . ', and nothing else moves until the plan tidies around ' . ($one ? 'it' : 'them') . ': on the next hourly run from ' . esc_html($from) . ', or now with <strong>Plan now</strong>. Until then a day can show more posts than it will keep.</p></div>';
+  }
   $bits = [(int) $last['placed'] . ' placed'];
   foreach (['moved', 'dropped', 'late'] as $k) if (!empty($last[$k])) $bits[] = (int) $last[$k] . ' ' . $k;
   echo '<p class="description">Last planned ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $last['at']))) . ($last['by'] !== 'system' ? ' by ' . esc_html((string) $last['by']) : '') . ': ' . esc_html(implode(', ', $bits)) . '. Times shown are when each post would go out.</p>';
@@ -86,13 +92,16 @@ add_action('ias_post_view_side', function (array $p): void {
       . (!empty($p['flags']['unconfirmed']) ? ' <span class="description">(waiting for the read-back to confirm it)</span>' : '') . '</p>';
     if (!empty($p['locked'])) echo '<p><strong>' . esc_html(ucfirst((string) ($p['flags']['edited_in_oneup'] ?? 'edited'))) . ' in OneUp by a person</strong> — the plugin keeps it as they made it, until someone presses <strong>Edit it here again</strong> (above).</p>';
     if (!empty($p['flags']['correction']['text']) && empty($p['flags']['correction']['done'])) {
-      echo '<p><strong>A fact changed after it went out.</strong> Post this as a comment on it (a published post is never edited — that resets its reach):</p><div class="ias-preview" style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</div>';
+      echo '<p><strong>A fact changed after it went out.</strong> The correction goes on it as a comment (a published post is never edited — that resets its reach):</p><div class="ias-preview" style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</div>';
+      if (function_exists('ias_correction_button')) echo '<p>' . ias_correction_button($p, ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '</p>';
+    } elseif (!empty($p['flags']['correction']['done']) && strpos((string) $p['flags']['correction']['done'], 'posted by') === 0) {
+      echo '<p class="description">Correction ' . esc_html((string) preg_replace('/ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/', '', (string) $p['flags']['correction']['done'])) . ' as a comment: ' . esc_html((string) $p['flags']['correction']['text']) . '</p>';
     }
     echo '</div>';
     if ($p['status'] === 'published') return;
   }
   if ($p['status'] === 'failed') {
-    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Press <strong>Try again</strong> (above) to send a fresh copy, or skip it.</p></div>';
+    echo '<div class="ias-card"><h3>Failed</h3><p>' . esc_html((string) $p['note']) . '</p><p class="description">Press <strong>Try again</strong> (above): OneUp\'s own copy goes again at the time the plan gives it (a fresh copy, if the post changed since), or skip it.</p></div>';
     return;
   }
   echo '<div class="ias-card"><h3>' . ($sent['mode'] === 'live' ? 'What went to OneUp' : 'What goes to OneUp') . '</h3>';

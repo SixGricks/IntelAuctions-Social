@@ -365,7 +365,7 @@ if (!function_exists('ias_review_email')) {
     $held = ias_posts_query(['status' => ['held', 'failed'], 'limit' => 50]);
     if ($held) $html .= $h('Needs a decision (' . count($held) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="color:#646970;font-size:13px">' . esc_html((string) $p['note']) . '</span></li>'; }, $held)) . '</ul>';
     $fixes = function_exists('ias_corrections_waiting') ? ias_corrections_waiting() : [];
-    if ($fixes) $html .= $h('Corrections to post as a comment (' . count($fixes) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</span></li>'; }, $fixes)) . '</ul><p style="font-size:13px;color:#646970">A post that has gone out is never edited (that resets its reach): post the correction as a comment on it, then press Comment posted on the Social Calendar.</p>';
+    if ($fixes) $html .= $h('Corrections to post as a comment (' . count($fixes) . ')') . '<ul>' . implode('', array_map(function ($p) use ($link) { return '<li>' . $link($p) . '<br><span style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</span></li>'; }, $fixes)) . '</ul><p style="font-size:13px;color:#646970">A post that has gone out is never edited (that resets its reach): on the Social Calendar, press Post it as a comment' . (ias_setting('corrections_auto', false) ? ' (the hourly run posts new ones by itself)' : '') . '.</p>';
 
     $voice = function_exists('ias_voice_review_html') ? ias_voice_review_html() : '';
     if ($voice !== '') $html .= $h('House rules: Claude suggested changes') . $voice;

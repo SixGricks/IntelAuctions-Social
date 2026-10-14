@@ -249,6 +249,8 @@ function ias_t_claude_off(): void {
  * and the scheduled / published / drafts / failed lists (50 a page,
  * next_start). The key must be 'test-oneup-key'. State in
  * $GLOBALS['ias_t_oneup']: scheduled, published, drafts, failed (id => row),
+ * fb_stats (the page's posts as OneUp's analytics give them, ias_t_fb_stat()),
+ * stats_code (403: a plan without analytics), comments (reply-to-post calls),
  * calls (every request: path, method, params), fail_next (refuse that many
  * schedules), no_id (answer without a post id), tz_shift (hours OneUp's clock
  * is off the site's), gbp (a Google Business Profile post on the list),
@@ -267,7 +269,8 @@ function ias_t_oneup(): void {
   // ('any': the account as a JSON list or social_network_id[…]; 'brackets': only the latter). A plain id is refused.
   $GLOBALS['ias_t_oneup'] = ['scheduled' => [], 'published' => [], 'drafts' => [], 'failed' => [], 'next' => 900001, 'calls' => [],
     'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true, 'lose_answer' => 0, 'net_error' => 0, 'delete_404' => 0,
-    'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)', 'id_form' => 'any', 'docs' => false, 'ignore_start' => false, 'zero_new' => 0];
+    'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)', 'id_form' => 'any', 'docs' => false, 'ignore_start' => false, 'zero_new' => 0,
+    'fb_stats' => [], 'stats_code' => 200, 'comments' => [], 'comment_code' => 200, 'comment_lose' => 0, 'resched_lose' => 0, 'resched_keep_failed' => false];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -277,6 +280,7 @@ function ias_t_oneup(): void {
     $path = basename((string) $parts['path']);
     $body = [];
     if (is_array($args['body'] ?? null)) parse_str(http_build_query($args['body']), $body); // read as a server reads the form WordPress sends (social_network_id[0] becomes a list)
+    elseif (is_string($args['body'] ?? null) && $args['body'] !== '') { $j = json_decode($args['body'], true); if (is_array($j)) $body = $j; } // a JSON body (the comment calls)
     $params = array_merge($q, $body);
     // The account as it came over the wire (`raw_sn`); the calls list keeps the one id, for the tests to read.
     $raw_sn = $params['social_network_id'] ?? null;
@@ -299,6 +303,29 @@ function ias_t_oneup(): void {
       if (!empty($GLOBALS['ias_t_oneup']['docs'])) return $json(200, ['message' => 'OK', 'error' => false, 'data' => $slice]);
       return $json(200, ['posts' => $slice, 'start' => $start, 'count' => count($slice), 'next_start' => $start + 50 < count($rows) ? $start + 50 : null]);
     };
+    $host = (string) ($parts['host'] ?? '');
+    if ($host === 'analyze.oneupapp.io' && $path === 'posts') {
+      if ((int) $S['stats_code'] === 403) return $json(403, ['message' => 'Analytics is not available on the Basic plan. Please upgrade your plan to access this feature.']);
+      return $json(200, ['success' => true, 'data' => ['stats' => [], 'posts' => array_values($S['fb_stats']), 'hashtag_performance' => []]]);
+    }
+    if ($host === 'feed.oneupapp.io' && $path === 'reply-to-post') {
+      if ((int) $S['comment_code'] === 403) return $json(403, ['message' => 'Comment management is not available on the Basic plan.']);
+      $cid = 'c' . (count($S['comments']) + 1);
+      $S['comments'][] = ['post_id' => (string) ($params['post_id'] ?? ''), 'comment' => (string) ($params['comment'] ?? ''), 'social_account_id' => (string) ($params['social_account_id'] ?? ''), 'platform' => (string) ($params['platform'] ?? ''), 'comment_id' => $cid];
+      if ($S['comment_lose'] > 0) { $S['comment_lose']--; return $json(502, ['message' => 'Bad gateway']); }
+      return $json(200, ['message' => 'OK', 'error' => false, 'data' => ['comment_id' => $cid, 'post_id' => (string) ($params['post_id'] ?? ''), 'platform' => 'facebook']]);
+    }
+    if ($host === 'feed.oneupapp.io' && $path === 'fetch-top-comments') {
+      // The page's posts with their comments (here: every post a comment went on), newest first, two to a page.
+      $by = [];
+      foreach ($S['comments'] as $c) $by[$c['post_id']][] = ['platform' => 'facebook', 'post_id' => $c['post_id'], 'comment_id' => $c['comment_id'], 'child_count' => 0, 'user_id' => $c['social_account_id'], 'user_name' => 'Intel Auctions', 'content' => $c['comment'], 'child_comments' => []];
+      foreach ((array) ($S['feed_posts'] ?? []) as $fid) if (!isset($by[$fid])) $by[$fid] = [];
+      $rows = [];
+      foreach (array_reverse($by, true) as $fid => $cs) $rows[] = ['post' => ['id' => count($rows) + 1, 'social_account_id' => (string) strtok((string) $fid, '_'), 'platform' => 'facebook', 'post_id' => (string) $fid, 'content' => '…'], 'comments' => $cs];
+      $at = (int) ($params['next_id'] ?? 0);
+      $slice = array_slice($rows, $at, 2);
+      return $json(200, ['message' => 'OK', 'error' => false, 'data' => $slice, 'next_id' => $at + 2 < count($rows) ? $at + 2 : null]);
+    }
     switch ($path) {
       case 'listcategory':
         return $json(200, ['categories' => [['id' => 42, 'category_name' => 'Intel', 'isPaused' => 0]]]);
@@ -326,6 +353,16 @@ function ias_t_oneup(): void {
         if ($S['lose_answer'] > 0) { $S['lose_answer']--; return $json(502, ['message' => 'Bad gateway']); }
         if ($S['docs']) return $json(200, ['message' => '1 new Posts Scheduled.', 'error' => false, 'data' => []]);
         return $json(200, $S['no_id'] ? ['error' => false, 'message' => 'Post scheduled successfully'] : ['error' => false, 'message' => 'Post scheduled successfully', 'data' => ['post_id' => $id]]);
+      case 'reschedulefailedpost': // a failed post goes back on the scheduled list at the new time (OneUp's docs)
+        $id = (int) ($params['post_id'] ?? 0);
+        if (!isset($S['failed'][$id])) return $json(400, ['error' => true, 'message' => 'Only failed posts can be rescheduled.']);
+        $row = $S['failed'][$id];
+        unset($row['fail_reason'], $row['failure_reason']);
+        $row['date_time'] = date('Y-m-d H:i:s', strtotime((string) $params['scheduled_date_time']));
+        $S['scheduled'][$id] = $row;
+        if (empty($S['resched_keep_failed'])) unset($S['failed'][$id]);
+        if ($S['resched_lose'] > 0) { $S['resched_lose']--; return $json(502, ['message' => 'Bad gateway']); }
+        return $json(200, ['message' => 'Post rescheduled successfully']);
       case 'deletepost': // the address the plugin once guessed: OneUp answers it with its 404 web page
         return ['headers' => [], 'body' => '<!doctype html><title>Page Not Found</title><h1>Page Not Found</h1><p>Sorry, the page you are looking for could not be found.</p>', 'response' => ['code' => 404, 'message' => 'Not Found'], 'cookies' => [], 'filename' => null];
       case 'deletescheduledpost':
@@ -358,6 +395,20 @@ function ias_t_oneup_publish(int $id): void {
   $row['created_at'] = (new DateTimeImmutable($at, ia_wp_tz()))->modify('+1 minute')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
   if (!empty($S['docs'])) $row['post_id'] = ($row['social_network_username'] === $S['fb'] ? 'FB_1336677789520495_' : 'GBP_') . $id; // the network's own id, as the docs show
   $S['published'][$id] = $row;
+}
+
+/**
+ * OneUp's analytics have numbers for a published post (by its OneUp id): its
+ * row as GET analyze.oneupapp.io/api/facebook/posts gives it — Facebook's id
+ * "<page>_<oneup id>", the words, the time, the stats. $over changes fields.
+ */
+function ias_t_fb_stat(int $id, array $stats, array $over = []): void {
+  $S =& $GLOBALS['ias_t_oneup'];
+  $row = $S['published'][$id];
+  $S['fb_stats'][$id] = $over + ['id' => '1336677789520495_' . $id, 'page_id' => '1336677789520495', 'format' => 'image', 'message' => (string) $row['content'],
+    'permalink_url' => 'https://facebook.com/1336677789520495/posts/' . $id, 'full_picture' => 'https://scontent.example/x.jpg',
+    'stats' => $stats + ['shares' => 0, 'comments' => 0, 'clicks' => 0, 'reactions' => 0, 'media_views' => 0],
+    'created_time' => (new DateTimeImmutable((string) $row['created_at'], new DateTimeZone('UTC')))->format('Y-m-d\TH:i:sP')];
 }
 
 /** The page is renamed in OneUp: its account and every row on it carry the new name. */

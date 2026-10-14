@@ -103,9 +103,16 @@ it, and the spec stays verbatim, so they are recorded here:
   evening time slot"). A drop, and the post's Move, choose a posting window
   (`ias_windows()`), never a free-typed minute by default: the post takes its
   own shifted minute there (`ias_slot_minute()`), pinned like a Move, clear of
-  the posts that stay put (`ias_move_fixed()`); the plan then runs at once and
-  OneUp follows for every post it moved. The exact time stays on the post's
-  Move for a person who wants it. Phones use the post's Move (no drag).
+  the posts that stay put (`ias_move_fixed()`). The exact time stays on the
+  post's Move for a person who wants it. Phones use the post's Move (no drag).
+  **A move moves only that post** (Oct 14, 2026: "just move them and wait to
+  run the agent until later … a bunch of changes without AI changing things
+  at the same time"): no plan run — `ias_plan_hold()` makes the plan wait
+  until nothing has moved for `IAS_PLAN_QUIET` (15) minutes (the hourly run)
+  or Plan now — and the page answers before OneUp is called: the post goes
+  after the response (`ias_push_later()`, drained by the pulse and the hourly
+  run too). Never put a plan run or a OneUp call back in front of a move's
+  answer.
 - **A switch on every post, and a preview on hover** (Oct 14, 2026: "I also
   want to be able to turn on skipped items and turn off others" and "Hover
   over an item on the calendar should give a preview of the post"). The
@@ -228,7 +235,19 @@ X.Y.Z" line, and add an entry to `CHANGELOG.md`.
   page and time (`ias_published_pick()`) — a status only, never a delete; a
   failed row's reason is `fail_reason`. Row times: date_time in the account's
   time zone, created_at in UTC. Analytics (`analyze.oneupapp.io`) and comments
-  (`feed.oneupapp.io`) need OneUp's Intermediate plan or above.
+  (`feed.oneupapp.io`) need OneUp's Intermediate plan or above — DJ has it
+  (Oct 14, 2026). **How each post did** (0.17.0, `stats.php`) is a daily read
+  of the analytics into `flags.stats`, matched by Facebook's id
+  (`flags.oneup.fb_id`) or words and time; a read only, never a write.
+  **Correction comments** (0.18.0, `corrections.php`) are the one thing the
+  plugin posts on a published post: a person's **Post it as a comment**, or
+  the hourly run with `corrections_auto` (off at install) — master on, not
+  paused, never Sunday, never `[VERIFY]`, and never twice (`sending` noted
+  first; a lost answer is looked for with `fetch-top-comments`, and only a
+  person sends it again). **Try again** (0.19.0) reschedules OneUp's own
+  failed copy (`reschedulefailedpost`, `flags.reuse_failed`) — only when the
+  post's fingerprint without its time (`flags.oneup.body`) is unchanged;
+  otherwise a fresh copy, as before.
 - **A person's decision holds.** Anything that puts a post back on the plan uses
   `ias_back_on_plan_status()` (a post with unanswered `holds` comes back held,
   never planned); a person-edited post is never rewritten by the system — when

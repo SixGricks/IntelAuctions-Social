@@ -106,6 +106,7 @@ if (!function_exists('ias_plan_run')) {
 
     update_option('ias_last_plan', $now->format('Y-m-d'), false);
     update_option('ias_last_plan_summary', ['at' => $now->format('Y-m-d H:i'), 'by' => $actor] + $sum, false);
+    delete_option('ias_plan_hold'); // planned: whatever a person moved is worked around now
     return $sum;
   }
 }
@@ -191,10 +192,109 @@ if (!function_exists('ias_push_now')) {
   }
 }
 
+/* ---------------- A person's moves: instant, and the plan waits (0.20.0) ---------------- */
+
+/**
+ * DJ, Oct 14, 2026: "When moving calendar items they move VERY slowly … Can
+ * it just move them and wait to run the agent until later. This will allow a
+ * human to make a bunch of changes without AI changing things at the same
+ * time." (No AI runs on a move: the time went on the plan shuffling other
+ * posts and on OneUp's round trips for each.) So a move (Move, a drag)
+ * changes only the post moved; the plan waits until the person is done —
+ * `ias_plan_hold`, re-planned on the hourly run once nothing has moved for
+ * IAS_PLAN_QUIET minutes, or at once with Plan now — and the moved post goes
+ * to OneUp after the page has answered (ias_push_later()).
+ */
+if (!defined('IAS_PLAN_QUIET')) define('IAS_PLAN_QUIET', 15);
+
+/** A person moved a post: the plan waits until they are done. */
+if (!function_exists('ias_plan_hold')) {
+  function ias_plan_hold(string $actor): void {
+    $h = ias_plan_hold_get();
+    update_option('ias_plan_hold', ['first' => $h ? (string) $h['first'] : ias_now_sql(), 'last' => ias_now_sql(), 'n' => ($h ? (int) $h['n'] : 0) + 1, 'by' => $actor], false);
+  }
+}
+
+/** The plan's wait: ['first', 'last', 'n', 'by'], or [] when it is not waiting. */
+if (!function_exists('ias_plan_hold_get')) {
+  function ias_plan_hold_get(): array {
+    $h = get_option('ias_plan_hold', []);
+    return is_array($h) && !empty($h['last']) ? $h : [];
+  }
+}
+
+/** Has nothing moved for long enough that the plan may tidy up now? */
+if (!function_exists('ias_plan_hold_ready')) {
+  function ias_plan_hold_ready(): bool {
+    $h = ias_plan_hold_get();
+    return $h && (string) $h['last'] <= ias_now()->modify('-' . IAS_PLAN_QUIET . ' minutes')->format('Y-m-d H:i:s');
+  }
+}
+
+/**
+ * Send this post to OneUp after the page has answered: it is queued
+ * (`ias_push_queue`) and sent at the end of this request, once the browser
+ * has its page, so a move is instant however slow OneUp is. What is still
+ * queued then (a busy run, a host that cannot answer early) goes with the
+ * open calendar's next check or the hourly run.
+ */
+if (!function_exists('ias_push_later')) {
+  function ias_push_later(int $id): void {
+    $q = get_option('ias_push_queue', []);
+    $q = is_array($q) ? $q : [];
+    $q[$id] = ias_now_sql();
+    update_option('ias_push_queue', $q, false);
+    if (empty($GLOBALS['ias_push_later_hooked'])) {
+      $GLOBALS['ias_push_later_hooked'] = true;
+      add_action('shutdown', 'ias_push_after_response', 1);
+    }
+  }
+}
+
+/** At the end of the request: let the browser go, then send what is queued. */
+if (!function_exists('ias_push_after_response')) {
+  function ias_push_after_response(): void {
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+    elseif (function_exists('litespeed_finish_request')) litespeed_finish_request();
+    ignore_user_abort(true);
+    if (function_exists('set_time_limit')) @set_time_limit(120);
+    ias_push_queue_run(30);
+  }
+}
+
+/** Send what is queued (waiting up to $wait seconds for another run to finish). Returns how many went. */
+if (!function_exists('ias_push_queue_run')) {
+  function ias_push_queue_run(int $wait = 0): int {
+    wp_cache_delete('ias_push_queue', 'options');
+    $q = get_option('ias_push_queue', []);
+    if (!is_array($q) || !$q || !ias_db_ready()) return 0;
+    $deadline = time() + max(0, $wait);
+    while (!ias_push_lock()) {
+      if (time() >= $deadline) return 0;
+      sleep(1);
+    }
+    try {
+      wp_cache_delete('ias_push_queue', 'options');
+      $q = (array) get_option('ias_push_queue', []);
+      if (!$q) return 0;
+      ias_push_run_locked(['deleted' => 0, 'published' => 0, 'pushed' => 0, 'failed' => 0, 'skipped' => [], 'readback' => null], array_map('intval', array_keys($q)), false);
+      // Taken off the queue only now, and only what was sent: a move made meanwhile stays queued.
+      wp_cache_delete('ias_push_queue', 'options');
+      $now = (array) get_option('ias_push_queue', []);
+      foreach ($q as $id => $at) if (isset($now[$id]) && $now[$id] === $at) unset($now[$id]);
+      if ($now) update_option('ias_push_queue', $now, false); else delete_option('ias_push_queue');
+      return count($q);
+    } finally {
+      ias_push_unlock();
+    }
+  }
+}
+
 /** The post actions whose change goes to OneUp at once (approve sends its own run). */
 if (!function_exists('ias_push_now_actions')) {
   function ias_push_now_actions(): array {
-    return (array) apply_filters('ias_push_now_actions', ['edit', 'media', 'media_reset', 'regenerate', 'skip', 'restore', 'release', 'move', 'unpin', 'retry', 'unlock', 'gbp_off', 'gbp_on', 'gbp_unlock', 'publish_now', 'move_slot']);
+    // Move and a drag are not here: they go to OneUp after the page has answered (ias_push_later(), 0.20.0).
+    return (array) apply_filters('ias_push_now_actions', ['edit', 'media', 'media_reset', 'regenerate', 'skip', 'restore', 'release', 'unpin', 'retry', 'unlock', 'gbp_off', 'gbp_on', 'gbp_unlock', 'publish_now']);
   }
 }
 
@@ -417,13 +517,16 @@ if (!function_exists('ias_push_switched_words')) {
 /* ---------------- The hourly job's later steps ---------------- */
 
 add_filter('ias_job_run', function (array $result): array {
-  if (ias_plan_due()) {
+  $waited = !ias_plan_due() && ias_plan_hold_ready(); // a person's moves, done with: the plan tidies around them now
+  if (ias_plan_due() || $waited) {
     $result['plan'] = ias_plan_run();
+    if ($waited) $result['parts'][] = 'planned around the posts a person moved';
     $result['parts'][] = 'planned: ' . (int) $result['plan']['placed'] . ' placed'
       . (!empty($result['plan']['moved']) ? ', ' . (int) $result['plan']['moved'] . ' moved' : '')
       . (!empty($result['plan']['dropped']) ? ', ' . (int) $result['plan']['dropped'] . ' dropped' : '');
   }
   $push = ias_push_run();
+  ias_push_queue_run(0); // anything a person moved that has not reached OneUp yet
   $result['push'] = $push;
   if ($push['pushed']) $result['parts'][] = $push['pushed'] . ' scheduled on OneUp';
   if ($push['deleted']) $result['parts'][] = $push['deleted'] . ' taken back';
