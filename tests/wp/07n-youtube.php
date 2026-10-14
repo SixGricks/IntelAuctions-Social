@@ -85,6 +85,22 @@ $S['cors'] = 'https://elsewhere.example';
 $bad = ias_oneup_verify('admin', 'youtube');
 t_ok(!$bad['ok'] && strpos(implode(' ', array_column($bad['steps'], 'detail')), 'does not let a page on') !== false, 'storage a page on this site may not upload to (CORS): fails too');
 $S['cors'] = '*';
+// 0.22.1, from the Codex review of PR #10: the whole preflight is checked, and no answer is not a pass.
+$S['cors_methods'] = 'GET, POST';
+$bad = ias_oneup_verify('admin', 'youtube');
+t_ok(!$bad['ok'] && strpos(implode(' ', array_column($bad['steps'], 'detail')), 'a PUT with a Content-Type') !== false, 'storage that allows this site but not a PUT: Verify fails (the browser could not upload)');
+$S['cors_methods'] = 'GET, POST, PUT'; $S['cors_headers'] = 'x-amz-acl';
+t_ok(!ias_oneup_verify('admin', 'youtube')['ok'], '…nor a Content-Type header: fails');
+$S['cors_headers'] = 'content-type'; $S['options_error'] = true;
+$bad = ias_oneup_verify('admin', 'youtube');
+t_ok(!$bad['ok'] && strpos(implode(' ', array_column($bad['steps'], 'detail')), 'did not answer whether') !== false, 'no answer to the preflight: not a pass — run Verify again');
+$S['options_error'] = false;
+// …and the draft goes the way the videos will: a refused video post is never covered by a text draft.
+$S['video_refused'] = true;
+$c0 = count($S['calls']);
+$bad = ias_oneup_verify('admin', 'youtube');
+t_ok(!$bad['ok'] && ias_t_oneup_calls($c0, 'scheduletextpost') === [] && strpos(implode(' ', array_column($bad['steps'], 'detail')), 'Video posts are not enabled') !== false, 'OneUp refuses video posts: Verify for YouTube fails with its words — no text draft passes in its place');
+$S['video_refused'] = false;
 ias_oneup_verify('admin', 'youtube');
 t_ok(ias_oneup_verified() && (string) get_option('ias_oneup_verify')['account'] === 'fb_123' && (string) get_option('ias_youtube_verify')['account'] === $UC, 'its own record: Facebook\'s Verify is untouched');
 t_eq('Properties for auction', (string) (get_option('ias_youtube_playlists')['list'][0]['name'] ?? ''), 'the channel\'s playlists are kept for Settings');
@@ -314,6 +330,108 @@ t_ok(strpos($tr, 'On its way') !== false && strpos($tr, 'sent to YouTube') !== f
 ob_start(); ias_listing_panel_render(get_post($a)); $panel = (string) ob_get_clean();
 t_ok(strpos($panel, 'Property video:') !== false && strpos($panel, 'On YouTube: ') !== false, 'the listing\'s Social panel says it is on YouTube, with its link');
 t_ok(count(ias_log_recent('video', 200)) >= 5, 'each step is in the Social log');
+
+// ---- 0.22.1, from the Codex review of PR #10 ----
+$scheduled_ids = function () use (&$S) { return array_map('strval', array_keys($S['scheduled'])); };
+// A listing withdrawn after its video was sent: the video comes back off, and goes again when it is public.
+$n1 = $mk('21 November Road');
+$upload($n1);
+$oid = (string) $rec($n1)['oneup']['id'];
+wp_update_post(['ID' => $n1, 'post_status' => 'draft']);
+$c0 = count($S['calls']);
+ias_youtube_check(true);
+t_ok(count($mine($c0, $oid)) === 1 && $rec($n1)['state'] === 'ready' && !in_array($oid, $scheduled_ids(), true), 'the listing is unpublished after its video was sent: the video is taken back off OneUp, by its id');
+t_ok(strpos(implode(' | ', array_column($rec($n1)['trail'], 'what')), 'the listing is no longer public') !== false, '…and its history says why');
+wp_update_post(['ID' => $n1, 'post_status' => 'publish']);
+ias_youtube_check(true);
+t_eq('sent', $rec($n1)['state'], '…published again: it goes again');
+
+// Switched off after its scheduled minute, OneUp running late: still taken back by its id.
+$o1 = $mk('22 Oscar Lane');
+$upload($o1);
+$oid = (string) $rec($o1)['oneup']['id'];
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 10 * 60)); // past its time; OneUp has not published it yet
+ias_settings_update(['master' => false]);
+$c0 = count($S['calls']);
+ias_youtube_check(true);
+t_ok(count($mine($c0, $oid)) === 1 && $rec($o1)['state'] === 'ready', 'the master switch off after its scheduled minute, still on OneUp\'s schedule: taken back all the same');
+ias_settings_update(['master' => true]);
+ias_youtube_check(true);
+
+// Already out when it is switched off: never taken for taken back (it would go twice), not asked about again while off.
+$p1 = $mk('23 Papa Court');
+$upload($p1);
+$oid = (string) $rec($p1)['oneup']['id'];
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 10 * 60));
+ias_t_oneup_publish((int) $oid);
+$yt_on(false);
+$c0 = count($S['calls']);
+ias_youtube_check(true);
+t_ok(count($mine($c0, $oid)) === 1 && $rec($p1)['state'] === 'live' && empty($rec($p1)['was_on_oneup']), 'YouTube switched off, but OneUp no longer has it scheduled (it went out): never marked to go again — the same run\'s read-back finds it published');
+$sent_for = function (int $from, string $street) { return array_values(array_filter(ias_t_oneup_calls($from, 'schedulevideopost'), function ($c) use ($street) { return strpos((string) $c['params']['title'], $street . ',') === 0; })); };
+$yt_on(true);
+$c0 = count($S['calls']);
+ias_youtube_check(true);
+t_eq([], $sent_for($c0, '23 Papa Court'), '…and switched back on, it is not sent a second time');
+
+$p2 = $mk('23A Papa Court');
+$upload($p2);
+$oid = (string) $rec($p2)['oneup']['id'];
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 10 * 60));
+ias_t_oneup_publish((int) $oid);
+ias_settings_update(['master' => false]);
+$c0 = count($S['calls']);
+ias_youtube_check(true);
+t_ok(count($mine($c0, $oid)) === 1 && $rec($p2)['state'] === 'sent' && !empty($rec($p2)['tb_missed']), 'the master switch off (no read-back), and OneUp no longer has it scheduled: it stays sent, noted — never marked to go again');
+$c0 = count($S['calls']);
+ias_youtube_check(true);
+t_eq([], $mine($c0, $oid), '…and it is not asked about again while things stay off');
+ias_settings_update(['master' => true]);
+$c0 = count($S['calls']);
+ias_youtube_check(true);
+t_ok($rec($p2)['state'] === 'live' && !empty($rec($p2)['url']) && $sent_for($c0, '23A Papa Court') === [], 'back on: the read-back finds it published, its link goes on the listing, and it is not sent again');
+
+// On none of OneUp's lists a day after its time (deleted in OneUp): a person checks the channel.
+$q1 = $mk('24 Quebec Street');
+$upload($q1);
+unset($S['scheduled'][(int) $rec($q1)['oneup']['id']]);
+ias_youtube_check(true);
+t_eq('sent', $rec($q1)['state'], 'gone from OneUp\'s lists within the day: still waited for');
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 25 * 3600));
+if (date('N', strtotime(ias_now_sql())) === '7') ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 86400));
+ias_youtube_check(true);
+t_ok($rec($q1)['state'] === 'lost' && strpos($row($q1), 'Send it again') !== false, 'on none of OneUp\'s lists a day after its time: lost — the row asks a person to check the channel');
+
+// The listing's video field will not take the link: not linked, tried again.
+$r1 = $mk('25 Romeo Road');
+$upload($r1);
+$oid = (int) $rec($r1)['oneup']['id'];
+ias_t_clock(date('Y-m-d H:i', strtotime(ias_now_sql()) + 10 * 60));
+ias_t_oneup_publish($oid);
+$refuse = function ($check, $object_id, $meta_key) use ($r1) { return ((int) $object_id === $r1 && $meta_key === ia_acf_field_video()) ? false : $check; };
+add_filter('update_post_metadata', $refuse, 10, 3);
+add_filter('add_post_metadata', $refuse, 10, 3);
+ias_youtube_check(true);
+t_ok($rec($r1)['state'] === 'live' && empty($rec($r1)['url']) && (int) ($rec($r1)['link_fails'] ?? 0) === 1 && $video($r1) === '', 'the listing\'s video field refuses the link (ia_video_save() reads it back): not counted as linked — tried again');
+remove_filter('update_post_metadata', $refuse, 10);
+remove_filter('add_post_metadata', $refuse, 10);
+ias_youtube_check(true);
+t_ok($rec($r1)['linked'] === 'listing' && strpos($video($r1), 'youtube.com/watch?v=') !== false, '…and the next check puts it on the listing');
+
+// YouTube alone keeps the open calendar's minute-by-minute check going.
+ias_settings_update(['oneup_account_id' => '']);
+t_ok(ias_oneup_blockers(false) && ias_pulse_pill() !== '', 'no Facebook page set, Google off, YouTube set up: the calendar still checks OneUp every minute');
+ias_settings_update(['oneup_account_id' => 'fb_123']);
+
+// A listing deleted for good while this request still holds the list: its record goes with it, and no write brings it back.
+$s1 = $mk('26 Sierra Way');
+$upload($s1);
+t_ok(isset(ias_youtube_all()[$s1]), 'a listing with a video is on the list');
+wp_delete_post($s1, true);
+t_ok(!isset(ias_youtube_all()[$s1]), '…deleted for good: off the list at once, though this request had read it');
+ias_youtube_put($s1, ['state' => 'sent', 'trail' => []], 'a late write');
+global $wpdb;
+t_eq(0, (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d", $s1)), '…and a late write leaves nothing behind on the missing post');
 
 ias_t_oneup_off();
 ias_t_claude_off();

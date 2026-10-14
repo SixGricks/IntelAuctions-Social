@@ -763,9 +763,10 @@ if (!function_exists('ias_oneup_verify')) {
     $when = ias_now()->modify('+30 days')->setTime(9, 17)->format('Y-m-d H:i');
     $text = 'Intel Auctions Social connection test ' . wp_generate_password(6, false) . ' — a draft: it never publishes, and the plugin deletes it straight away.';
     $draft = ['category_id' => $cat, 'social_network_id' => $acct, 'scheduled_date_time' => $when, 'content' => $text, 'isDraftPost' => 'true'] + ($gbp ? ['google_post_type' => 'update'] : []) + ($yt ? ['title' => 'Intel Auctions Social connection test'] : []);
+    // YouTube's draft goes the way its videos will (schedulevideopost; OneUp's docs: a draft needs no video_url) —
+    // never a text draft instead, which could pass while every real upload is refused (0.22.1).
     $how = $yt ? 'schedule_video' : 'schedule_text';
     $r = ias_oneup_call($how, $draft);
-    if ($yt && !$r['ok'] && !ias_oneup_uncertain($r)) { $how = 'schedule_text'; $r = ias_oneup_call($how, $draft); } // a clear no created nothing: the plain draft instead
     ias_oneup_scheduled_forget();
     if (!$step('Save a draft (' . (string) (ias_oneup_endpoints()[$how][1] ?? $how) . ', as a draft)', $r['ok'], $r['ok'] ? 'OneUp accepted it' . ($r['id'] !== '' ? ' as post #' . $r['id'] : ' (its answer carried no post id — found below by its text)') . '.' : $r['error'])) {
       // No answer is not "no post": look on the scheduled list (and among the drafts) before giving up.

@@ -25,6 +25,7 @@ function ias_t_reset(): void {
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
+  unset($GLOBALS['ias_youtube_index']); // every file runs in one process: nothing read before this reset may carry over
   foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_youtube_verify', 'ias_youtube_playlists'] as $o) delete_option($o);
   $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
   update_option('ias_settings', [], true);
@@ -356,6 +357,7 @@ function ias_t_oneup(): void {
         $sn = $raw_sn;
         if (is_string($sn) && $S['id_form'] !== 'brackets') { $d = json_decode($sn, true); if (is_array($d)) $sn = $d; }
         if (!is_array($sn) || !$sn) return $json(200, ['error' => true, 'message' => 'Social Network ID must be an array.']);
+        if ($path === 'schedulevideopost' && !empty($S['video_refused'])) return $json(200, ['error' => true, 'message' => 'Video posts are not enabled for this account.']);
         if ($S['net_error'] > 0) { $S['net_error']--; return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds for ' . $url); }
         if ($S['fail_next'] > 0) { $S['fail_next']--; return $json(200, ['error' => true, 'message' => 'The Facebook token has expired']); }
         if ($S['zero_new'] > 0) { $S['zero_new']--; return $json(200, ['message' => '0 new Posts Scheduled.', 'error' => false, 'data' => []]); }
@@ -430,7 +432,13 @@ function ias_t_storage(): void {
     if (strpos((string) $url, 'https://oneupdata.s3.us-east-2.amazonaws.com/') === 0) { // the presigned address: a PUT (Verify's test file), a CORS question
       $method = (string) ($args['method'] ?? 'GET');
       $S['calls'][] = ['path' => 's3-put', 'method' => $method, 'params' => ['url' => (string) $url], 'raw_sn' => null];
-      if ($method === 'OPTIONS') return ['headers' => ['access-control-allow-origin' => (string) ($S['cors'] ?? '*')], 'body' => '', 'response' => ['code' => 200, 'message' => ''], 'cookies' => [], 'filename' => null];
+      if ($method === 'OPTIONS') { // the preflight, as OneUp's bucket answered it (Oct 14, 2026); `cors`, `cors_methods`, `cors_headers` change it, `options_error` loses it
+        if (!empty($S['options_error'])) return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out');
+        $h = ['access-control-allow-origin' => (string) ($S['cors'] ?? '*'), 'access-control-allow-methods' => (string) ($S['cors_methods'] ?? 'GET, POST, PUT'), 'access-control-allow-headers' => (string) ($S['cors_headers'] ?? 'content-type')];
+        // As WordPress hands headers over: a case-insensitive dictionary object, not an array.
+        $dict = class_exists('WpOrg\\Requests\\Utility\\CaseInsensitiveDictionary') ? 'WpOrg\\Requests\\Utility\\CaseInsensitiveDictionary' : 'Requests_Utility_CaseInsensitiveDictionary';
+        return ['headers' => new $dict($h), 'body' => '', 'response' => ['code' => 200, 'message' => ''], 'cookies' => [], 'filename' => null];
+      }
       if (!empty($S['put_refused'])) return $resp(403, 'SignatureDoesNotMatch');
       $u = basename((string) wp_parse_url((string) $url, PHP_URL_PATH));
       $S['files']['https://s3.us-east-2.amazonaws.com/oneupdata/api-uploads/dj@intelauctions.com/' . $u] = true;

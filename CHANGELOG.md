@@ -1,5 +1,35 @@
 # Intel Auctions Social changelog
 
+## 0.22.1 (2026-10-14) — YouTube review fixes
+From the review of 0.22.0 (SixGricks/IntelAuctions-Social#10):
+- **A withdrawn listing's video is taken back.** A listing that stops being
+  public (unpublished, withdrawn) counts as switched off for its own video:
+  a copy on OneUp's schedule is taken back by its id, and goes again once the
+  listing is published (`ias_youtube_listing_public()`).
+- **Off means off past the scheduled minute.** The take-back no longer skips a
+  video whose time has passed — OneUp can run late. If OneUp answers that it is
+  no longer scheduled, it may already be out: the record keeps `sent`, notes
+  `tb_missed` (nothing more is asked while things stay off) and the read-back
+  settles it — never `ready`, which would send it a second time.
+- **Lost a day on.** A `sent` video on none of OneUp's complete lists a day
+  after its time (deleted in OneUp) becomes `lost`: the row asks a person to
+  check the channel, then **Send it again**.
+- **Verify for YouTube** no longer falls back to a text draft when the video
+  draft is refused — that could pass while every real upload fails. Its
+  storage check now asks the browser's own preflight question (origin, PUT and
+  `Content-Type`) and counts no answer as a fail (`ias_youtube_cors_ok()`,
+  which reads the headers as WordPress hands them over — a case-insensitive
+  dictionary object, never cast to an array, which would empty it).
+- **The link is counted only once the listing keeps it.** A write the toolkit
+  reports refused (4.70.1 reads the field back) is tried again on later checks;
+  after three refusals the history says to paste the link by hand.
+- **YouTube alone keeps the calendar's minute check going** (`ias_pulse_pill()`),
+  with Facebook and Google off.
+- **A listing deleted for good takes its record with it.** The list of
+  records only counts listings that exist, a write to a missing listing does
+  nothing, and deleting a post clears the list kept for the request — so a
+  late write can never leave a record on a post that is gone.
+
 ## 0.22.0 (2026-10-14) — Property videos to YouTube, one upload
 DJ: "I'm on vimeo starter. The goal is to cut down on human workload. I want
 one time upload, title, description and not to think about it again. I would

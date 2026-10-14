@@ -662,7 +662,8 @@ if (!function_exists('ias_pulse_pill')) {
   function ias_pulse_pill(): string {
     $fb = ias_oneup_blockers(false);
     $g = function_exists('ias_gbp_blockers_read') ? ias_gbp_blockers_read() : ['off'];
-    if ($fb && $g) return '';
+    $y = function_exists('ias_youtube_blockers_read') && ias_youtube_all() ? ias_youtube_blockers_read() : ['off']; // YouTube alone keeps the check going too (0.22.1)
+    if ($fb && $g && $y) return '';
     $last = get_option('ias_pulse', []);
     $seq = is_array($last) ? (int) ($last['seq'] ?? 0) : 0;
     return '<div class="ias-pulse" id="ias-pulse" data-seq="' . $seq . '" data-nonce="' . esc_attr(wp_create_nonce('ias_pulse')) . '" aria-live="polite">'

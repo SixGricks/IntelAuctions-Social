@@ -79,3 +79,21 @@ $slots = [['06:00', '07:30'], ['11:30', '13:00']];
 t_eq('2026-11-02 14:05', ias_youtube_when(new DateTimeImmutable('2026-11-02 14:00', $tz), $slots), 'five minutes ahead');
 t_eq('2026-11-09 06:00', ias_youtube_when(new DateTimeImmutable('2026-11-08 15:00', $tz), $slots), 'never on a Sunday: Monday\'s first posting window');
 t_eq('2026-11-09 06:00', ias_youtube_when(new DateTimeImmutable('2026-11-07 23:57', $tz), $slots), 'five minutes ahead would be Sunday: Monday too');
+
+// The browser's preflight (0.22.1): origin, PUT and Content-Type all allowed.
+$o = 'https://intelauctions.com';
+t_ok(ias_youtube_cors_ok(['Access-Control-Allow-Origin' => '*', 'Access-Control-Allow-Methods' => 'GET, POST, PUT', 'Access-Control-Allow-Headers' => 'content-type'], $o), 'OneUp\'s bucket as it answered: allowed');
+t_ok(ias_youtube_cors_ok(['access-control-allow-origin' => $o, 'access-control-allow-methods' => 'PUT', 'access-control-allow-headers' => 'Content-Type, x-amz-acl'], $o), 'this origin by name, any case: allowed');
+t_ok(ias_youtube_cors_ok(['access-control-allow-origin' => '*', 'access-control-allow-methods' => '*', 'access-control-allow-headers' => '*'], $o), 'wildcards: allowed');
+t_ok(!ias_youtube_cors_ok(['access-control-allow-origin' => 'https://elsewhere.example', 'access-control-allow-methods' => 'PUT', 'access-control-allow-headers' => 'content-type'], $o), 'another origin: refused');
+t_ok(!ias_youtube_cors_ok(['access-control-allow-origin' => '*', 'access-control-allow-methods' => 'GET, POST', 'access-control-allow-headers' => 'content-type'], $o), 'no PUT: refused');
+t_ok(!ias_youtube_cors_ok(['access-control-allow-origin' => '*', 'access-control-allow-methods' => 'PUT'], $o), 'no Content-Type header allowed: refused');
+t_ok(!ias_youtube_cors_ok([], $o), 'no CORS headers at all: refused');
+// WordPress hands headers over as a case-insensitive dictionary object (a cast to array would empty it).
+$dict = new class(['access-control-allow-origin' => '*', 'access-control-allow-methods' => 'GET, POST, PUT', 'access-control-allow-headers' => 'content-type']) implements IteratorAggregate {
+  private $data; public function __construct(array $d) { $this->data = $d; }
+  public function getAll() { return $this->data; } public function getIterator(): Iterator { return new ArrayIterator($this->data); }
+};
+t_ok(ias_youtube_cors_ok($dict, $o), 'the headers as WordPress hands them over (a dictionary object): read, allowed');
+t_ok(ias_youtube_cors_ok(new ArrayIterator(['Access-Control-Allow-Origin' => '*', 'Access-Control-Allow-Methods' => ['PUT'], 'Access-Control-Allow-Headers' => ['Content-Type']]), $o), 'any iterable, values as lists: allowed');
+t_ok(!ias_youtube_cors_ok(null, $o) && !ias_youtube_cors_ok('nonsense', $o), 'nothing usable: refused');

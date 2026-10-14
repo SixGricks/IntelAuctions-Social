@@ -309,6 +309,8 @@ if (!function_exists('ias_youtube_get')) {
 /** Save the record, with a line for its history (and the plugin's log when $log). */
 if (!function_exists('ias_youtube_put')) {
   function ias_youtube_put(int $lid, array $rec, string $line = '', string $actor = 'system', bool $log = true): array {
+    unset($GLOBALS['ias_youtube_index']);
+    if (!get_post($lid)) return $rec; // the listing is gone (0.22.1): never leave a record behind on a missing post
     if ($line !== '') {
       $trail = (array) ($rec['trail'] ?? []);
       $trail[] = ['at' => ias_now_sql(), 'what' => $line, 'by' => $actor];
@@ -317,7 +319,6 @@ if (!function_exists('ias_youtube_put')) {
     }
     if ($rec) update_post_meta($lid, IAS_YOUTUBE_META, $rec);
     else delete_post_meta($lid, IAS_YOUTUBE_META);
-    unset($GLOBALS['ias_youtube_index']);
     return $rec;
   }
 }
@@ -328,13 +329,16 @@ if (!function_exists('ias_youtube_all')) {
     if (isset($GLOBALS['ias_youtube_index'])) return $GLOBALS['ias_youtube_index'];
     global $wpdb;
     $out = [];
-    foreach ((array) $wpdb->get_col($wpdb->prepare("SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s", IAS_YOUTUBE_META)) as $lid) {
+    foreach ((array) $wpdb->get_col($wpdb->prepare("SELECT m.post_id FROM {$wpdb->postmeta} m INNER JOIN {$wpdb->posts} p ON p.ID = m.post_id WHERE m.meta_key = %s", IAS_YOUTUBE_META)) as $lid) {
       $rec = ias_youtube_get((int) $lid);
       if ($rec) $out[(int) $lid] = $rec;
     }
     return $GLOBALS['ias_youtube_index'] = $out;
   }
 }
+
+// A listing deleted for good takes its record with it; the list kept for this request must not outlive it (0.22.1).
+add_action('deleted_post', function () { unset($GLOBALS['ias_youtube_index']); });
 
 /** An upload address handed out more than two hours ago and never confirmed is nothing. */
 if (!function_exists('ias_youtube_stale_upload')) {
@@ -470,6 +474,14 @@ if (!function_exists('ias_youtube_upload_done')) {
 
 /* ---------------- Sending it to YouTube ---------------- */
 
+/** Is the listing public (published, no password)? Its video goes, and stays on OneUp, only while it is. */
+if (!function_exists('ias_youtube_listing_public')) {
+  function ias_youtube_listing_public(int $lid): bool {
+    $post = get_post($lid);
+    return $post && $post->post_status === 'publish' && $post->post_password === '';
+  }
+}
+
 /** Why a ready video is not going to YouTube right now ('' = it can go). */
 if (!function_exists('ias_youtube_send_blocker')) {
   function ias_youtube_send_blocker(int $lid, array $rec): string {
@@ -477,8 +489,7 @@ if (!function_exists('ias_youtube_send_blocker')) {
     if (!empty($rec['sending'])) return 'its last try is still being looked for on OneUp';
     $block = ias_youtube_blockers();
     if ($block) return $block[0];
-    $post = get_post($lid);
-    if (!$post || $post->post_status !== 'publish' || $post->post_password !== '') return 'the listing is not published yet (the description links to it)';
+    if (!ias_youtube_listing_public($lid)) return 'the listing is not published yet (the description links to it)';
     if (ias_now()->format('N') === '7') return 'never on a Sunday';
     return '';
   }
@@ -568,9 +579,13 @@ if (!function_exists('ias_youtube_takeback')) {
     if ($id === '' || ias_oneup_takeback_blockers()) return false;
     $d = ias_oneup_call('delete', ['post_id' => $id]);
     ias_oneup_scheduled_forget();
-    $gone = $d['ok'] || (ias_oneup_gone($d) && ias_oneup_confirm_absent($id));
-    if (!$gone) return false;
-    unset($rec['oneup']);
+    if (!$d['ok']) {
+      // Not on OneUp's schedule (0.22.1): it may already be out, so it is never taken for taken back — that
+      // would send it again when switched on. Noted, not tried again while it stays off; the read-back settles it.
+      if (ias_oneup_gone($d)) { $rec['tb_missed'] = ias_now_sql(); ias_youtube_put($lid, $rec, 'Could not be taken back: OneUp no longer has it scheduled (it may be out already) — the next read-back says where it is'); }
+      return false;
+    }
+    unset($rec['oneup'], $rec['tb_missed']);
     $rec['state'] = 'ready';
     $rec['was_on_oneup'] = true;
     ias_youtube_put($lid, $rec, 'Taken back off OneUp before it went out (' . $why . ') — it goes again when YouTube is on');
@@ -630,8 +645,16 @@ if (!function_exists('ias_youtube_link')) {
       return ias_youtube_put($lid, $rec, 'On YouTube: ' . $url . ' — the toolkit is too old to put it on the listing; paste it there');
     }
     $saved = ia_video_save($lid, $url, 'Intel Auctions Social', false);
+    if (!$saved['ok'] && ($saved['level'] ?? '') === 'error') {
+      // The site's video field did not take it (0.22.1): not linked — tried again on the next check, three times.
+      unset($rec['url']);
+      $rec['link_fails'] = (int) ($rec['link_fails'] ?? 0) + 1;
+      if ($rec['link_fails'] >= 3) { $rec['url'] = $url; $rec['linked'] = 'failed'; }
+      return ias_youtube_put($lid, $rec, 'On YouTube: ' . $url . ' — the listing\'s video field would not take the link' . ($rec['link_fails'] >= 3 ? '; paste it on the listing by hand' : ' (tried again on the next check)'));
+    }
     $rec['linked'] = $saved['ok'] ? 'listing' : 'kept';
     $rec['linked_at'] = ias_now_sql();
+    unset($rec['link_fails']);
     return ias_youtube_put($lid, $rec, 'On YouTube: ' . $url . ($saved['ok'] ? ' — the link is on the listing' : ' — the listing already had a link, which stays'));
   }
 }
@@ -651,19 +674,25 @@ if (!function_exists('ias_youtube_check')) {
     // Uploads never confirmed are nothing.
     foreach ($all as $lid => $rec) if (ias_youtube_stale_upload($rec)) { ias_youtube_put($lid, array_intersect_key($rec, ['trail' => 1]), 'The upload was never finished — upload the file again', 'system', false); unset($all[$lid]); }
 
-    // Off means off: a copy that has not gone out yet comes back off — by its id, with only the key needed (no read first).
+    // Off means off: a copy on OneUp's schedule comes back off — by its id, with only the key needed (no read
+    // first), whatever its time (OneUp can run late; 0.22.1). A listing no longer public counts as off for its
+    // own video, so a withdrawn listing never gets a video linking to it.
     $off = ias_youtube_switched_off();
-    if ($off && !ias_oneup_takeback_blockers()) {
+    if (!ias_oneup_takeback_blockers()) {
+      $took = false;
       foreach ($all as $lid => $rec) {
-        if (($rec['state'] ?? '') !== 'sent' || empty($rec['oneup']['id']) || strtotime((string) ($rec['oneup']['when'] ?? '')) <= strtotime(ias_now_sql())) continue;
+        if (($rec['state'] ?? '') !== 'sent' || empty($rec['oneup']['id']) || !empty($rec['tb_missed'])) continue;
+        $why = $off ? $off[0] : (ias_youtube_listing_public($lid) ? '' : 'the listing is no longer public');
+        if ($why === '') continue;
         if (!ias_push_lock()) break;
         try {
-          if (ias_youtube_takeback($lid, $rec, $off[0])) $changes[] = 'a YouTube video taken back (' . $off[0] . ')';
+          if (ias_youtube_takeback($lid, $rec, $why)) $changes[] = 'a YouTube video taken back (' . $why . ')';
+          $took = true;
         } finally {
           ias_push_unlock();
         }
       }
-      $all = ias_youtube_all();
+      if ($took) $all = ias_youtube_all();
     }
 
     $out = array_filter($all, function ($r) { return !empty($r['sending']) || ($r['state'] ?? '') === 'sent' || (($r['state'] ?? '') === 'live' && empty($r['url'])); });
@@ -704,7 +733,9 @@ if (!function_exists('ias_youtube_check')) {
           }
           if ($on_sched) {
             if ($id === '') { $rec['oneup']['id'] = (string) ($on_sched['post_id'] ?? ''); $rec = ias_youtube_put($lid, $rec); }
-            if ($off && $rec['oneup']['id'] !== '' && ias_youtube_takeback($lid, $rec, $off[0])) $changes[] = 'a YouTube video taken back (' . $off[0] . ')'; // its id only now known
+            if (!empty($rec['tb_missed'])) { unset($rec['tb_missed']); $rec = ias_youtube_put($lid, $rec); } // it is scheduled after all: a take-back may try again
+            $why = $off ? $off[0] : (ias_youtube_listing_public($lid) ? '' : 'the listing is no longer public');
+            if ($why !== '' && $rec['oneup']['id'] !== '' && ias_youtube_takeback($lid, $rec, $why)) $changes[] = 'a YouTube video taken back (' . $why . ')'; // its id only now known
             continue; // not out yet
           }
           $live = null;
@@ -724,6 +755,11 @@ if (!function_exists('ias_youtube_check')) {
               $rec['error'] = $why !== '' ? $why : 'OneUp could not publish it';
               ias_youtube_put($lid, $rec, 'YouTube could not take it: ' . $rec['error'] . ' — Try again on the row once it is fixed');
               $changes[] = 'a YouTube video failed';
+            } elseif ($sched['ok'] && $sched['complete'] && $pub['ok'] && $fail['ok'] && strtotime((string) ($sent['when'] ?? '')) < strtotime(ias_now_sql()) - DAY_IN_SECONDS) {
+              // On none of OneUp's lists a day after its time (deleted in OneUp, say): a person checks the channel (0.22.1).
+              $rec['state'] = 'lost';
+              ias_youtube_put($lid, $rec, 'On none of OneUp\'s lists a day after its time — check the channel, then Send it again on the row');
+              $changes[] = 'a YouTube video to check';
             }
             continue;
           }
@@ -808,10 +844,32 @@ if (!function_exists('ias_youtube_upload_test')) {
     if ($there !== true) return [false, $there === false ? 'The test file was sent but cannot be read back from its public address.' : 'The test file was sent; its public address did not answer.'];
     $host = wp_parse_url((string) $addr['upload_url']);
     $origin = (string) (wp_parse_url(admin_url(), PHP_URL_SCHEME) . '://' . wp_parse_url(admin_url(), PHP_URL_HOST));
+    // The browser's own question before the upload (0.22.1): this origin, a PUT, a Content-Type header — all three.
     $pre = wp_remote_request((string) $addr['upload_url'], ['method' => 'OPTIONS', 'timeout' => 15, 'headers' => ['Origin' => $origin, 'Access-Control-Request-Method' => 'PUT', 'Access-Control-Request-Headers' => 'content-type']]);
-    $allow = is_wp_error($pre) ? '' : (string) wp_remote_retrieve_header($pre, 'access-control-allow-origin');
-    if (!is_wp_error($pre) && !in_array($allow, ['*', $origin], true)) return [false, 'OneUp\'s storage (' . (string) ($host['host'] ?? '') . ') does not let a page on ' . $origin . ' upload to it, so the browser could not send a video there. Ask OneUp to allow it.'];
-    return [true, 'A 42-byte test file went up and came back from its public address' . (is_wp_error($pre) ? '' : ', and a page on this site may upload there') . '. It is never posted.'];
+    if (is_wp_error($pre)) return [false, 'The test file went up, but OneUp\'s storage did not answer whether a page on this site may upload there (' . $pre->get_error_message() . '). Run Verify again.'];
+    if (!ias_youtube_cors_ok(wp_remote_retrieve_headers($pre), $origin)) return [false, 'OneUp\'s storage (' . (string) ($host['host'] ?? '') . ') does not let a page on ' . $origin . ' upload to it (a PUT with a Content-Type), so the browser could not send a video there. Ask OneUp to allow it.'];
+    return [true, 'A 42-byte test file went up and came back from its public address, and a page on this site may upload there. It is never posted.'];
+  }
+}
+
+/**
+ * Does a CORS preflight answer let a page on $origin PUT a file with a
+ * Content-Type header? Origin, method and header all allowed. Pure. The
+ * headers come as WordPress hands them over — a case-insensitive dictionary
+ * object, which a cast to array would empty — or as a plain array.
+ */
+if (!function_exists('ias_youtube_cors_ok')) {
+  function ias_youtube_cors_ok($headers, string $origin): bool {
+    if (is_object($headers) && method_exists($headers, 'getAll')) $headers = $headers->getAll();
+    $h = [];
+    foreach ((is_array($headers) || $headers instanceof Traversable) ? $headers : [] as $k => $v) $h[strtolower((string) $k)] = strtolower(trim(is_array($v) ? implode(',', $v) : (string) $v));
+    $list = function (string $k) use ($h) { return array_filter(array_map('trim', explode(',', (string) ($h[$k] ?? '')))); };
+    $allow_origin = (string) ($h['access-control-allow-origin'] ?? '');
+    if ($allow_origin !== '*' && $allow_origin !== strtolower($origin)) return false;
+    $methods = $list('access-control-allow-methods');
+    if (!in_array('put', $methods, true) && !in_array('*', $methods, true)) return false;
+    $headers_ok = $list('access-control-allow-headers');
+    return in_array('content-type', $headers_ok, true) || in_array('*', $headers_ok, true);
   }
 }
 
