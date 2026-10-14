@@ -86,7 +86,10 @@ add_action('ias_post_view_side', function (array $p): void {
       . (!empty($p['flags']['unconfirmed']) ? ' <span class="description">(waiting for the read-back to confirm it)</span>' : '') . '</p>';
     if (!empty($p['locked'])) echo '<p><strong>' . esc_html(ucfirst((string) ($p['flags']['edited_in_oneup'] ?? 'edited'))) . ' in OneUp by a person</strong> — the plugin keeps it as they made it, until someone presses <strong>Edit it here again</strong> (above).</p>';
     if (!empty($p['flags']['correction']['text']) && empty($p['flags']['correction']['done'])) {
-      echo '<p><strong>A fact changed after it went out.</strong> Post this as a comment on it (a published post is never edited — that resets its reach):</p><div class="ias-preview" style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</div>';
+      echo '<p><strong>A fact changed after it went out.</strong> The correction goes on it as a comment (a published post is never edited — that resets its reach):</p><div class="ias-preview" style="font-size:13px">' . esc_html((string) $p['flags']['correction']['text']) . '</div>';
+      if (function_exists('ias_correction_button')) echo '<p>' . ias_correction_button($p, ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '</p>';
+    } elseif (!empty($p['flags']['correction']['done']) && strpos((string) $p['flags']['correction']['done'], 'posted by') === 0) {
+      echo '<p class="description">Correction ' . esc_html((string) preg_replace('/ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/', '', (string) $p['flags']['correction']['done'])) . ' as a comment: ' . esc_html((string) $p['flags']['correction']['text']) . '</p>';
     }
     echo '</div>';
     if ($p['status'] === 'published') return;

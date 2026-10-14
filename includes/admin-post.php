@@ -494,14 +494,15 @@ add_action('ias_calendar_before_grid', function (): void {
   do_action('ias_calendar_attention');
   $fixes = function_exists('ias_corrections_waiting') ? ias_corrections_waiting() : [];
   if ($fixes) {
-    echo '<div class="ias-card"><h3>Corrections to post as a comment <span class="description">(' . count($fixes) . ')</span></h3><p class="description">A fact changed after these went out. A post that has gone out is never edited — that resets its reach — so post the correction as a comment on it in Facebook, then mark it.</p>';
+    echo '<div class="ias-card"><h3>Corrections to post as a comment <span class="description">(' . count($fixes) . ')</span></h3><p class="description">A fact changed after these went out. A post that has gone out is never edited — that resets its reach — so the correction goes on it as a comment: <strong>Post it as a comment</strong> posts it on Facebook now' . (ias_setting('corrections_auto', false) ? ' (and the hourly run posts new ones by itself)' : '') . '; if you posted it yourself, mark it.</p>';
     foreach ($fixes as $p) {
       echo '<div style="border-top:1px solid #f0f0f1;padding:8px 0"><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '"><strong>' . esc_html(ias_post_type((string) $p['type'])['short']) . '</strong> · ' . esc_html(ias_post_subject($p)) . '</a>'
         . '<textarea readonly rows="2" class="large-text" onclick="this.select()" style="margin:6px 0">' . esc_textarea((string) $p['flags']['correction']['text']) . '</textarea>';
-      foreach (['posted' => 'Comment posted', 'not_needed' => 'Not needed'] as $done => $label) {
+      if (function_exists('ias_correction_button')) echo ias_correction_button($p, ias_admin_url(IAS_PAGE_CALENDAR));
+      foreach (['posted' => 'I posted it', 'not_needed' => 'Not needed'] as $done => $label) {
         echo '<form method="post" style="display:inline-block;margin-right:6px">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
           . '<input type="hidden" name="ias_cal_action" value="correction_done"><input type="hidden" name="ias_post" value="' . (int) $p['id'] . '"><input type="hidden" name="ias_done" value="' . esc_attr($done) . '">'
-          . '<button class="button' . ($done === 'posted' ? ' button-primary' : '') . '">' . esc_html($label) . '</button></form>';
+          . '<button class="button">' . esc_html($label) . '</button></form>';
       }
       echo '</div>';
     }

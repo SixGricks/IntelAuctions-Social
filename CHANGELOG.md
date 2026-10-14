@@ -1,5 +1,28 @@
 # Intel Auctions Social changelog
 
+## 0.18.0 (2026-10-14) — Correction comments posted by the plugin
+DJ: "Yes" — the correction comment for a post whose facts changed after it
+went out is posted by the plugin (OneUp's Intermediate plan has comments).
+- **Post it as a comment** (`ias_correction_post()`): POST
+  `feed.oneupapp.io/api/reply-to-post` with a JSON body — platform facebook,
+  Facebook's id for the post (`ias_correction_fb_id()`: the analytics' id, or
+  the published list's "FB_…"), the words, the page's id. On the calendar's
+  corrections card (beside **I posted it**, was Comment posted, and **Not
+  needed**) and on the post's page, which then says who posted it.
+- **Post corrections automatically** (`corrections_auto`, off at install):
+  the hourly run posts each new correction itself, up to five a run.
+- Needs the master switch on, nothing paused, the key and Facebook's id;
+  never on a Sunday, never with `[VERIFY]` (`ias_correction_blockers()`).
+- **Never twice**: the try is noted before it is sent; a lost answer is
+  looked for among the page's comments (GET `fetch-top-comments`,
+  `ias_correction_find()`) and marked posted when found; otherwise only a
+  person sends it again (**Post it again**). Three refusals stop the
+  automatic tries for it; a plan without comments (403) is said and not tried
+  again for a week (`ias_comments_no_plan`).
+- The Monday email points to **Post it as a comment**.
+- Tests: `tests/wp/07j-corrections.php` (32 checks), `tests/unit/corrections.php`;
+  the fake OneUp's comments (`reply-to-post`, `fetch-top-comments`).
+
 ## 0.17.0 (2026-10-14) — How each post did on Facebook
 DJ is on OneUp's Intermediate plan, which has the analytics. The spec: "Every
 post records when it went out and how it did."

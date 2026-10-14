@@ -315,6 +315,17 @@ function ias_t_oneup(): void {
       if ($S['comment_lose'] > 0) { $S['comment_lose']--; return $json(502, ['message' => 'Bad gateway']); }
       return $json(200, ['message' => 'OK', 'error' => false, 'data' => ['comment_id' => $cid, 'post_id' => (string) ($params['post_id'] ?? ''), 'platform' => 'facebook']]);
     }
+    if ($host === 'feed.oneupapp.io' && $path === 'fetch-top-comments') {
+      // The page's posts with their comments (here: every post a comment went on), newest first, two to a page.
+      $by = [];
+      foreach ($S['comments'] as $c) $by[$c['post_id']][] = ['platform' => 'facebook', 'post_id' => $c['post_id'], 'comment_id' => $c['comment_id'], 'child_count' => 0, 'user_id' => $c['social_account_id'], 'user_name' => 'Intel Auctions', 'content' => $c['comment'], 'child_comments' => []];
+      foreach ((array) ($S['feed_posts'] ?? []) as $fid) if (!isset($by[$fid])) $by[$fid] = [];
+      $rows = [];
+      foreach (array_reverse($by, true) as $fid => $cs) $rows[] = ['post' => ['id' => count($rows) + 1, 'social_account_id' => (string) strtok((string) $fid, '_'), 'platform' => 'facebook', 'post_id' => (string) $fid, 'content' => '…'], 'comments' => $cs];
+      $at = (int) ($params['next_id'] ?? 0);
+      $slice = array_slice($rows, $at, 2);
+      return $json(200, ['message' => 'OK', 'error' => false, 'data' => $slice, 'next_id' => $at + 2 < count($rows) ? $at + 2 : null]);
+    }
     switch ($path) {
       case 'listcategory':
         return $json(200, ['categories' => [['id' => 42, 'category_name' => 'Intel', 'isPaused' => 0]]]);
