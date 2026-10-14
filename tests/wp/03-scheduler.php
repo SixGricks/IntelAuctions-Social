@@ -1,9 +1,10 @@
 <?php
 /**
  * Phase 3 inside WordPress: the morning run places every post at a time that
- * keeps the rules, the dry run logs exactly what would go to OneUp (once per
- * change), a listing that changes is re-planned, and unpublishing a listing
- * cancels its posts before the request ends. (The busy-November acceptance
+ * keeps the rules; with the switches off nothing goes anywhere (there is no
+ * dry run), and on, OneUp gets exactly the post (once per change); a listing
+ * that changes is re-planned, and unpublishing a listing cancels its posts —
+ * and takes them off OneUp — before the request ends. (The busy-November acceptance
  * test is tests/unit/november.php.)
  */
 require_once dirname(__DIR__) . '/fixtures/wp-fixtures.php';
@@ -56,39 +57,53 @@ $lp = ias_post_by_slot('listing:' . $farm);
 $oh = ias_post_by_slot('open_house:' . $farm . ':20261114');
 t_ok($lp['scheduled_at'] < $oh['scheduled_at'], 'the farm\'s Open House post comes after its Listing post');
 
-// The dry run: every ready post in the next 21 days logged once, exactly as it would be sent.
-$logs = ias_log_recent('dryrun', 200);
-t_ok(count($logs) >= 3, 'the dry run logged the payloads (' . count($logs) . ')');
-$farm_log = null;
-foreach ($logs as $l) if ((int) ($l['meta']['post'] ?? 0) === (int) $lp['id']) $farm_log = $l;
-t_ok($farm_log !== null, 'the farm\'s Listing post is in the dry-run log');
-$pl = (array) ($farm_log['meta']['payload'] ?? []);
-t_eq('https://www.oneupapp.io/api/scheduleimagepost', $pl['url'] ?? '', 'an image post to OneUp\'s scheduleimagepost');
-t_eq(substr((string) $lp['scheduled_at'], 0, 16), $pl['params']['scheduled_date_time'] ?? '', 'at the planned time');
-t_eq(['42', 'fb_123'], [$pl['params']['category_id'] ?? '', $pl['params']['social_network_id'] ?? ''], 'to the category and Facebook account from Settings');
-t_eq((string) $lp['content']['text'], $pl['params']['content'] ?? '', 'with the post\'s text');
-t_ok(strpos((string) ($pl['params']['image_url'] ?? ''), '~~') !== false, 'its photos joined with ~~');
-t_ok(strpos((string) ($pl['params']['first_comment'] ?? ''), 'utm_campaign=social_listing') !== false, 'and the tagged link as the first comment');
-t_ok(!isset($pl['params']['apiKey']) && strpos(wp_json_encode($pl), 'apiKey') === false, 'the key is never in the log');
-t_ok(strpos((string) $farm_log['meta']['summary'], 'the master switch is off') !== false, 'the log says why it was not sent');
-$res_logged = array_filter($logs, function ($l) { return ($l['meta']['type'] ?? '') === 'results'; });
-t_eq(0, count($res_logged), 'a Results post waiting for approval is never pushed');
+// Everything off, as it ships: nothing goes to OneUp — and nothing is logged as if it had (no dry run).
+t_eq(0, count(ias_log_recent('pushed', 200)), 'with the switches off nothing goes to OneUp');
+t_eq(0, count(ias_log_recent('dryrun', 200)), '…and there is no dry run: nothing is logged as if it had been sent');
 
-$n = count(ias_log_recent('dryrun', 200));
+// On (OneUp, here the test fake): every ready post in the next 21 days goes, exactly as it is.
+ias_t_oneup();
+$S =& $GLOBALS['ias_t_oneup'];
+$S['gbp'] = false;
+ias_settings_update(['master' => true]);
+ias_oneup_verify('admin');
+ias_settings_update(['types' => ['listing' => true, 'open_house' => true, 'auction_week' => true]]);
+$writes = function (int $from) { return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletescheduledpost'], true); })); };
+$from = count($S['calls']);
 ias_push_run();
-t_eq($n, count(ias_log_recent('dryrun', 200)), 'nothing changed: nothing logged again');
+$lp = ias_post_get((int) $lp['id']);
+$call = null;
+foreach (ias_t_oneup_calls($from) as $c) if (($c['params']['content'] ?? null) === (string) $lp['content']['text']) $call = $c;
+t_ok(count($writes($from)) >= 3, 'switched on, the ready posts go to OneUp (' . count($writes($from)) . ')');
+t_eq('scheduleimagepost', $call['path'] ?? '', 'the farm\'s Listing post as an image post to OneUp\'s scheduleimagepost');
+$pl = (array) ($call['params'] ?? []);
+t_eq(substr((string) $lp['scheduled_at'], 0, 16), $pl['scheduled_date_time'] ?? '', 'at the planned time');
+t_eq(['42', 'fb_123'], [$pl['category_id'] ?? '', $pl['social_network_id'] ?? ''], 'to the category and Facebook account from Settings');
+t_ok(strpos((string) ($pl['image_url'] ?? ''), '~~') !== false, 'its photos joined with ~~');
+t_ok(strpos((string) ($pl['first_comment'] ?? ''), 'utm_campaign=social_listing') !== false, 'and the tagged link as the first comment');
+t_eq('live', ias_post_sent($lp)['mode'], 'the post keeps its OneUp record');
+t_ok(strpos(wp_json_encode(ias_log_recent('', 300)), 'test-oneup-key') === false, 'the key is never in the log');
+$res_sent = array_filter(ias_posts_query(['type' => 'results', 'limit' => 50]), function ($p) { return ias_post_sent($p)['mode'] !== ''; });
+t_eq(0, count($res_sent), 'a Results post waiting for approval is never pushed');
+
+$from = count($S['calls']);
+ias_push_run();
+t_eq([], $writes($from), 'nothing changed: nothing sent again');
 $r = ias_job_run();
 t_ok(!isset($r['plan']), 'the plan runs once a morning');
 
-// The open house moves: the old post goes (a delete is logged), the new one is planned.
+// The open house moves: the old post comes off OneUp, the new one is planned.
+$oh = ias_post_get((int) $oh['id']);
+$oh_id = ias_post_sent($oh)['id'];
+$from = count($S['calls']);
 update_post_meta($farm, 'open_house', '2026-11-15 13:00:00');
 $_POST = ['ias_cal_action' => 'plan_now'];
 do_action('ias_calendar_action', 'plan_now');
 $_POST = [];
 $old = ias_post_get((int) $oh['id']);
 t_eq('cancelled', $old['status'], 'the old open house\'s post is cancelled');
-$deleted = array_filter(ias_log_recent('dryrun', 50), function ($l) use ($oh) { return (int) ($l['meta']['post'] ?? 0) === (int) $oh['id'] && ($l['meta']['payload']['action'] ?? '') === 'delete'; });
-t_eq(1, count($deleted), 'and the dry run logs taking it back off OneUp');
+$deleted = array_filter(ias_t_oneup_calls($from, 'deletescheduledpost'), function ($c) use ($oh_id) { return (string) ($c['params']['post_id'] ?? '') === (string) $oh_id; });
+t_ok($oh_id !== '' && count($deleted) === 1 && !isset($S['scheduled'][(int) $oh_id]), 'and it is taken back off OneUp, by its id');
 $new = ias_post_by_slot('open_house:' . $farm . ':20261115');
 t_ok($new && !empty($new['scheduled_at']), 'the new open house gets a post with a time');
 
@@ -129,7 +144,8 @@ ias_plan_run();
 t_eq('', ias_push_ready(ias_post_get((int) $lp['id'])), '…and is ready again once rewritten');
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $lp['id']];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
-t_ok(strpos($html, 'What would go to OneUp') !== false && strpos($html, 'scheduled_date_time') !== false, 'a post shows what would go to OneUp');
+t_ok(strpos($html, 'What goes to OneUp') !== false && strpos($html, 'scheduled_date_time') !== false, 'a post shows what goes to OneUp');
+t_ok(stripos($html, 'dry run') === false, '…and never says "dry run"');
 $_GET = ['page' => IAS_PAGE_SETTINGS];
 ob_start(); ias_settings_render(); $html = ob_get_clean();
 t_ok(strpos($html, 'Look up accounts') !== false && strpos($html, 'form="ias-oneup-lookup-form"') !== false && strpos($html, '<form method="post" id="ias-oneup-lookup-form">') !== false, 'Settings offers Look up accounts (its button in the OneUp section, its form outside the settings form)');
@@ -138,9 +154,12 @@ restore_error_handler();
 t_eq([], $errors, 'no PHP notices on the screens');
 
 ias_t_claude_off();
+ias_t_oneup_off();
+delete_option('ias_oneup_verify');
+ias_settings_update(['master' => false, 'types' => ['listing' => false, 'open_house' => false, 'auction_week' => false]]);
 
 // The toolkit contract: Facebook stays the webhook's until Listing posts can really reach OneUp.
-ias_settings_update(['master' => true, 'dry_run' => false, 'types' => ['listing' => true]]);
+ias_settings_update(['master' => true, 'types' => ['listing' => true]]);
 t_ok(!ia_social_facebook_managed(), 'every switch on but no OneUp key: Facebook stays the toolkit webhook\'s');
 t_eq(['gbp', 'facebook'], ia_social_channels(), '…so the webhook still carries Facebook');
 add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
@@ -159,4 +178,4 @@ t_ok(!ia_social_facebook_managed(), 'a site can keep Facebook with the webhook t
 remove_all_filters('ias_live_pushing_built');
 remove_all_filters('ias_oneup_key');
 delete_option('ias_oneup_verify');
-ias_settings_update(['master' => false, 'dry_run' => true, 'types' => ['listing' => false]]);
+ias_settings_update(['master' => false, 'types' => ['listing' => false]]);

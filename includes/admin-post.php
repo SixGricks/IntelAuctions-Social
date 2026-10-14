@@ -286,6 +286,16 @@ add_action('ias_post_view_bar', function (array $p): void {
     $level = 'info';
     $lines = '<p><strong>Approve first.</strong> This post carries hard facts, so it waits for a yes — it is emailed for one as soon as its draft is clean, or approve it here.</p>';
   }
+  // Past its time without going out: Publish now (instant.php), beside whatever else the bar says.
+  $pub = function_exists('ias_publish_now_state') && $p['status'] !== 'held' ? ias_publish_now_state($p) : null;
+  if ($pub) {
+    $past = '<p><strong>Its time (' . esc_html(date_i18n('D M j, g:i a', strtotime($pub['at']))) . ') has passed and it did not go out.</strong> '
+      . ($p['status'] === 'published' ? 'Its time came before posting was on, so nothing was sent. ' : '')
+      . 'Publish it now, or leave it and the morning plan gives it a new time if it still has a window.</p>';
+    if ($level === '') { $level = 'warning'; $lines = $past; }
+    else $lines .= $past;
+    $buttons = ias_publish_now_button($p, $pub) . $buttons;
+  }
   if ($level === '') return;
   ob_start();
   /** Approve, Send for approval, a reminder (approval.php adds them here, first). */
@@ -438,7 +448,7 @@ add_action('ias_post_view_preview', function (array $p): void {
       echo ias_gbp_post_line($p, $req);
     } elseif ($ch !== 'facebook') {
       $problems = ias_channel_problems($req, $ch);
-      echo '<p class="description">Made from the Facebook words' . ($ch === 'x' ? ' and the listing\'s facts' : '') . '. Not sent — ' . esc_html((string) ias_channel($ch)['label']) . ' is in the dry run only.' . ($problems ? ' <strong>' . esc_html(ucfirst(implode('; ', $problems))) . '.</strong>' : '') . '</p>';
+      echo '<p class="description">Made from the Facebook words' . ($ch === 'x' ? ' and the listing\'s facts' : '') . '. A preview only — ' . esc_html((string) ias_channel($ch)['label']) . ' cannot be posted to yet.' . ($problems ? ' <strong>' . esc_html(ucfirst(implode('; ', $problems))) . '.</strong>' : '') . '</p>';
     }
     echo '</div>';
   }

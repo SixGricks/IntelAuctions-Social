@@ -17,6 +17,8 @@
  *                      change it sends, and hourly in the background. The
  *                      screen says when it last heard from OneUp and what
  *                      changed, and offers to show it.
+ *   Publish now        a post whose time passed without it going out goes
+ *                      in a few minutes, from its own page (0.12.0).
  *   Never into OneUp   everything that used to be done there is done here:
  *                      **Move** a post to another day and time (it holds — the
  *                      plan works around it, `flags.pinned`), **Try again** on a
@@ -183,6 +185,95 @@ add_action('ias_calendar_action', function (string $action): void {
       return;
   }
 });
+
+/* ---------------- Publish now ---------------- */
+
+/**
+ * Publish now, for a post whose time has passed without it going out (DJ,
+ * Oct 14, 2026: "I also want a "Publish now" button if a post is past it's
+ * scheduled date"): a post the plan had at a time that is gone — posting was
+ * off, it waited for a yes, or its time came in the old dry run (Not sent).
+ * Returns null when the button does not belong on this post, else ['at' =>
+ * its old time, 'why_not' => '' (it can go) or why it cannot go now].
+ */
+if (!function_exists('ias_publish_now_state')) {
+  function ias_publish_now_state(array $p): ?array {
+    if ($p['type'] === 'human' || !empty($p['locked']) || ias_post_sent($p)['mode'] !== '') return null;
+    $legacy = $p['status'] === 'published' && !empty($p['flags']['dry_run']); // Not sent: its time came in the old dry run
+    if (!$legacy && !in_array($p['status'], ['planned', 'approved', 'waiting', 'held'], true)) return null;
+    $at = (string) ($p['scheduled_at'] ?? '');
+    if ($at === '' || $at >= ias_now_sql()) return null;
+    $c = (array) $p['content'];
+    $why = '';
+    if (empty($c['text'])) $why = 'it has no draft yet';
+    elseif (ias_has_verify($c)) $why = 'it still has a [VERIFY] marker — put the right fact in first';
+    elseif ($p['status'] === 'held' || ias_post_needs_decision($p)) $why = 'it needs a decision first';
+    elseif (!empty($p['flags']['stale'])) $why = 'the listing changed since it was written — save or rewrite it first';
+    elseif (ias_now()->format('N') === '7') $why = 'never on a Sunday — use Move for Monday';
+    else {
+      $block = ias_push_blockers($p);
+      if ($block) $why = implode('; ', $block);
+    }
+    return ['at' => $at, 'why_not' => $why];
+  }
+}
+
+/** The Publish now button (or why it cannot go now), for the post's bar. */
+if (!function_exists('ias_publish_now_button')) {
+  function ias_publish_now_button(array $p, array $state): string {
+    if ($state['why_not'] !== '') return '<span class="description ias-pub-why">Publish now: not while ' . esc_html($state['why_not']) . '.</span>';
+    $google = function_exists('ias_gbp_live') && ias_gbp_live() && ias_gbp_ready($p) === '';
+    $confirm = 'Publish this post now? It goes to Facebook' . ($google ? ' (and Google a minute later)' : '') . ' in about ' . IAS_PUBLISH_NOW_MINUTES . ' minutes.' . ($p['lane'] === 'A' && $p['status'] !== 'approved' ? ' Publishing it is your approval.' : '');
+    return ias_post_action_form($p, 'publish_now', 'Publish now', 'button button-primary', '', $confirm);
+  }
+}
+
+if (!defined('IAS_PUBLISH_NOW_MINUTES')) define('IAS_PUBLISH_NOW_MINUTES', 3); // OneUp gets a time a few minutes ahead: "now" with room for the request
+
+add_action('ias_calendar_action', function (string $action): void {
+  if ($action !== 'publish_now') return;
+  $id = isset($_POST['ias_post']) ? (int) $_POST['ias_post'] : 0;
+  $p = $id > 0 ? ias_post_get($id) : null;
+  if (!$p) return;
+  $_POST['ias_back'] = ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $id]);
+  $state = ias_publish_now_state($p);
+  if (!$state || $state['why_not'] !== '') {
+    ia_flash_set('<div class="notice notice-error"><p>Not published: ' . esc_html($state ? $state['why_not'] : 'this post is not past its time, or it is already on OneUp') . '.</p></div>');
+    return;
+  }
+  $actor = ias_actor();
+  $when = ias_now()->modify('+' . IAS_PUBLISH_NOW_MINUTES . ' minutes')->format('Y-m-d H:i');
+  $flags = (array) $p['flags'];
+  $flags['pinned'] = $when; // a person's time: the plan works around it, and the veto window is theirs
+  $flags['pinned_by'] = $actor;
+  unset($flags['plan_note'], $flags['late'], $flags['relaxed'], $flags['dry_run'], $flags['unconfirmed']);
+  $fields = ['scheduled_at' => $when . ':00', 'flags' => $flags, 'note' => ''];
+  if ($p['status'] === 'published') $fields['status'] = $p['lane'] === 'A' ? 'approved' : 'planned'; // Not sent (old dry run): back on its way
+  if ($p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting'], true)) { // pressing it is the yes
+    $a = (array) $p['approvals'];
+    foreach ((array) ($a['tokens'] ?? []) as $i => $t) $a['tokens'][$i]['used'] = 1;
+    $a['decision'] = ['by' => $actor, 'at' => ias_now_sql(), 'via' => 'Publish now'];
+    $fields += ['status' => 'approved', 'approvals' => $a, 'approved_by' => mb_substr($actor, 0, 100), 'approved_at' => ias_now_sql()];
+    ias_log('approved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => 'Approved by ' . ias_actor_name($actor) . ' (Publish now)'], $actor);
+    if (function_exists('ias_voice_record')) ias_voice_record($id, 'kept');
+  }
+  ias_post_update($id, $fields);
+  $words = 'Publish now pressed by ' . ias_actor_name($actor) . ' — its time (' . date_i18n('D M j, g:i a', strtotime($state['at'])) . ') had passed; it goes out at ' . date_i18n('g:i a', strtotime($when));
+  ias_post_trail($id, $words, $actor);
+  ias_log('moved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $words], $actor);
+  ia_flash_set('<div class="notice notice-success"><p><strong>Publishing.</strong> It goes out at ' . esc_html(date_i18n('g:i a', strtotime($when))) . ' (about ' . IAS_PUBLISH_NOW_MINUTES . ' minutes).</p></div>');
+}, 5);
+
+/** Posts past their time that did not go out, in the last 7 days — on the calendar, so nobody hunts for them. */
+add_action('ias_calendar_before_grid', function (): void {
+  $since = ias_now()->modify('-7 days')->format('Y-m-d');
+  $past = array_values(array_filter(ias_posts_query(['status' => ['planned', 'approved', 'waiting', 'held', 'published'], 'from' => $since, 'to' => ias_now()->format('Y-m-d'), 'limit' => 200]), function ($p) {
+    return ias_publish_now_state($p) !== null;
+  }));
+  if (!$past) return;
+  echo '<div class="notice notice-warning inline"><p><strong>' . count($past) . ' post' . (count($past) === 1 ? '' : 's') . ' passed ' . (count($past) === 1 ? 'its' : 'their') . ' time without going out</strong> in the last 7 days. Open one to <strong>Publish now</strong> — or leave it, and the morning plan finds it a new time if it still has a window: ';
+  echo implode(', ', array_map(function ($p) { return '<a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '">' . esc_html(ias_post_type((string) $p['type'])['short'] . ' · ' . ias_post_subject($p)) . '</a>'; }, array_slice($past, 0, 10))) . (count($past) > 10 ? ' …' : '') . '</p></div>';
+}, 6);
 
 /* ---------------- From OneUp, while anyone is looking ---------------- */
 

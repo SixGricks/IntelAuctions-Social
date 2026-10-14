@@ -12,7 +12,8 @@ t_eq(-1, ias_hm_minutes('25:00'), '25:00 is not a time');
 t_eq('19:05', ias_minutes_hm(19 * 60 + 5), 'minutes back to HH:MM');
 
 $d = ias_settings_defaults();
-t_ok($d['master'] === false && $d['dry_run'] === true && $d['paused'] === false, 'master off, dry run on, not paused at install');
+t_ok($d['master'] === false && !array_key_exists('dry_run', $d) && $d['paused'] === false && !array_filter($d['types']) && empty($d['networks']['gbp']['on']), 'master off, every post type and Google off, not paused at install — and no dry run (on or off, nothing in between)');
+t_ok(!array_key_exists('live', $d['networks']['gbp']), 'Google is one switch: no separate Send to Google');
 t_ok(!in_array(true, $d['types'], true), 'every post type off at install');
 t_eq(['roundup' => 60, 'listing' => 70, 'open_house' => 90, 'auction_week' => 80, 'results' => 100], $d['weights'], 'weights are the spec\'s');
 t_eq([[500000, 1.2], [250000, 1.1], [100000, 1.0], [0, 0.9]], $d['bid_tiers'], 'starting-bid multipliers are the spec\'s');

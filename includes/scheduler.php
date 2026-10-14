@@ -388,7 +388,7 @@ if (!function_exists('ias_free_minute')) {
  *
  *   fixed   — published and human posts, posts locked by an edit in OneUp, and
  *             posts already sent inside the veto window (on the OneUp calendar:
- *             `flags.oneup` — or, in the dry run, logged as sent: `dry_hash`);
+ *             `flags.oneup`);
  *   blocked — a property's Open House and Auction Week posts while its Listing
  *             post waits for photos (the Listing post comes first);
  *   left out — skipped and cancelled posts, posts dropped for want of a window,
@@ -414,7 +414,7 @@ if (!function_exists('ias_engine_posts')) {
       }
       $at = !empty($r['scheduled_at']) ? substr((string) $r['scheduled_at'], 0, 16) : '';
       $live = (array) ($r['flags']['oneup'] ?? []);
-      $sent = $status === 'pushed' || !empty($r['flags']['dry_hash']) || !empty($live['hash']) || !empty($live['id']);
+      $sent = $status === 'pushed' || !empty($live['hash']) || !empty($live['id']);
       $fixed = '';
       $pin = (string) ($r['flags']['pinned'] ?? ''); // a person moved it there (Move on its page): it stays, while that time is ahead
       if (in_array($status, ['published', 'human'], true) || !empty($r['locked'])) $fixed = $at;

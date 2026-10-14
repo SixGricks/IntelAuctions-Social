@@ -119,7 +119,7 @@ if (!function_exists('ias_admin_styles')) {
       .ias-chip.st-waiting{border-color:#dba617;background:#fcf9e8}
       .ias-chip.st-held,.ias-chip.st-failed{border-color:#d63638;background:#fcf0f1}
       .ias-chip.st-approved,.ias-chip.st-pushed,.ias-chip.st-published{border-color:#00a32a;background:#edfaef}
-      .ias-chip.st-dropped,.ias-chip.st-skipped,.ias-chip.st-cancelled{border-color:#8c8f94;background:#f6f7f7;color:#8c8f94;text-decoration:line-through}
+      .ias-chip.st-dropped,.ias-chip.st-skipped,.ias-chip.st-cancelled,.ias-chip.st-notsent{border-color:#8c8f94;background:#f6f7f7;color:#8c8f94;text-decoration:line-through}
       .ias-chip.st-human{border-color:#8c8f94;background:#fff}
       .ias-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 14px}
       .ias-cols{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:20px;max-width:1880px}
@@ -278,9 +278,8 @@ if (!function_exists('ias_switches_strip')) {
     $chip = function (string $label, string $state, string $class) {
       return '<span class="ias-switch ' . esc_attr($class) . '"><b>' . esc_html($label) . '</b>' . esc_html($state) . '</span>';
     };
-    $out .= $chip('Master switch', !empty($s['master']) ? 'On' : 'Off — never calls OneUp', !empty($s['master']) ? 'on' : 'off');
-    $out .= $chip('Dry run', !empty($s['dry_run']) ? 'On — payloads go to the log' : 'Off', !empty($s['dry_run']) ? 'on' : 'off');
-    if (!empty($s['paused'])) $out .= $chip('Paused', 'No pushes until resumed', 'alert');
+    $out .= $chip('Master switch', !empty($s['master']) ? 'On' : 'Off — nothing posts', !empty($s['master']) ? 'on' : 'off');
+    if (!empty($s['paused'])) $out .= $chip('Paused', 'Nothing posts until resumed', 'alert');
     foreach (ias_post_types() as $type => $def) {
       if ($type === 'human') continue;
       $on = ias_type_on($type);
@@ -289,19 +288,27 @@ if (!function_exists('ias_switches_strip')) {
     if (function_exists('ias_channels_extra_on')) {
       foreach (ias_channels_extra_on() as $ch) {
         $state = (array) apply_filters('ias_channel_state', [], $ch);
-        $out .= $chip((string) ias_channel($ch)['label'], $state ? (string) preg_replace('/^[^:]+:\s*/', '', (string) $state[1]) : 'Dry run only — not sent yet', 'on');
+        if (!$state) continue; // a preview (Instagram, X, LinkedIn) is not a switch
+        $out .= $chip((string) ias_channel($ch)['label'], (string) preg_replace('/^[^:]+:\s*/', '', (string) $state[1]), (string) $state[0]);
       }
     }
     $out .= '</div>';
     if ($compact) {
       $on = array_values(array_filter(array_keys(ias_post_types()), function ($t) { return $t !== 'human' && ias_type_on($t); }));
-      if (empty($s['master'])) $line = ['off', 'Nothing reaches Facebook: the master switch is off.'];
-      elseif (!empty($s['paused'])) $line = ['alert', 'Paused: nothing new goes to OneUp.'];
-      elseif (!empty($s['dry_run'])) $line = ['on', 'Dry run: what would go to OneUp is written to the log; nothing is sent.'];
-      else $line = ['on', 'Live: ' . ($on ? implode(', ', array_map(function ($t) { return ias_post_type($t)['short']; }, $on)) . ' posts go to Facebook.' : 'no post type is switched on, so nothing is sent.')];
+      $setup = function_exists('ias_oneup_blockers') ? ias_oneup_blockers(true) : [];
+      if (empty($s['master'])) $line = ['off', 'Off: nothing goes to Facebook — the master switch is off.'];
+      elseif (!empty($s['paused'])) $line = ['alert', 'Paused: nothing goes out until you resume.'];
+      elseif (!$on) $line = ['off', 'Off: no post type is switched on, so nothing goes to Facebook.'];
+      elseif ($setup) $line = ['alert', 'Not posting yet: ' . $setup[0] . '.'];
+      else $line = ['on', 'On: ' . implode(', ', array_map(function ($t) { return ias_post_type($t)['short']; }, $on)) . ' posts go to Facebook.'];
       $more = '';
       foreach (function_exists('ias_channels_summary') ? ias_channels_summary() : [] as [$class, $text]) $more .= ' <span class="ias-switch ' . esc_attr($class) . '">' . esc_html($text) . '</span>';
       $out = '<details class="ias-switches-fold"><summary><span class="ias-switch ' . esc_attr($line[0]) . '">' . esc_html($line[1]) . '</span>' . $more . ' <span class="ias-switches-more">All the switches</span></summary>' . $out . '</details>';
+    }
+    $gone = function_exists('ias_dry_run_switched_off') ? ias_dry_run_switched_off() : [];
+    if ($gone) {
+      $names = array_map(function ($t) { return $t === 'gbp' ? 'Google' : (string) ias_post_type($t)['short']; }, $gone);
+      $out .= '<div class="notice notice-warning inline"><p><strong>The dry run is gone: every switch is on or off now.</strong> Because the dry run was on, these were switched off so the update would not start posting by itself: ' . esc_html(implode(', ', $names)) . '. Turn on the ones that should post in <a href="' . esc_url(ias_admin_url(IAS_PAGE_SETTINGS)) . '">Settings</a> — on means they really post. (This note goes once Settings is saved.)</p></div>';
     }
     $why = function_exists('ias_ai_blocker') ? ias_ai_blocker() : '';
     if ($why !== '') $out .= '<div class="notice notice-warning inline"><p><strong>Drafts are stopped.</strong> ' . esc_html($why) . ' Planning goes on; a post gets its words once Claude can be asked again.</p></div>';

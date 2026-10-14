@@ -31,13 +31,12 @@ if (!function_exists('ias_log_events')) {
       'voice'      => 'The house voice rules changed, or Claude suggested some',
       'emailed'    => 'An approval email or reminder went out',
       'review'     => 'The Monday review email went out',
-      'dryrun'     => 'Dry run: the exact payload that would have gone to OneUp',
       'pushed'     => 'A post went to OneUp',
       'push_failed'=> 'OneUp refused a post',
       'readback'   => 'What OneUp reported back (human posts, edits, published)',
       'run'        => 'A planning run finished',
       'settings'   => 'Settings were saved',
-      'paused'     => 'Pushing was paused or resumed',
+      'paused'     => 'Posting was paused or resumed',
     ];
   }
 }
@@ -84,7 +83,7 @@ if (!function_exists('ias_actor')) {
   }
 }
 
-/** Recent entries, newest first; $event narrows to one kind ('dryrun', 'dropped', …). */
+/** Recent entries, newest first; $event narrows to one kind ('pushed', 'dropped', …). */
 if (!function_exists('ias_log_recent')) {
   function ias_log_recent(string $event = '', int $limit = 100): array {
     if (!function_exists('ia_events_recent')) return [];

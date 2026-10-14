@@ -3,9 +3,9 @@
  * Intel Auctions Social — Auctions → Social Calendar → Log.
  *
  * Every generate, approve, push, edit read-back, drop and cancel, newest
- * first, read from the toolkit's event log (`ias.*` events). `?event=dryrun`
- * narrows to one kind — the dry-run payloads are the exact requests that
- * would have gone to OneUp, shown in full.
+ * first, read from the toolkit's event log (`ias.*` events). `?event=pushed`
+ * narrows to one kind. (Entries from the dry run before 0.12.0 still show,
+ * named as such; there is no dry run now.)
  */
 
 if (!defined('ABSPATH')) exit;
@@ -45,7 +45,7 @@ if (!function_exists('ias_log_render')) {
       echo '<tr>';
       echo '<td>' . esc_html(date_i18n('M j, g:i:s a', strtotime((string) $row['created_at']))) . '</td>';
       $short = (string) $row['short'];
-      echo '<td><span title="' . esc_attr($short) . '">' . esc_html($kinds[$short] ?? $short) . '</span></td>';
+      echo '<td><span title="' . esc_attr($short) . '">' . esc_html($kinds[$short] ?? ($short === 'dryrun' ? 'Dry run (before 0.12.0)' : $short)) . '</span></td>';
       $type = (string) ($meta['type'] ?? '');
       echo '<td>' . ($listing > 0 ? '<a href="' . esc_url((string) get_edit_post_link($listing, '')) . '">' . esc_html(html_entity_decode(get_the_title($listing), ENT_QUOTES, 'UTF-8') ?: '#' . $listing) . '</a>' : '—')
         . ($post > 0 ? '<br><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $post])) . '">' . esc_html($type !== '' ? ias_post_type($type)['short'] . ' post' : 'the post') . '</a>' : '') . '</td>';
@@ -57,7 +57,7 @@ if (!function_exists('ias_log_render')) {
   }
 }
 
-/** One entry's meta: the summary line, and the full payload for a dry run. */
+/** One entry's meta: the summary line, and the full payload when it has one. */
 if (!function_exists('ias_log_meta_html')) {
   function ias_log_meta_html(array $row): string {
     $meta = (array) $row['meta'];

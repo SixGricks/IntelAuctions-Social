@@ -79,6 +79,7 @@ if (!function_exists('ias_statuses')) {
       'cancelled' => ['label' => 'Cancelled',            'badge' => 'muted'],
       'failed'    => ['label' => 'Failed',               'badge' => 'bad'],
       'human'     => ['label' => 'Human',                'badge' => 'muted'],
+      'notsent'   => ['label' => 'Not sent',             'badge' => 'muted'], // shown only (ias_post_shown_status()): its time came in the dry run, before 0.12.0
     ];
   }
 }

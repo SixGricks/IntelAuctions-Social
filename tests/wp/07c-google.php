@@ -9,9 +9,10 @@
  * offered as choices — each network only its own kind of account, the
  * category's only one ready chosen — so no id is typed. Google Business
  * Profile: its own words (no hashtags, no phone numbers, 1,500 characters),
- * one picture and a Learn more button, a minute after Facebook; a dry run
- * until its own switch is on and its own Verify has passed (and the toolkit
- * can stand its own Google post down); then sent for real with its own record
+ * one picture and a Learn more button, a minute after Facebook; nothing
+ * sent until its one switch is on and its own Verify has passed (and the
+ * toolkit can stand its own Google post down) — there is no dry run (0.12.0);
+ * then sent with its own record
  * — never Facebook's — and Facebook's rules: never twice, replaced and taken
  * back only by id, a person's edit, move or delete in OneUp kept, a refusal
  * stopping Google only, never the Facebook post.
@@ -125,25 +126,23 @@ $vid['content']['media'] = ['kind' => 'video', 'images' => [], 'video_url' => 'h
 $vreq = ias_render_channel($vid, 'gbp');
 t_ok($vreq['endpoint'] === 'schedule_image' && (string) ($vreq['params']['image_url'] ?? '') !== '', 'a video post gives Google the listing\'s best photo instead (Google shows a picture, not a link)');
 
-// ---- 3. Off, then a dry run ----
-t_eq('off', ias_gbp_mode(), 'Google posts ship off');
+// ---- 3. Off; switched on, it waits for Verify for Google ----
+t_ok(!ias_channel_settings('gbp')['on'] && !ias_gbp_live(), 'Google posts ship off');
 $n = count($S['calls']);
 ias_push_run();
 t_eq([], $writes($n, $GBP), '…and nothing goes to Google');
 $save(['networks' => ['gbp' => ['on' => '1', 'account' => $GBP, 'types' => ['listing', 'open_house', 'auction_week', 'results']]]]);
-t_eq('dry', ias_gbp_mode(), 'switched on, Google is a dry run until Send to Google is on and Verify for Google has passed');
+t_ok(!ias_gbp_live(), 'switched on, nothing goes to Google until Verify for Google has passed');
 $why = ias_gbp_blockers();
-t_ok(in_array('Send to Google is off', $why, true) && in_array('dry run is on', $why, true), '…saying why (' . implode('; ', $why) . ')');
+t_ok(in_array('Verify for Google has not passed for this location', $why, true) && !in_array('dry run is on', $why, true) && !in_array('Send to Google is off', $why, true), '…saying why — one switch, and no dry run (' . implode('; ', $why) . ')');
 ias_push_run();
-$dry = array_values(array_filter(ias_log_recent('dryrun', 500), function ($r) use ($a) { return ($r['meta']['channel'] ?? '') === 'gbp' && (int) ($r['meta']['post'] ?? 0) === (int) ias_post_by_slot('listing:' . $a)['id']; }));
-t_eq(1, count($dry), 'the Listing post\'s Google request goes to the dry-run log');
-t_ok(strpos((string) $dry[0]['meta']['summary'], 'Would schedule on Google Business Profile') === 0, '…as what would be scheduled');
 t_eq([], $writes($n, $GBP), '…and nothing is sent');
+t_eq(0, count(ias_log_recent('dryrun', 500)), '…nor logged as if it had been');
 $html = $screen(IAS_PAGE_CALENDAR);
-t_ok(strpos($html, 'Google: dry run') !== false, 'the calendar\'s switches line says Google is a dry run');
+t_ok(strpos($html, 'Google: on, not sending yet') !== false, 'the calendar\'s switches line says Google is on but not sending yet, and why');
 $view = $screen(IAS_PAGE_CALENDAR, ['post' => (string) $lp($a)['id']]);
 t_ok(strpos($view, 'data-net="gbp"') !== false && strpos($view, '>Learn more</a>') !== false, 'a post\'s page previews it for Google, with its Learn more button');
-t_ok(strpos($view, 'Not sent — Google is a dry run') !== false, '…and says it is not sent, and why');
+t_ok(strpos($view, 'Not sent to Google: ') !== false && stripos($view, 'dry run') === false, '…and says it is not sent, and why');
 
 // ---- 4. Verify for Google ----
 $n = count($S['calls']);
@@ -163,9 +162,8 @@ ias_oneup_verify('admin', 'gbp');
 ias_oneup_verify('admin');
 
 // ---- 5. Live ----
-ias_settings_update(['dry_run' => false, 'types' => ['listing' => true]]);
-$save(['networks' => ['gbp' => ['on' => '1', 'account' => $GBP, 'live' => '1', 'types' => ['listing', 'open_house', 'auction_week', 'results']]]]);
-t_eq([], ias_gbp_blockers(), 'Send to Google on, Verify passed, dry run off: Google is sent for real');
+ias_settings_update(['types' => ['listing' => true]]);
+t_eq([], ias_gbp_blockers(), 'Google posts on and Verify for Google passed: Google is sent');
 t_ok(ia_social_gbp_managed(), '…and the toolkit is told its own Google post stands down');
 t_eq([], ia_social_channels(), '…so its webhook has nothing left to post (Social posts Facebook and Google)');
 // The toolkit closes the Google cards it queued before (its "Review and post: GBP post" and, with Facebook Social's too, the promo cards).
@@ -192,8 +190,6 @@ t_eq(date('Y-m-d H:i', strtotime((string) $p['scheduled_at'] . ' +1 minute')), s
 $fb = ias_post_sent($p);
 t_ok($fb['mode'] === 'live' && $fb['id'] !== '' && $fb['id'] !== (string) $g['id'], 'the Facebook post went too, as its own OneUp post with its own record');
 t_eq(2, count($writes($n)), 'two posts sent: Facebook and Google, once each');
-$dry_left = array_filter(ias_posts_query(['limit' => 200]), function ($x) { return !empty($x['flags']['dry_ch']['gbp']); });
-t_eq([], array_values($dry_left), 'going live cleared Google\'s dry-run record');
 $others = array_filter(ias_posts_query(['type' => ['open_house', 'auction_week'], 'limit' => 50]), function ($x) { return !empty($x['flags']['gbp']); });
 t_eq([], array_values($others), 'post types whose own switch is off do not go to Google either');
 $n = count($S['calls']);
@@ -317,7 +313,7 @@ $dp = $lp($d);
 t_ok(empty($dp['flags']['gbp']) && !isset($S['scheduled'][(int) $gid]), 'a skipped post\'s Google copy is taken off');
 
 // ---- 14. Listing unticked for Google: copies come off, the toolkit takes Google back ----
-$save(['networks' => ['gbp' => ['on' => '1', 'account' => $GBP, 'live' => '1', 'types' => ['results']]]]);
+$save(['networks' => ['gbp' => ['on' => '1', 'account' => $GBP, 'types' => ['results']]]]);
 t_ok(!ia_social_gbp_managed(), 'with Listing posts no longer going to Google, the toolkit\'s own Google post comes back');
 t_eq(['gbp'], ia_social_channels(), '…its webhook carries Google again');
 ias_push_run();
@@ -329,11 +325,24 @@ t_ok(version_compare(IA_TOOLKIT_VERSION, IAS_GBP_TOOLKIT, '>='), 'this toolkit c
 $src = (string) file_get_contents(IAS_PATH . 'includes/gbp.php');
 t_ok(strpos($src, "version_compare((string) IA_TOOLKIT_VERSION, IAS_GBP_TOOLKIT, '<')") !== false, 'an older toolkit is a reason Google is not sent');
 
-// ---- 16. Master switch off: no call at all, Google included ----
+// ---- 16. Google switched off, then the master switch off: what is on OneUp comes off, then no call at all ----
+$save(['networks' => ['gbp' => ['on' => '1', 'account' => $GBP, 'types' => ['listing', 'open_house', 'auction_week', 'results']]]]);
+$e6 = $mk('6 Echo Way', '2026-11-24 10:00');
+ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();
+$on_google = function () { return array_values(array_filter(ias_posts_query(['limit' => 200]), function ($x) { return !empty($x['flags']['gbp']) && empty($x['flags']['gbp_locked']) && empty($x['flags']['gbp']['published']) && !in_array($x['status'], ['published'], true); })); };
+t_ok(count($on_google()) > 0, 'a fifth listing goes to Google');
+$save(['networks' => ['gbp' => ['on' => '', 'account' => $GBP, 'types' => ['listing', 'open_house', 'auction_week', 'results']]]]);
+$n = count($S['calls']);
+ias_push_run();
+t_eq([], $on_google(), 'Google switched off: its copies on OneUp come back off — off means off');
+t_ok(ias_post_sent($lp($e6))['mode'] === 'live', '…and the Facebook posts stay');
+t_eq(0, count(ias_t_oneup_calls($n, 'scheduletextpost')) + count(ias_t_oneup_calls($n, 'scheduleimagepost')), '…with nothing new sent');
+t_ok(!ia_social_gbp_managed(), '…and the toolkit takes its Google post back');
 ias_settings_update(['master' => false]);
+ias_job_run();
 $n = count($S['calls']);
 ias_job_run();
-t_eq([], ias_t_oneup_calls($n), 'master switch off: not one call to OneUp, Google included');
+t_eq([], ias_t_oneup_calls($n), 'master switch off, with everything of ours taken back: not one call to OneUp, Google included');
 $dir = ias_oneup_directory_fetch('admin');
 t_ok(isset($dir['error']) && count(ias_t_oneup_calls($n)) === 0, '…not even Look up accounts');
 

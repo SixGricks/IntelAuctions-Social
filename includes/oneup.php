@@ -99,19 +99,35 @@ if (!function_exists('ias_render_delete')) {
 }
 
 /**
- * What stops the plugin calling OneUp at all ([] = it may). $write = a call
- * that changes OneUp (schedule, delete), which the master switch and dry run
- * also stop; reading back needs only the master switch, the key and the ids.
+ * What stops the plugin calling OneUp ([] = it may). $write = a call that puts
+ * something new on OneUp (a post, or a new copy of one), which also needs
+ * Verify OneUp passed for the page set now; reading back needs the master
+ * switch, the key and the ids. Taking a post of ours back off OneUp is
+ * ias_oneup_takeback_blockers()'s: off means off, so the master switch never
+ * stops it.
  */
 if (!function_exists('ias_oneup_blockers')) {
   function ias_oneup_blockers(bool $write = true): array {
     $out = [];
     if (!ias_setting('master', false)) $out[] = 'the master switch is off';
-    if ($write && ias_setting('dry_run', true)) $out[] = 'dry run is on';
     if (ias_oneup_key() === '') $out[] = 'no OneUp key (Settings → OneUp)';
     if ((string) ias_setting('oneup_category_id', '') === '' || (string) ias_setting('oneup_account_id', '') === '') $out[] = 'the OneUp category or Facebook account id is not set';
     if ($write && !$out && !ias_oneup_verified()) $out[] = 'Verify OneUp has not passed for this page';
     return $out;
+  }
+}
+
+/**
+ * What stops the plugin taking one of its own posts back off OneUp ([] =
+ * nothing). Only the key: a post that should not go out — its type switched
+ * off, Pause, the master switch off, cancelled, skipped — comes off whatever
+ * the other switches say (DJ, Oct 14, 2026: "Either things are active or
+ * inactive"). With nothing of ours on OneUp there is nothing to take back, so
+ * with the master switch off the plugin makes no call at all.
+ */
+if (!function_exists('ias_oneup_takeback_blockers')) {
+  function ias_oneup_takeback_blockers(): array {
+    return ias_oneup_key() === '' ? ['no OneUp key (Settings → OneUp)'] : [];
   }
 }
 
@@ -131,44 +147,64 @@ if (!function_exists('ias_oneup_verified')) {
 }
 
 /**
- * What stops this post from really being scheduled on OneUp right now
- * ([] = nothing): everything that stops writing to OneUp, plus Pause and the
- * post type's own switch. (Taking a post back off OneUp is not stopped by
- * Pause or by its type being off — only by the master switch and dry run.)
+ * What stops this post going to OneUp right now ([] = nothing): everything
+ * that stops writing to OneUp, plus Pause and the post type's own switch.
+ * When one of them is a switch that is off (ias_push_switched_off()), a copy
+ * already on OneUp comes back off (ias_push_one()).
  */
 if (!function_exists('ias_push_blockers')) {
   function ias_push_blockers(array $post): array {
     $out = ias_oneup_blockers(true);
-    if (ias_setting('paused', false)) $out[] = 'pushes are paused';
-    if (!ias_type_on((string) $post['type'])) $out[] = ias_post_type((string) $post['type'])['label'] . ' posts are off';
+    if (ias_setting('paused', false)) $out[] = 'posting is paused';
+    if (!ias_type_on((string) $post['type'])) $out[] = ias_post_type((string) $post['type'])['short'] . ' posts are off';
     return $out;
   }
 }
 
-/** 'live' when the plugin may write to OneUp (master on, dry run off, key and ids set), else 'dry'. */
+/**
+ * The switches that are off for this post ([] = none): the master switch,
+ * Pause, its post type. Any of them, and its copy on OneUp comes back off —
+ * off means off. (A missing key or id, or Verify not passed, stops anything
+ * new going but takes nothing back: those are not a person switching
+ * something off.)
+ */
+if (!function_exists('ias_push_switched_off')) {
+  function ias_push_switched_off(array $post): array {
+    $out = [];
+    if (!ias_setting('master', false)) $out[] = 'the master switch is off';
+    if (ias_setting('paused', false)) $out[] = 'posting is paused';
+    if (!ias_type_on((string) $post['type'])) $out[] = ias_post_type((string) $post['type'])['short'] . ' posts are off';
+    return $out;
+  }
+}
+
+/** 'live' when the plugin may put posts on OneUp (master on, key and ids set, Verify OneUp passed), else 'off'. */
 if (!function_exists('ias_push_mode')) {
   function ias_push_mode(): string {
-    return ias_oneup_blockers(true) ? 'dry' : 'live';
+    return ias_oneup_blockers(true) ? 'off' : 'live';
   }
 }
 
 /**
- * What this post has "sent", in the mode the pushes run in now: the live
- * record (`flags.oneup`: id, hash, at, text) or the dry run's (`dry_hash`).
- * Returns ['mode' => 'live'|'dry'|'', 'hash' => …, 'id' => …].
+ * What this post has on OneUp for Facebook: `flags.oneup` (id, hash, at,
+ * text). Returns ['mode' => 'live'|'', 'hash' => …, 'id' => …].
  */
 if (!function_exists('ias_post_sent')) {
   function ias_post_sent(array $p): array {
     $live = (array) ($p['flags']['oneup'] ?? []);
     if (!empty($live['hash']) || !empty($live['id'])) return ['mode' => 'live', 'hash' => (string) ($live['hash'] ?? ''), 'id' => (string) ($live['id'] ?? '')];
-    if (!empty($p['flags']['dry_hash'])) return ['mode' => 'dry', 'hash' => (string) $p['flags']['dry_hash'], 'id' => ''];
     return ['mode' => '', 'hash' => '', 'id' => ''];
   }
 }
 
-/** The status a person sees: a planned or approved post on the OneUp calendar shows as Pushed. */
+/**
+ * The status a person sees: a planned or approved post on the OneUp calendar
+ * shows as Pushed; one whose time came in the old dry run (before 0.12.0,
+ * `flags.dry_run`) as Not sent — nothing went out.
+ */
 if (!function_exists('ias_post_shown_status')) {
   function ias_post_shown_status(array $p): string {
+    if ($p['status'] === 'published' && !empty($p['flags']['dry_run'])) return 'notsent';
     if (in_array($p['status'], ['planned', 'approved'], true) && ias_post_sent($p)['mode'] === 'live') return 'pushed';
     return (string) $p['status'];
   }
@@ -390,7 +426,7 @@ if (!function_exists('ias_oneup_directory')) {
  */
 if (!function_exists('ias_oneup_directory_fetch')) {
   function ias_oneup_directory_fetch(string $by = ''): array {
-    if (!ias_setting('master', false)) return ['error' => 'Turn the master switch on and save first (dry run can stay on): while it is off, the plugin never calls OneUp.'];
+    if (!ias_setting('master', false)) return ['error' => 'Turn the master switch on and save first: while it is off, the plugin never asks OneUp anything. (Nothing posts until a post type is on and Verify OneUp has passed.)'];
     if (ias_oneup_key() === '') return ['error' => 'Add the OneUp key first (Settings → OneUp) and save.'];
     $cats = ias_oneup_get('categories');
     if (is_wp_error($cats)) return ['error' => 'OneUp did not answer: ' . $cats->get_error_message()];
@@ -449,8 +485,8 @@ if (!function_exists('ias_oneup_type_is')) {
 
 /**
  * Is this plugin really posting Facebook? Only when Listing posts can
- * actually reach OneUp: the master switch on, dry run off, the key and the
- * ids set, Listing posts on. Pause does not change it: a pause is a short
+ * actually reach OneUp: the master switch on, the key and the ids set,
+ * Verify OneUp passed, Listing posts on. Pause does not change it: a pause is a short
  * stop, and handing Facebook back to the webhook for it would post every
  * listing announced meanwhile twice once pushes resume. The toolkit asks through
  * `ia_social_facebook_managed`: while this says no, the toolkit's webhook

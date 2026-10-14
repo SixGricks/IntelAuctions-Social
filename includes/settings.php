@@ -5,7 +5,9 @@
  * One autoloaded option, `ias_settings`, merged over the defaults below, so a
  * key added in a later release has its default the moment the code arrives.
  * Every switch that can make something public starts OFF: the master switch,
- * each post type, and the dry run starts ON.
+ * each post type and Google. A switch is on or off — on means it really
+ * posts, off means nothing of it goes out (DJ, Oct 14, 2026: "Either things
+ * are active or inactive"; the dry run went in 0.12.0).
  */
 
 if (!defined('ABSPATH')) exit;
@@ -14,9 +16,8 @@ if (!function_exists('ias_settings_defaults')) {
   function ias_settings_defaults(): array {
     return [
       // Safety switches (spec: all off at install).
-      'master'    => false,  // off = plan and log, never call OneUp
-      'dry_run'   => true,   // write the exact payloads to the log instead of sending them
-      'paused'    => false,  // the Pause button on the calendar: stops every push at once
+      'master'    => false,  // on = post: the types switched on go to OneUp; off = nothing does (what is scheduled comes back off)
+      'paused'    => false,  // the Pause button on the calendar: everything off for now, Facebook staying with this plugin
       'types'     => [       // per post type, turned on one at a time as each earns trust
         'listing' => false, 'open_house' => false, 'auction_week' => false,
         'results' => false, 'roundup' => false,
@@ -43,10 +44,10 @@ if (!function_exists('ias_settings_defaults')) {
       'review_day'  => 1,       // Monday (ISO 1–7)
       'review_hour' => 7,
 
-      // More networks (DJ, Oct 13, 2026): planned and dry-run only until each gets its own Verify.
-      // Google Business Profile has its own (0.9.0): sent for real once `live` is on and it has passed.
+      // More networks (DJ, Oct 13, 2026). Google Business Profile is sent (0.9.0): `on` posts it, once
+      // Verify for Google has passed. Instagram, X and LinkedIn are not sent yet: `on` shows a preview only.
       'networks' => [
-        'gbp'       => ['on' => false, 'account' => '', 'name' => '', 'live' => false, 'types' => ['listing', 'open_house', 'auction_week', 'results']],
+        'gbp'       => ['on' => false, 'account' => '', 'name' => '', 'types' => ['listing', 'open_house', 'auction_week', 'results']],
         'instagram' => ['on' => false, 'account' => ''],
         'x'         => ['on' => false, 'account' => ''],
         'linkedin'  => ['on' => false, 'account' => ''],

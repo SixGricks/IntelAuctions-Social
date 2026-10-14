@@ -3,13 +3,15 @@
  * Phase 5 acceptance, against a fake OneUp shaped like the real account
  * (tests/fixtures: ias_t_oneup). The spec's test: "One week of Listing posts
  * publishes as planned, and a human post in OneUp moves the schedule around
- * it." Plus: the master switch off calls nothing; the dry run only reads;
+ * it." Plus: the master switch off calls nothing; with every post type off
+ * the plugin only reads (there is no dry run — a switch is on or off);
  * Verify OneUp checks every call with a draft and catches a time-zone
  * mismatch; going live sends only the types switched on and never the key to
  * the log; a changed post is replaced; a person's move or edit in OneUp is
  * adopted and locked, their delete respected, their own posts worked around,
  * and the Google Business Profile account ignored; a cancelled listing's post
- * comes off at once, even paused; Pause stops new posts; a refused post is
+ * comes off at once, even paused; Pause takes what is on OneUp back off and
+ * Resume sends it again; a refused post is
  * retried and then stops for a person; a post OneUp could not publish stops
  * for a decision; a fact that changes after a post went out gets a drafted
  * correction; the monthly summary counts posts and the visits they brought.
@@ -47,15 +49,15 @@ $a = $mk('12 Alpha Road', 'Narvon', 'Lancaster', '2026-11-28 10:00');
 // ---- 1. The master switch off: OneUp is never called ----
 ias_job_run();
 t_eq([], ias_t_oneup_calls(), 'master switch off: not one call to OneUp, not even a read');
-t_ok(!empty($lp($a)['flags']['dry_hash']), 'the dry run logged the Listing post');
+t_eq('', ias_post_sent($lp($a))['mode'], '…and nothing pretends it was sent: there is no dry run');
 
-// ---- 2. Master on, dry run on: reads only ----
+// ---- 2. Master on, every post type off: reads only ----
 ias_settings_update(['master' => true]);
 $n = count($S['calls']);
 ias_push_run();
 $rb = ias_readback_run();
 t_ok($rb['ok'], 'with the master switch on the read-back runs' . ($rb['error'] !== '' ? ' (' . $rb['error'] . ')' : ''));
-t_eq([], $writes($n), 'dry run on: nothing is written to OneUp');
+t_eq([], $writes($n), 'every post type off: nothing is written to OneUp');
 t_eq('Intel Auctions (Narvon)', (string) ias_setting('oneup_account_name'), 'the page\'s name in OneUp is looked up once and kept');
 t_eq(0, count(ias_posts_query(['status' => 'human'])), 'the Google Business Profile post in the same category is not taken for a Facebook post');
 
@@ -75,10 +77,9 @@ $S['tz_shift'] = 0;
 ias_oneup_verify('admin');
 
 // ---- 4. Going live ----
-ias_settings_update(['dry_run' => false, 'types' => ['listing' => true]]);
+ias_settings_update(['types' => ['listing' => true]]);
 ias_push_run();
 $p = $lp($a);
-t_ok(empty($p['flags']['dry_hash']), 'going live clears the dry run\'s record');
 $sent = ias_post_sent($p);
 t_ok($sent['mode'] === 'live' && isset($S['scheduled'][(int) $sent['id']]), 'the Listing post is scheduled on OneUp (#' . $sent['id'] . ')');
 $row = $S['scheduled'][(int) $sent['id']] ?? [];
@@ -172,15 +173,23 @@ do_action('shutdown');
 t_ok(!isset($S['scheduled'][(int) $cid]), 'unpublishing a listing takes its post off OneUp at once — even while paused');
 t_eq('cancelled', $lp($c)['status'], '…and cancels it');
 
-// ---- 10. Pause stops new posts ----
+// ---- 10. Pause: nothing new goes, and what is on OneUp comes back off until Resume ----
+ias_settings_update(['paused' => false]);
+$e5 = $mk('5 Echo Lane', 'Denver', 'Lancaster', '2026-11-24 10:00');
+$plan();
+ias_settings_update(['paused' => true]);
+$on = array_values(array_filter(ias_posts_query(['type' => 'listing', 'status' => ['planned', 'approved'], 'limit' => 50]), function ($p) { return ias_post_sent($p)['mode'] === 'live' && empty($p['locked']); }));
 $d = $mk('9 Delta Drive', 'Ephrata', 'Lebanon', '2026-11-25 10:00');
 $n = count($S['calls']);
 $plan();
 t_eq([], ias_t_oneup_calls($n, 'scheduleimagepost'), 'paused: no new post goes to OneUp');
+t_ok($on && !array_filter($on, function ($p) { return ias_post_sent(ias_post_get((int) $p['id']))['mode'] !== ''; }), 'paused: the posts already on OneUp come back off too — off means off (' . count($on) . ')');
+t_ok(!empty(ias_post_get((int) $on[0]['id'])['flags']['was_on_oneup']), '…remembered as having been on OneUp, so they go again even inside the veto window');
 t_ok(ia_social_facebook_managed(), '…and Facebook stays with this plugin');
 ias_settings_update(['paused' => false]);
 ias_push_run();
-t_ok(ias_post_sent($lp($d))['mode'] === 'live', 'resumed: it goes');
+t_ok(ias_post_sent($lp($d))['mode'] === 'live', 'resumed: the new one goes');
+t_ok(!array_filter($on, function ($p) { return ias_post_sent(ias_post_get((int) $p['id']))['mode'] !== 'live'; }), '…and the ones taken back go again');
 
 // ---- 11. A refused post is tried again, then stops for a person ----
 $e = $mk('5 Echo Lane', 'Lititz', 'York', '2026-11-24 10:00');
@@ -277,16 +286,23 @@ $_GET = [];
 restore_error_handler();
 t_eq([], $errors, 'no PHP notices on the screens');
 
-// ---- 17. Back to the dry run, then the master switch off ----
-ias_settings_update(['dry_run' => true]);
+// ---- 17. Off means off: Listing posts off, then the master switch off ----
+$on = array_values(array_filter(ias_posts_query(['type' => 'listing', 'status' => ['planned', 'approved'], 'limit' => 50]), function ($p) { return ias_post_sent($p)['mode'] === 'live' && empty($p['locked']); }));
+ias_settings_update(['types' => ['listing' => false]]);
 $n = count($S['calls']);
 ias_push_run();
-t_eq([], $writes($n), 'back to the dry run: nothing more is written to OneUp');
-t_eq('dry', (string) get_option('ias_push_mode'), '…and the switch back is noted');
+t_eq(0, count(ias_t_oneup_calls($n, 'scheduleimagepost')) + count(ias_t_oneup_calls($n, 'scheduletextpost')), 'Listing posts off: nothing new is written to OneUp');
+t_ok($on && !array_filter($on, function ($p) { return ias_post_sent(ias_post_get((int) $p['id']))['mode'] !== ''; }), '…and the Listing posts on OneUp, not yet out, come back off (' . count($on) . ')');
+ias_settings_update(['types' => ['listing' => true]]);
+ias_push_run();
 ias_settings_update(['master' => false]);
 $n = count($S['calls']);
 ias_job_run();
-t_eq([], ias_t_oneup_calls($n), 'master switch off again: OneUp is not called at all');
+t_ok(count(ias_t_oneup_calls($n, 'deletescheduledpost')) >= count($on) && !array_filter($on, function ($p) { return ias_post_sent(ias_post_get((int) $p['id']))['mode'] !== ''; }), 'the master switch off: everything of ours on OneUp comes back off');
+t_eq([], array_values(array_filter(ias_t_oneup_calls($n), function ($c) { return $c['path'] !== 'deletescheduledpost' && $c['path'] !== 'getscheduledposts'; })), '…and nothing else is called: no read-back, nothing new');
+$n = count($S['calls']);
+ias_job_run();
+t_eq([], ias_t_oneup_calls($n), 'with nothing of ours left there, the master switch off means not one call to OneUp');
 
 ias_t_oneup_off();
 ias_t_claude_off();

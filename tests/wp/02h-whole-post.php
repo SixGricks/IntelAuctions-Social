@@ -166,7 +166,7 @@ ias_post_update($id, ['status' => 'held', 'flags' => array_merge($f0, ['holds' =
 ob_start(); ias_calendar_render(); $held_html = (string) ob_get_clean();
 t_ok(strpos($held_html, 'data-recheck="1"') !== false, 'a held post can be saved as it is, to be checked again (Codex, PR #3)');
 ias_post_update($id, ['status' => 'planned', 'flags' => $f0]);
-t_ok(strpos($html, '<details class="ias-switches-fold"><summary><span class="ias-switch off">Nothing reaches Facebook: the master switch is off.</span>') !== false, 'a post\'s page says in one line whether anything can reach Facebook, the switches folded under it');
+t_ok(strpos($html, '<details class="ias-switches-fold"><summary><span class="ias-switch off">Off: nothing goes to Facebook — the master switch is off.</span>') !== false, 'a post\'s page says in one line whether anything can reach Facebook, the switches folded under it');
 t_ok(strpos($html, 'Throw away the words admin edited') !== false || strpos($html, 'Throw away this draft') !== false, 'Rewrite says whose words it throws away');
 ias_post_update($id, ['lane' => 'A', 'status' => 'planned', 'approvals' => []]);
 ob_start(); ias_calendar_render(); $html = (string) ob_get_clean();

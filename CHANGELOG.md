@@ -1,5 +1,51 @@
 # Intel Auctions Social changelog
 
+## 0.12.0 (2026-10-14) — On or off: the dry run is gone; Publish now
+DJ: "I want to turn dry run off and remove it. Either things are active or
+inactive." — and "I also want a "Publish now" button if a post is past it's
+scheduled date."
+- **No dry run.** The `dry_run` setting, its records (`flags.dry_hash`,
+  `flags.dry_ch`, `ias_push_mode`, `ias_gbp_mode`), the `dryrun` log entries,
+  "What would go to OneUp" and "Published (dry run)" are gone. Every switch is
+  on — it really posts (once Verify OneUp has passed) — or off.
+- **Off means off.** The master switch, Pause, a post type or Google switched
+  off: nothing new goes, and a post on OneUp not yet out is taken back
+  (`ias_push_switched_off()`, `ias_gbp_switched_off()`; `was_on_oneup` /
+  `gbp_was` so it goes again when on, even inside the 48 hours). Before, Pause
+  and a type switched off stopped only new posts, and the dry run left posts
+  on OneUp "to delete in OneUp". Taking back needs only the key
+  (`ias_oneup_takeback_blockers()`); with the master switch off and nothing of
+  ours left on OneUp, not one call. A missing key or id, or Verify not passed,
+  stops new posts but takes nothing back.
+- **Switches act at once.** Saving Settings with a switch changed, Pause and
+  Resume bring OneUp in line in the same request (`ias_push_switched()`:
+  soonest first, a 20-second budget, the rest on the hourly run), and the page
+  says how many came off or went.
+- **Google is one switch** — **Google posts** (`networks.gbp.on`); Send to
+  Google is gone. Instagram, X and LinkedIn are **previews only**: their
+  switch shows a preview tab, logs nothing and is not among the switches.
+- **The switches strip** says On, Off, Paused or "Not posting yet: …" and Google
+  "on, not sending yet — …"; Pause is **Pause all posting** / **Resume
+  posting**.
+- **The update retires the dry run once** (`ias_dry_run_retire()`, on the
+  first admin page or hourly run): on a site that was in it, every post type
+  and Google are switched off so the update never starts posting by itself;
+  a note under the switches names them until Settings is saved
+  (`ias_dry_run_retired`). A site already live keeps its switches; Google
+  stays on only where it was really sent.
+- **Publish now.** A post whose time passed without it going out — posting
+  was off, it waited for a yes, or its time came in the old dry run (now shown
+  as **Not sent**) — gets **Publish now** in its page's bar
+  (`ias_publish_now_state()`): it goes to OneUp 3 minutes ahead in the same
+  click, its time pinned like a Move; on a roundup or Results post it is the
+  approval. Never while posting is off for it (the bar says why), never on a
+  Sunday, never with holds, a `[VERIFY]` marker or a stale draft. The calendar
+  lists posts that passed their time in the last 7 days.
+- Reasons name the type's short name ("Listing posts are off").
+- Tests: `tests/wp/07e-switches.php` (the retirement, off means off, Publish
+  now); the scheduler, decisions, OneUp, safety, networks and Google tests
+  now send to the test OneUp instead of reading a dry-run log.
+
 ## 0.11.0 (2026-10-13) — Results posts that don't read alike; positive bidding words
 DJ: "We need more variety in the Results posts. They read almost identical…
 sometimes paragraphs and sometimes bullets… 1 out of every 5 posts being

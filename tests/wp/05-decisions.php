@@ -6,8 +6,9 @@
  * behind its editor's back; approval links for out-of-date facts are refused;
  * an approved post that loses a listing loses its approval; a Lane B post never
  * sent is never sent inside the veto window, and one that stops being ready is
- * taken back; the dry run fixes what it sent and counts it gone out once its
- * time passes; Restore beats the system's reason; Open House posts wait for
+ * taken back; what is on OneUp stays put and counts as gone out once
+ * OneUp publishes it (there is no dry run: every check here sends, to the
+ * test fake of OneUp); Restore beats the system's reason; Open House posts wait for
  * their Listing post; Results never expire; refused links from strangers are
  * not logged; without GD a picture still goes.
  */
@@ -19,6 +20,12 @@ ias_t_clock('2026-11-02 05:30'); // Monday
 $T = ias_t_terms();
 ias_t_claude();
 ias_settings_update(['generate_per_run' => 30, 'approvers' => 'dj@intelauctions.com', 'oneup_category_id' => '42', 'oneup_account_id' => 'fb_123']);
+// Posting on, to the test fake of OneUp: a switch is on or off, and on means it is sent.
+ias_t_oneup();
+$GLOBALS['ias_t_oneup']['gbp'] = false;
+ias_settings_update(['master' => true]);
+ias_oneup_verify('admin');
+ias_settings_update(['types' => ['listing' => true, 'open_house' => true, 'auction_week' => true, 'results' => true, 'roundup' => true]]);
 
 $GLOBALS['ias_t_mail'] = [];
 add_filter('pre_wp_mail', function ($null, $atts) { $GLOBALS['ias_t_mail'][] = $atts; return true; }, 10, 2);
@@ -34,10 +41,12 @@ $act = function (string $action, array $post) {
   do_action('ias_calendar_action', $action);
   $_POST = [];
 };
-$dry = function (int $post_id, string $action = '') {
-  return count(array_filter(ias_log_recent('dryrun', 1000), function ($l) use ($post_id, $action) {
-    if ((int) ($l['meta']['post'] ?? 0) !== $post_id) return false;
-    return $action === '' || ($l['meta']['payload']['action'] ?? '') === $action;
+// How many times this post was scheduled on OneUp ($action 'delete': taken back off it), from the log.
+$sent = function (int $post_id, string $action = '') {
+  return count(array_filter(ias_log_recent('pushed', 1000), function ($l) use ($post_id, $action) {
+    if ((int) ($l['meta']['post'] ?? 0) !== $post_id || !empty($l['meta']['channel'])) return false;
+    $off = strpos((string) ($l['meta']['summary'] ?? ''), 'Taken off') === 0;
+    return $action === 'delete' ? $off : !$off;
   }));
 };
 $gallery = function (string $name, int $n = 3) {
@@ -93,15 +102,15 @@ t_ok($e['status'] === 'planned' && empty($e['flags']['stale']), 'saved against t
 t_eq('', ias_push_ready($e), '…and is ready to go');
 
 // ---- 3. A Lane B post never sent is never sent inside the veto window ----
-$f = $e['flags']; unset($f['dry_hash']);
-ias_post_update($hid, ['flags' => $f, 'scheduled_at' => ias_now()->modify('+38 hours')->format('Y-m-d H:i:00')]);
-$n = $dry($hid);
+t_eq('', ias_post_sent($e)['mode'], 'never sent so far');
+ias_post_update($hid, ['scheduled_at' => ias_now()->modify('+38 hours')->format('Y-m-d H:i:00')]);
+$n = $sent($hid);
 ias_push_run();
-t_eq($n, $dry($hid), 'a Lane B post never sent and now 38 hours out (say it was released late) is not sent');
+t_eq($n, $sent($hid), 'a Lane B post never sent and now 38 hours out (say it was released late) is not sent');
 ias_plan_run();
 t_ok((string) ias_post_get($hid)['scheduled_at'] >= ias_now()->modify('+48 hours')->format('Y-m-d H:i:s'), '…the plan gives it a time outside the veto window');
 ias_push_run();
-t_eq($n + 1, $dry($hid), '…and then it goes');
+t_eq($n + 1, $sent($hid), '…and then it goes');
 
 // ---- 4. Approval links for out-of-date facts; an edited approved post stops for its editor ----
 $sold = ias_t_listing(['title' => '7 Sold Road', 'address' => '7 Sold Road, Lititz, PA 17543, USA', 'town' => 'Lititz', 'county' => 'Lancaster',
@@ -130,14 +139,14 @@ t_ok($token($mail()) !== '', '…in a new email');
 $act('edit', ['ias_post' => $rid, 'ias_text' => "7 Sold Road in Lititz sold for \$410,000.\n\nThank you to everyone who came out.", 'ias_and_approve' => '1']);
 $r = ias_post_get($rid);
 t_eq('approved', $r['status'], 'Save and approve');
-t_eq(1, $dry($rid), 'the approved post is sent (in the dry run)');
+t_eq(1, $sent($rid), 'the approved post is sent');
 update_post_meta($sold, '_ia_result_price', '415000'); // corrected after the yes
 ias_sync();
 $r = ias_post_get($rid);
 t_eq('held', $r['status'], 'a fact corrected after an edited post was approved: the approval goes and it stops for its editor');
 t_ok(strpos((string) $r['content']['text'], '$410,000') !== false && !empty($r['flags']['edited_by']), '…its words are not rewritten behind the editor\'s back');
 ias_push_run();
-t_eq(1, $dry($rid, 'delete'), 'a sent post that stops being ready is taken back off OneUp');
+t_eq(1, $sent($rid, 'delete'), 'a sent post that stops being ready is taken back off OneUp');
 $act('edit', ['ias_post' => $rid, 'ias_text' => "7 Sold Road in Lititz sold for \$415,000.\n\nThank you to everyone who came out."]);
 t_eq('waiting', ias_post_get($rid)['status'], 'fixed by its editor, it goes for a fresh yes');
 
@@ -204,7 +213,7 @@ $media = ias_media_for_post(['id' => 0, 'type' => 'roundup', 'slot_key' => 'roun
 t_ok(count($media['images']) === 2 && !in_array('graphic', array_column($media['images'], 'kind'), true), 'no GD: the roundup gets each listing\'s own picture instead of the collage');
 remove_all_filters('ias_gd_ready');
 
-// ---- 10. The dry run settles: what it sent stays put, then counts as gone out ----
+// ---- 10. The plan settles: what is on OneUp stays put, then counts as gone out ----
 $settle = ias_t_listing(['title' => '30 Settle Road', 'address' => '30 Settle Road, Newmanstown, PA 17073, USA', 'town' => 'Newmanstown', 'county' => 'Lebanon',
   'stage' => 'upcoming', 'sale' => '2026-11-27 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$500,000', 'gallery' => $gallery('Settle', 5)]);
 ias_sync();
@@ -214,7 +223,7 @@ ias_push_run();
 $sp = ias_post_by_slot('listing:' . $settle);
 $sid = (int) $sp['id'];
 $at = (string) $sp['scheduled_at'];
-t_ok($at !== '' && !empty($sp['flags']['dry_hash']), 'planned and sent, in the dry run (' . $at . ')');
+t_ok($at !== '' && ias_post_sent($sp)['mode'] === 'live', 'planned and sent to OneUp (' . $at . ')');
 $moves = 0;
 for ($d = ias_now()->modify('+1 day')->setTime(5, 30); $d->format('Y-m-d') <= substr($at, 0, 10); $d = $d->modify('+1 day')) {
   ias_t_clock($d->format('Y-m-d H:i'));
@@ -222,15 +231,16 @@ for ($d = ias_now()->modify('+1 day')->setTime(5, 30); $d->format('Y-m-d') <= su
   if ((string) ias_post_get($sid)['scheduled_at'] !== $at) $moves++;
 }
 t_eq(0, $moves, 'morning after morning it keeps its time — the plan no longer pushes it back every day');
-t_eq(1, $dry($sid), '…and the log holds one payload for it, not a "would replace" a day');
+t_eq(1, $sent($sid), '…and it was sent once, not replaced a day');
+ias_t_oneup_publish((int) ias_post_sent(ias_post_get($sid))['id']); // OneUp publishes it at its time
 ias_t_clock(date('Y-m-d H:i', strtotime($at) + HOUR_IN_SECONDS));
 ias_job_run();
 $sp = ias_post_get($sid);
-t_ok($sp['status'] === 'published' && !empty($sp['flags']['dry_run']), 'once its time passes it counts as published — flagged as the dry run');
+t_ok($sp['status'] === 'published' && empty($sp['flags']['dry_run']), 'once its time passes it counts as published');
 $_GET = ['page' => IAS_PAGE_CALENDAR, 'post' => (string) $sid];
 ob_start(); ias_calendar_render(); $html = ob_get_clean();
 $_GET = [];
-t_ok(strpos($html, 'nothing was sent to OneUp') !== false, 'the post says plainly that nothing was sent');
+t_ok(strpos($html, 'Went out') !== false && stripos($html, 'dry run') === false, 'the post says it went out — and nothing on it speaks of a dry run');
 
 // ---- 11. Results never expire ----
 ias_t_clock('2026-12-02 05:30'); // 32 days after the sale, still no yes
@@ -264,3 +274,4 @@ t_ok(!ias_has_verify((array) ias_post_get($hid)['content']), 'the fact typed in 
 
 remove_all_filters('pre_wp_mail');
 ias_t_claude_off();
+ias_t_oneup_off();

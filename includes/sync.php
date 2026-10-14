@@ -413,6 +413,7 @@ if (!function_exists('ias_job_run')) {
   function ias_job_run(): array {
     ias_db_migrate();
     if (!ias_db_ready()) return ['skipped' => ['Intel Auctions Social tables are not ready']];
+    if (function_exists('ias_dry_run_retire')) ias_dry_run_retire(); // 0.12.0, once: before anything could be sent
     $sync = ias_sync();
     $drafts = ias_drafts_run((int) ias_setting('generate_per_run', 8));
     $result = ['sync' => $sync, 'drafts' => $drafts, 'errors' => $drafts['errors']];
