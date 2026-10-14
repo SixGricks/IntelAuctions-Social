@@ -1,5 +1,89 @@
 # Intel Auctions Social changelog
 
+## 0.22.1 (2026-10-14) — YouTube review fixes
+From the review of 0.22.0 (SixGricks/IntelAuctions-Social#10):
+- **A withdrawn listing's video is taken back.** A listing that stops being
+  public (unpublished, withdrawn) counts as switched off for its own video:
+  a copy on OneUp's schedule is taken back by its id, and goes again once the
+  listing is published (`ias_youtube_listing_public()`).
+- **Off means off past the scheduled minute.** The take-back no longer skips a
+  video whose time has passed — OneUp can run late. If OneUp answers that it is
+  no longer scheduled, it may already be out: the record keeps `sent`, notes
+  `tb_missed` (nothing more is asked while things stay off) and the read-back
+  settles it — never `ready`, which would send it a second time.
+- **Lost a day on.** A `sent` video on none of OneUp's complete lists a day
+  after its time (deleted in OneUp) becomes `lost`: the row asks a person to
+  check the channel, then **Send it again**.
+- **Verify for YouTube** no longer falls back to a text draft when the video
+  draft is refused — that could pass while every real upload fails. Its
+  storage check now asks the browser's own preflight question (origin, PUT and
+  `Content-Type`) and counts no answer as a fail (`ias_youtube_cors_ok()`,
+  which reads the headers as WordPress hands them over — a case-insensitive
+  dictionary object, never cast to an array, which would empty it).
+- **The link is counted only once the listing keeps it.** A write the toolkit
+  reports refused (4.70.1 reads the field back) is tried again on later checks;
+  after three refusals the history says to paste the link by hand.
+- **YouTube alone keeps the calendar's minute check going** (`ias_pulse_pill()`),
+  with Facebook and Google off.
+- **A listing deleted for good takes its record with it.** The list of
+  records only counts listings that exist, a write to a missing listing does
+  nothing, and deleting a post clears the list kept for the request — so a
+  late write can never leave a record on a post that is gone.
+
+## 0.22.0 (2026-10-14) — Property videos to YouTube, one upload
+DJ: "I'm on vimeo starter. The goal is to cut down on human workload. I want
+one time upload, title, description and not to think about it again. I would
+love to just give you the file and then have you upload to Youtube with
+description as part of a single property workflow."
+- **Upload video file** on each row of the toolkit's Property Videos (its
+  `ia_missing_video_row` action, toolkit 4.69.0). The browser sends the file
+  straight to OneUp's storage: GET `uploadmedia` hands the site a presigned
+  address (20 minutes) and the file's public `file_path`, and the browser PUTs
+  the file there with a progress bar (OneUp's bucket allows it from any page).
+  Nothing passes through the website, so Elementor Cloud's 256 MB upload limit
+  and its disk play no part. The site then checks the file is there (a HEAD)
+  before it counts. .mp4/.mov/.m4v/.webm, up to 4 GB.
+- **To YouTube through OneUp** (`schedulevideopost` to the channel, `title`
+  and `content`, the chosen playlist as `youtube`), five minutes ahead. The
+  title and description are built from the listing's facts
+  (`ias_youtube_words()`), never by Claude: address and sale date in the
+  title; the description has the size, the sale day and time, Intel Phone
+  Bidding when it is that, the open houses still ahead, the listing link
+  (`utm_source=youtube`), the listing's own description (left out when it has a
+  fair-housing phrase), who to call, a Subscribe link, the canonical NAP and
+  three tags — never the starting bid. So nobody has to approve it.
+- **The link onto the listing**: once published, the YouTube link goes on the
+  listing through the toolkit's `ia_video_save()` (Skip video cleared, the
+  Next Step card closed) — never over a link a person put there. The video id
+  comes from the published row, else OneUp's YouTube analytics
+  (`analyze.oneupapp.io/api/youtube/posts`), else the channel's public feed,
+  matched by title.
+- **Facebook gets the real video**: the uploaded file is the property's video
+  file (facts `video_file_url`), so an Open House post carries it natively; the
+  Listing post's first comment carries the YouTube link (facts `video_link`).
+- **Its own switch, Verify and record**: `networks.youtube` (on, the channel
+  chosen from Look up accounts, the playlist chosen from what Verify read),
+  **Verify for YouTube** (`ias_youtube_verify`: a video draft with no file, a
+  42-byte test file PUT to the upload address and read back, OneUp's storage
+  asked whether this site's pages may upload there, the playlists), and `_ias_youtube` on the listing — never a
+  post's flags. Off at install. Never on a Sunday; the listing must be
+  published. Off means off (YouTube, the master switch, Pause): a video on
+  OneUp's schedule is taken back by its id and goes again when on. A lost
+  answer is looked for and never sent twice; not found half an hour on, a
+  person is asked to check the channel and **Send it again** (no other file can
+  be uploaded over a lost one); a refusal is tried again 15 minutes later, and
+  refused three times or failed on OneUp: **Try again**.
+- Read back by the hourly run, an open calendar's pulse and opening Property
+  Videos (at most every two minutes). Facebook's read-back never takes a
+  channel video for a person's post, even when the channel shares the page's
+  name.
+- The toolkit's row says **On its way** (`ia_video_pending`) and no Next Step
+  card asks for a video meanwhile; the auction's Social box says where the
+  video stands; the log has `video` entries.
+- Tests: `tests/unit/youtube.php`, `tests/wp/07n-youtube.php`; the fake OneUp
+  learned uploads, YouTube rows, playlists, YouTube analytics, the storage
+  HEAD and the channel feed.
+
 ## 0.21.0 (2026-10-14) — One colour per status
 DJ: "I want to see the 'Key' cleaned up. Pushed and Published should not
 match. Dropped, skipped, and Human should not match. red for dropped. Yellow

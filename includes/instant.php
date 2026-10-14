@@ -600,10 +600,27 @@ if (!function_exists('ias_oneup_pulse')) {
     $last = is_array($last) ? $last + ['at' => '', 'ts' => 0, 'state' => '', 'changes' => [], 'seq' => 0, 'error' => ''] : ['at' => '', 'ts' => 0, 'state' => '', 'changes' => [], 'seq' => 0, 'error' => ''];
     $fb = ias_oneup_blockers(false);
     $g = function_exists('ias_gbp_blockers_read') ? ias_gbp_blockers_read() : ['off'];
-    if ($fb && $g) return ['state' => 'off', 'why' => $fb[0]] + $last;
+    $y = function_exists('ias_youtube_blockers_read') && ias_youtube_all() ? ias_youtube_blockers_read() : ['off'];
+    if ($fb && $g && $y) return ['state' => 'off', 'why' => $fb[0]] + $last;
     $wait = $force ? 10 : 55;
     if (time() - (int) $last['ts'] < $wait) return $last + ['cached' => true];
     if (function_exists('ias_push_queue_run')) ias_push_queue_run(0); // a move that has not reached OneUp yet goes first
+    $out = ias_oneup_pulse_read($fb, $g, $last);
+    if (!$y && ($out['state'] ?? '') !== 'busy') { // the property videos, after the posts (it takes the lock itself)
+      $yc = ias_youtube_check(true);
+      if ($yc) {
+        $out['changes'] = array_merge((array) $out['changes'], $yc);
+        $out['seq'] = (int) $last['seq'] + 1;
+        update_option('ias_pulse', $out, false);
+      }
+    }
+    return $out;
+  }
+}
+
+/** The pulse's read of Facebook's and Google's posts, inside the push lock. */
+if (!function_exists('ias_oneup_pulse_read')) {
+  function ias_oneup_pulse_read(array $fb, array $g, array $last): array {
     if (!ias_push_lock()) return ['state' => 'busy'] + $last;
     try {
       unset($GLOBALS['ias_readback_lists']);
@@ -645,7 +662,8 @@ if (!function_exists('ias_pulse_pill')) {
   function ias_pulse_pill(): string {
     $fb = ias_oneup_blockers(false);
     $g = function_exists('ias_gbp_blockers_read') ? ias_gbp_blockers_read() : ['off'];
-    if ($fb && $g) return '';
+    $y = function_exists('ias_youtube_blockers_read') && ias_youtube_all() ? ias_youtube_blockers_read() : ['off']; // YouTube alone keeps the check going too (0.22.1)
+    if ($fb && $g && $y) return '';
     $last = get_option('ias_pulse', []);
     $seq = is_array($last) ? (int) ($last['seq'] ?? 0) : 0;
     return '<div class="ias-pulse" id="ias-pulse" data-seq="' . $seq . '" data-nonce="' . esc_attr(wp_create_nonce('ias_pulse')) . '" aria-live="polite">'

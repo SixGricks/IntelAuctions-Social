@@ -202,10 +202,12 @@ jQuery(function ($) {
 add_action('admin_init', function () {
   if (!isset($_POST['ias_oneup_verify']) || !current_user_can('manage_options')) return;
   check_admin_referer('ias_oneup_verify');
-  $ch = sanitize_key(wp_unslash((string) $_POST['ias_oneup_verify'])) === 'gbp' ? 'gbp' : 'facebook';
+  $ch = sanitize_key(wp_unslash((string) $_POST['ias_oneup_verify']));
+  $ch = in_array($ch, ['gbp', 'youtube'], true) ? $ch : 'facebook';
   $r = ias_oneup_verify(ias_actor(), $ch);
-  ia_flash_set('<div class="notice notice-' . ($r['ok'] ? 'success' : 'warning') . '"><p><strong>' . ($ch === 'gbp' ? 'Verify for Google' : 'Verify OneUp') . ': ' . ($r['ok'] ? 'every step passed.' : 'a step failed') . '</strong> The steps are below.</p></div>');
-  wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS) . ($ch === 'gbp' ? '#ias-verify-gbp' : '#ias-verify'));
+  $label = ['gbp' => 'Verify for Google', 'youtube' => 'Verify for YouTube'][$ch] ?? 'Verify OneUp';
+  ia_flash_set('<div class="notice notice-' . ($r['ok'] ? 'success' : 'warning') . '"><p><strong>' . $label . ': ' . ($r['ok'] ? 'every step passed.' : 'a step failed') . '</strong> The steps are below.</p></div>');
+  wp_safe_redirect(ias_admin_url(IAS_PAGE_SETTINGS) . ($ch === 'facebook' ? '#ias-verify' : '#ias-verify-' . $ch));
   exit;
 });
 
@@ -217,13 +219,14 @@ add_action('ias_settings_after_form', function () {
   if (!$master) echo '<p class="description">The master switch is off, so the plugin asks OneUp nothing. Turn it on to look up the accounts and verify — nothing posts while every post type is off.</p>';
   $verify = function (string $ch) {
     $gbp = $ch === 'gbp';
-    $ready = $gbp ? !ias_gbp_blockers_read() : !ias_oneup_blockers(false);
-    $why = $gbp ? ias_gbp_blockers_read() : ias_oneup_blockers(false);
-    $passed = $gbp ? ias_gbp_verified() : ias_oneup_verified();
+    $yt = $ch === 'youtube';
+    $why = $gbp ? ias_gbp_blockers_read() : ($yt ? ias_youtube_blockers_read() : ias_oneup_blockers(false));
+    $ready = !$why;
+    $passed = $gbp ? ias_gbp_verified() : ($yt ? ias_youtube_verified() : ias_oneup_verified());
     $html = '<form method="post" style="margin-bottom:18px">' . wp_nonce_field('ias_oneup_verify', '_wpnonce', true, false) . '<input type="hidden" name="ias_oneup_verify" value="' . esc_attr($ch) . '">'
-      . '<button class="button' . ($passed || ($gbp && !ias_oneup_verified()) ? '' : ' button-primary') . '"' . ($ready ? '' : ' disabled title="' . esc_attr(implode('; ', $why)) . '"') . ' onclick="return confirm(\'Save a test draft in OneUp (it never publishes), read it back and delete it?\')" data-ia-busy="Checking OneUp…">' . ($gbp ? 'Verify for Google' : 'Verify OneUp') . '</button>'
-      . ($passed ? ' ' . ia_ui_badge($gbp ? 'passed for this location' : 'passed for this page', 'ok') : '') . '</form>';
-    $v = get_option($gbp ? 'ias_gbp_verify' : 'ias_oneup_verify', []);
+      . '<button class="button' . ($passed || (($gbp || $yt) && !ias_oneup_verified()) ? '' : ' button-primary') . '"' . ($ready ? '' : ' disabled title="' . esc_attr(implode('; ', $why)) . '"') . ' onclick="return confirm(\'Save a test draft in OneUp (it never publishes), read it back and delete it?\')" data-ia-busy="Checking OneUp…">' . ($gbp ? 'Verify for Google' : ($yt ? 'Verify for YouTube' : 'Verify OneUp')) . '</button>'
+      . ($passed ? ' ' . ia_ui_badge($gbp ? 'passed for this location' : ($yt ? 'passed for this channel' : 'passed for this page'), 'ok') : '') . '</form>';
+    $v = get_option($gbp ? 'ias_gbp_verify' : ($yt ? 'ias_youtube_verify' : 'ias_oneup_verify'), []);
     if (is_array($v) && !empty($v['steps'])) {
       $html .= '<p style="margin-top:10px">Last run ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $v['at']))) . ' by ' . esc_html(ias_actor_name((string) $v['by'])) . ': ' . ($v['ok'] ? ia_ui_badge('passed', 'ok') : ia_ui_badge('a step failed', 'bad')) . '</p><table class="ias-kv">';
       foreach ((array) $v['steps'] as $st) {
@@ -239,6 +242,10 @@ add_action('ias_settings_after_form', function () {
   if (ias_channel_settings('gbp')['on'] || get_option('ias_gbp_verify')) {
     echo '<h3 id="ias-verify-gbp">Verify for Google</h3><p>The same round trip for the Google Business Profile location: nothing goes to Google until it has passed for the location chosen above and <strong>Google posts</strong> is on.</p>';
     echo $verify('gbp');
+  }
+  if (ias_youtube_settings()['account'] !== '' || get_option('ias_youtube_verify')) {
+    echo '<h3 id="ias-verify-youtube">Verify for YouTube</h3><p>The same round trip for the YouTube channel — a video post saved as a draft, with no file — and it sends a 42-byte test file to the upload address OneUp hands over (never posted), reads it back, checks a page on this site may upload there, and reads the channel\'s playlists. No video can be uploaded until it has passed for the channel chosen above, and none goes to YouTube until <strong>YouTube</strong> is on.</p>';
+    echo $verify('youtube');
   }
   $rb = get_option('ias_readback_last', []);
   echo '<h3>Read-back</h3><p>' . (is_array($rb) && !empty($rb['at'])

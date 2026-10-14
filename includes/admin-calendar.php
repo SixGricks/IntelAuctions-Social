@@ -26,6 +26,7 @@ if (!function_exists('ias_calendar_handle_post')) {
       ias_log('paused', 0, ['paused' => $paused], ias_actor());
       // Off means off: what is on OneUp comes back off now (soonest first); on Resume it goes again.
       $words = function_exists('ias_push_switched') ? ias_push_switched_words(ias_push_switched()) : '';
+      if (function_exists('ias_youtube_check')) ias_youtube_check(true); // YouTube too: a video not out yet comes back off, or an uploaded one goes
       ia_flash_set('<div class="notice notice-success"><p>' . ($paused
         ? '<strong>Paused.</strong> Nothing goes out until you press Resume: posts already on OneUp come back off, and go again when you resume. Planning and drafts carry on.'
         : '<strong>Resumed.</strong> Posting follows the switches again.') . ($words !== '' ? ' ' . esc_html($words) : '') . '</p></div>');

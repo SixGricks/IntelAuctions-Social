@@ -594,6 +594,7 @@ if (!function_exists('ias_oneup_type_is')) {
       'x'         => ['x', 'twitter'],
       'linkedin'  => ['linkedin', 'linkedin page', 'linkedin company'],
       'gbp'       => ['gbp', 'google', 'google business profile', 'google my business', 'gmb'],
+      'youtube'   => ['youtube', 'youtube channel', 'yt'],
     ][$ch] ?? [strtolower($ch)];
     return in_array($type, $names, true);
   }

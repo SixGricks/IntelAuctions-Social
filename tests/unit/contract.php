@@ -13,7 +13,9 @@ $optional = ['ia_acf_field_team_email', 'ia_announced_thumb_id', 'ia_business_ph
   'ia_get_auction_type_value', 'ia_get_excerpt_plain', 'ia_social_full_pushed',
   'ia_sitekit_ready', 'ia_stats_ga4', 'ia_stats_ga4_rows', // Google Analytics through Site Kit, for the monthly summary
   'ia_ai_api_key', 'ia_ai_token_cap', 'ia_ai_tokens_month', // whether Claude can be asked at all (ias_ai_blocker)
-  'ia_ai_key_settings_url']; // where the toolkit sets the key (4.67.0)
+  'ia_ai_key_settings_url', // where the toolkit sets the key (4.67.0)
+  'ia_video_save', 'ia_video_close_task', // the YouTube link onto the listing, the Next Step card closed (4.69.0; YouTube waits for it)
+  'ia_business_street', 'ia_business_city', 'ia_business_region', 'ia_business_postal']; // the office's address in a YouTube description
 
 $listed = ias_required_toolkit_functions();
 $calls = [];

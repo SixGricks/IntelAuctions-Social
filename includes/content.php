@@ -299,8 +299,10 @@ if (!function_exists('ias_first_comment')) {
     $f = $facts_list[0];
     $link = ias_tracked_link((string) $f['url'], (string) $post['type'], $id);
     $comment = ias_comment_lead(in_array($post['type'], ['results', 'open_house'], true) ? (string) $post['type'] : 'listing') . ' ' . $link;
-    if ($f['video'] !== '' && !$f['video_file'] && in_array($post['type'], ['listing', 'open_house'], true)) {
-      $comment .= "\nVideo walkthrough: " . $f['video'];
+    // The walkthrough's link (YouTube: people follow it to the channel) — not on an open house that carries the video itself.
+    $link_video = (string) ($f['video_link'] ?? ($f['video_file'] ? '' : $f['video']));
+    if ($link_video !== '' && ($post['type'] === 'listing' || ($post['type'] === 'open_house' && !$f['video_file']))) {
+      $comment .= "\nVideo walkthrough: " . $link_video;
     }
     return [$comment, $link];
   }
@@ -411,7 +413,7 @@ if (!function_exists('ias_media_for_post')) {
         continue;
       }
       if ($type === 'open_house' && $f['video_file'] && count($facts_list) === 1) {
-        return ['kind' => 'video', 'images' => [], 'video_url' => $f['video']];
+        return ['kind' => 'video', 'images' => [], 'video_url' => (string) (($f['video_file_url'] ?? '') !== '' ? $f['video_file_url'] : $f['video'])];
       }
       ias_photos_grade($f, 2);
       $used  = ias_listing_used_images((int) $f['id'], $id);

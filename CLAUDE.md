@@ -134,6 +134,24 @@ it, and the spec stays verbatim, so they are recorded here:
   Week posts say "Call for a private showing" (`ias_showing_brief()`; Oct 14:
   "we don't always need to say that"). The emoji cap is three, or
   eight on an emoji-led post (`ias_emoji_max()`).
+- **Property videos go to YouTube from one upload** (Oct 14, 2026: "I want
+  one time upload, title, description and not to think about it again… just
+  give you the file and then have you upload to Youtube with description as
+  part of a single property workflow"; DJ is on Vimeo Starter, which has no
+  file links, so Vimeo plays no part). `youtube.php`: the file goes from the
+  browser **straight to OneUp's storage** (`uploadmedia`; never through the
+  website — Elementor Cloud caps uploads at 256 MB), then to the channel
+  through OneUp, with a title and description built from the facts
+  (`ias_youtube_words()`) — **never Claude's prose and never the starting
+  bid**, which is why it needs no approval — and the YouTube link onto the
+  listing through the toolkit's `ia_video_save()`, never over a person's
+  link. YouTube is the third live network: its own switch
+  (`networks.youtube.on`), its own Verify (`ias_youtube_verify`), its own
+  record (`_ias_youtube` on the listing, never a post's flags), and every
+  Facebook rule on those books (never twice, by id only, off means off, never
+  Sunday). The same file is Facebook's native video. No Google Cloud project:
+  OneUp's own YouTube connection does the upload (a project of our own would
+  have its uploads kept private until Google audited it).
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

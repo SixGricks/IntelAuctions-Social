@@ -25,7 +25,8 @@ function ias_t_reset(): void {
   foreach (get_posts(['post_type' => 'any', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_iast_fixture', 'fields' => 'ids']) as $id) {
     wp_delete_post((int) $id, true);
   }
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned'] as $o) delete_option($o);
+  unset($GLOBALS['ias_youtube_index']); // every file runs in one process: nothing read before this reset may carry over
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_youtube_verify', 'ias_youtube_playlists'] as $o) delete_option($o);
   $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_chat\\_lock\\_%'");
   update_option('ias_settings', [], true);
   // The dry run's one-time retirement (0.12.0) is its own test (07e): elsewhere it has already happened,
@@ -270,7 +271,13 @@ function ias_t_oneup(): void {
   $GLOBALS['ias_t_oneup'] = ['scheduled' => [], 'published' => [], 'drafts' => [], 'failed' => [], 'next' => 900001, 'calls' => [],
     'fail_next' => 0, 'no_id' => false, 'tz_shift' => 0, 'gbp' => true, 'lose_answer' => 0, 'net_error' => 0, 'delete_404' => 0,
     'broken' => [], 'draft_real' => false, 'fb' => 'Intel Auctions (Narvon)', 'id_form' => 'any', 'docs' => false, 'ignore_start' => false, 'zero_new' => 0,
-    'fb_stats' => [], 'stats_code' => 200, 'comments' => [], 'comment_code' => 200, 'comment_lose' => 0, 'resched_lose' => 0, 'resched_keep_failed' => false];
+    'fb_stats' => [], 'stats_code' => 200, 'comments' => [], 'comment_code' => 200, 'comment_lose' => 0, 'resched_lose' => 0, 'resched_keep_failed' => false,
+    // YouTube (0.22.0): `youtube` lists the channel among the category's accounts, `yt` its name, `uploads` the
+    // addresses uploadmedia handed out, `files` the files PUT there (the test puts them), `upload_code` 403 = the
+    // Basic plan, `playlists`, `yt_pub_id` what a published video's post_id is ('video': its YouTube id; 'oneup':
+    // OneUp's number), `yt_stats` the analytics' videos, `feed` the channel feed's [id => title].
+    'youtube' => false, 'yt' => 'Intel Auctions', 'uploads' => [], 'files' => [], 'upload_code' => 200, 'playlists' => [['playlist_name' => 'Properties for auction', 'playlist_id' => 'PLtest00000000000000000000000001']],
+    'yt_pub_id' => 'video', 'yt_ids' => [], 'yt_stats' => [], 'feed' => []];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
   add_filter('pre_http_request', function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
@@ -304,6 +311,9 @@ function ias_t_oneup(): void {
       return $json(200, ['posts' => $slice, 'start' => $start, 'count' => count($slice), 'next_start' => $start + 50 < count($rows) ? $start + 50 : null]);
     };
     $host = (string) ($parts['host'] ?? '');
+    if ($host === 'analyze.oneupapp.io' && strpos((string) $parts['path'], '/youtube/') !== false) {
+      return $json(200, ['success' => true, 'data' => ['stats' => [], 'posts' => array_values($S['yt_stats'])]]);
+    }
     if ($host === 'analyze.oneupapp.io' && $path === 'posts') {
       if ((int) $S['stats_code'] === 403) return $json(403, ['message' => 'Analytics is not available on the Basic plan. Please upgrade your plan to access this feature.']);
       return $json(200, ['success' => true, 'data' => ['stats' => [], 'posts' => array_values($S['fb_stats']), 'hashtag_performance' => []]]);
@@ -330,16 +340,24 @@ function ias_t_oneup(): void {
       case 'listcategory':
         return $json(200, ['categories' => [['id' => 42, 'category_name' => 'Intel', 'isPaused' => 0]]]);
       case 'listcategoryaccount':
-        return $json(200, ['accounts' => [
+        return $json(200, ['accounts' => array_merge([
           ['category_id' => 42, 'social_network_name' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )', 'social_network_id' => 'accounts/1/locations/2', 'social_network_type' => 'GBP'],
           ['category_id' => 42, 'social_network_name' => $fb, 'social_network_id' => 'fb_123', 'social_network_type' => 'Facebook'],
-        ]]);
+        ], $S['youtube'] ? [['category_id' => 42, 'social_network_name' => (string) $S['yt'], 'social_network_id' => 'UC2tfTuFO9diTgaaeozmDLKg', 'social_network_type' => 'YouTube']] : [])]);
+      case 'uploadmedia': // a presigned address for the file, and where it will be (OneUp's docs)
+        if ((int) $S['upload_code'] === 403) return $json(403, ['error' => true, 'message' => 'Media upload is not available on the Basic plan.']);
+        $u = 'u' . (count($S['uploads']) + 1);
+        $S['uploads'][] = $u;
+        return $json(200, ['upload_url' => 'https://oneupdata.s3.us-east-2.amazonaws.com/api-uploads/dj%40intelauctions.com/' . $u . '?x-amz-acl=public-read&X-Amz-Expires=1200&X-Amz-Signature=abc', 'file_path' => 'https://s3.us-east-2.amazonaws.com/oneupdata/api-uploads/dj@intelauctions.com/' . $u]);
+      case 'fetchytplaylist':
+        return $json(200, $S['playlists']);
       case 'scheduletextpost': case 'scheduleimagepost': case 'schedulevideopost':
         // Like the real account (Oct 13, 2026): the account must be a list. A JSON list is read as one, unless
         // the switch says this OneUp takes only social_network_id[…] (then the JSON text is refused the same way).
         $sn = $raw_sn;
         if (is_string($sn) && $S['id_form'] !== 'brackets') { $d = json_decode($sn, true); if (is_array($d)) $sn = $d; }
         if (!is_array($sn) || !$sn) return $json(200, ['error' => true, 'message' => 'Social Network ID must be an array.']);
+        if ($path === 'schedulevideopost' && !empty($S['video_refused'])) return $json(200, ['error' => true, 'message' => 'Video posts are not enabled for this account.']);
         if ($S['net_error'] > 0) { $S['net_error']--; return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds for ' . $url); }
         if ($S['fail_next'] > 0) { $S['fail_next']--; return $json(200, ['error' => true, 'message' => 'The Facebook token has expired']); }
         if ($S['zero_new'] > 0) { $S['zero_new']--; return $json(200, ['message' => '0 new Posts Scheduled.', 'error' => false, 'data' => []]); }
@@ -347,8 +365,12 @@ function ias_t_oneup(): void {
         $row = ['post_id' => $id, 'content' => (string) ($params['content'] ?? ''), 'source_url' => 'NA',
           'date_time' => date('Y-m-d H:i:s', strtotime((string) $params['scheduled_date_time']) + 3600 * (int) $S['tz_shift']),
           'category_name' => 'Intel', 'video_url' => (string) ($params['video_url'] ?? 'NA'), 'content_image' => (string) ($params['image_url'] ?? 'NA'),
-          'social_network_username' => ['fb_123' => $fb, 'accounts/1/locations/2' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )'][(string) ($params['social_network_id'] ?? '')] ?? 'someone else', 'first_comment' => (string) ($params['first_comment'] ?? ''),
-          'google_post_type' => (string) ($params['google_post_type'] ?? ''), 'cta_button_url' => (string) ($params['cta_button_url'] ?? '')];
+          'social_network_username' => ['fb_123' => $fb, 'accounts/1/locations/2' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )', 'UC2tfTuFO9diTgaaeozmDLKg' => (string) $S['yt']][(string) ($params['social_network_id'] ?? '')] ?? 'someone else', 'first_comment' => (string) ($params['first_comment'] ?? ''),
+          'google_post_type' => (string) ($params['google_post_type'] ?? ''), 'cta_button_url' => (string) ($params['cta_button_url'] ?? ''),
+          'title' => (string) ($params['title'] ?? ''), '_sn' => (string) ($params['social_network_id'] ?? '')];
+        if ($path === 'schedulevideopost' && ($params['isDraftPost'] ?? '') !== 'true' && strpos((string) ($params['video_url'] ?? ''), 'amazonaws.com/oneupdata/') !== false && empty($S['files'][(string) $params['video_url']])) {
+          return $json(200, ['error' => true, 'message' => 'The video could not be downloaded.']); // a file never uploaded
+        }
         if (($params['isDraftPost'] ?? '') === 'true' && !$S['draft_real']) $S['drafts'][$id] = $row; else $S['scheduled'][$id] = $row;
         if ($S['lose_answer'] > 0) { $S['lose_answer']--; return $json(502, ['message' => 'Bad gateway']); }
         if ($S['docs']) return $json(200, ['message' => '1 new Posts Scheduled.', 'error' => false, 'data' => []]);
@@ -394,7 +416,46 @@ function ias_t_oneup_publish(int $id): void {
   unset($S['scheduled'][$id], $row['date_time']);
   $row['created_at'] = (new DateTimeImmutable($at, ia_wp_tz()))->modify('+1 minute')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
   if (!empty($S['docs'])) $row['post_id'] = ($row['social_network_username'] === $S['fb'] ? 'FB_1336677789520495_' : 'GBP_') . $id; // the network's own id, as the docs show
+  if (($row['_sn'] ?? '') === 'UC2tfTuFO9diTgaaeozmDLKg') { // a YouTube video: its id on YouTube, made up from OneUp's
+    $vid = substr(str_pad('yt' . $id . 'Abc', 11, 'x'), 0, 11);
+    $S['yt_ids'][$id] = $vid;
+    $row['post_id'] = $S['yt_pub_id'] === 'video' ? $vid : (string) $id;
+  }
   $S['published'][$id] = $row;
+}
+
+/** The fake storage and YouTube: the HEAD a finished upload is checked with, and the channel's public feed. */
+function ias_t_storage(): void {
+  add_filter('pre_http_request', function ($pre, $args, $url) {
+    $S =& $GLOBALS['ias_t_oneup'];
+    $resp = function (int $code, string $body = '') { return ['headers' => [], 'body' => $body, 'response' => ['code' => $code, 'message' => ''], 'cookies' => [], 'filename' => null]; };
+    if (strpos((string) $url, 'https://oneupdata.s3.us-east-2.amazonaws.com/') === 0) { // the presigned address: a PUT (Verify's test file), a CORS question
+      $method = (string) ($args['method'] ?? 'GET');
+      $S['calls'][] = ['path' => 's3-put', 'method' => $method, 'params' => ['url' => (string) $url], 'raw_sn' => null];
+      if ($method === 'OPTIONS') { // the preflight, as OneUp's bucket answered it (Oct 14, 2026); `cors`, `cors_methods`, `cors_headers` change it, `options_error` loses it
+        if (!empty($S['options_error'])) return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out');
+        $h = ['access-control-allow-origin' => (string) ($S['cors'] ?? '*'), 'access-control-allow-methods' => (string) ($S['cors_methods'] ?? 'GET, POST, PUT'), 'access-control-allow-headers' => (string) ($S['cors_headers'] ?? 'content-type')];
+        // As WordPress hands headers over: a case-insensitive dictionary object, not an array.
+        $dict = class_exists('WpOrg\\Requests\\Utility\\CaseInsensitiveDictionary') ? 'WpOrg\\Requests\\Utility\\CaseInsensitiveDictionary' : 'Requests_Utility_CaseInsensitiveDictionary';
+        return ['headers' => new $dict($h), 'body' => '', 'response' => ['code' => 200, 'message' => ''], 'cookies' => [], 'filename' => null];
+      }
+      if (!empty($S['put_refused'])) return $resp(403, 'SignatureDoesNotMatch');
+      $u = basename((string) wp_parse_url((string) $url, PHP_URL_PATH));
+      $S['files']['https://s3.us-east-2.amazonaws.com/oneupdata/api-uploads/dj@intelauctions.com/' . $u] = true;
+      return $resp(200);
+    }
+    if (strpos((string) $url, 'https://s3.us-east-2.amazonaws.com/oneupdata/') === 0) {
+      $S['calls'][] = ['path' => 's3', 'method' => (string) ($args['method'] ?? 'GET'), 'params' => ['url' => (string) $url], 'raw_sn' => null];
+      return $resp(!empty($S['files'][(string) $url]) ? 200 : 403);
+    }
+    if (strpos((string) $url, 'https://www.youtube.com/feeds/videos.xml') === 0) {
+      $S['calls'][] = ['path' => 'feed', 'method' => 'GET', 'params' => ['url' => (string) $url], 'raw_sn' => null];
+      $xml = '<?xml version="1.0" encoding="UTF-8"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom">';
+      foreach ((array) $S['feed'] as $vid => $title) $xml .= '<entry><id>yt:video:' . $vid . '</id><yt:videoId>' . $vid . '</yt:videoId><title>' . htmlspecialchars((string) $title, ENT_XML1) . '</title></entry>';
+      return $resp(200, $xml . '</feed>');
+    }
+    return $pre;
+  }, 9, 3);
 }
 
 /**
