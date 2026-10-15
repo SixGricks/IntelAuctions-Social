@@ -19,6 +19,7 @@ add_action('ias_calendar_action', function (string $action): void {
   $push = ias_push_run();
   $bits = [(int) ($plan['placed'] ?? 0) . ' placed'];
   foreach (['moved', 'dropped', 'reinstated', 'late'] as $k) if (!empty($plan[$k])) $bits[] = (int) $plan[$k] . ' ' . ($k === 'reinstated' ? 'back on the plan' : $k);
+  if (!empty($plan['redated'])) $bits[] = (int) $plan['redated'] . ' whose words no longer fit their new day (rewritten, or stopped for you)';
   if ($push['pushed']) $bits[] = $push['pushed'] . ' scheduled on OneUp';
   if ($push['deleted']) $bits[] = $push['deleted'] . ' taken back';
   if ($push['failed']) $bits[] = $push['failed'] . ' OneUp calls failed (see the log)';

@@ -474,7 +474,12 @@ if (!function_exists('ias_engine_posts')) {
       $sent = $status === 'pushed' || !empty($live['hash']) || !empty($live['id']);
       $fixed = '';
       $pin = (string) ($r['flags']['pinned'] ?? ''); // a person moved it there (Move on its page): it stays, while that time is ahead
-      if (in_array($status, ['published', 'human'], true) || !empty($r['locked'])) $fixed = $at;
+      if ($r['type'] === 'manual') { // a person's own post (0.25.0): it stays where they put it, and counts — when it is on the page at all
+        if (!in_array('facebook', array_map('strval', (array) ($r['flags']['networks'] ?? [])), true)) continue;
+        $fixed = $pin !== '' ? $pin : $at;
+        if ($fixed === '') continue;
+      }
+      elseif (in_array($status, ['published', 'human'], true) || !empty($r['locked'])) $fixed = $at;
       elseif ($pin !== '' && $pin > $now->format('Y-m-d H:i')) $fixed = $pin;
       elseif ($sent && $at !== '' && $at < $floor) $fixed = $at; // sent and inside the veto window: it stays
       if ($fixed === '' && in_array($status, ['published', 'human'], true)) continue;

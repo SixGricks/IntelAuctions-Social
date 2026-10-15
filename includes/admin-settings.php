@@ -323,7 +323,7 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row">Paused</th><td>' . $check('ias[paused]', !empty($s['paused']), 'Pause all posting (the same as the Pause button on the calendar)', 'Everything off for now: posts on OneUp and not yet out are taken back off, and go again when you resume. Facebook stays with this plugin while paused.') . '</td></tr>';
     echo '<tr><th scope="row">Post types</th><td>';
     foreach (ias_post_types() as $type => $def) {
-      if ($type === 'human') continue;
+      if (in_array($type, ['human', 'manual'], true)) continue; // a person's post has no type switch: its own ticks are its switch
       echo $check('ias[types][' . $type . ']', ias_type_on($type), '<strong>' . esc_html($def['short']) . '</strong> (' . esc_html($def['label']) . ') <span class="description">— ' . esc_html($def['lane'] === 'A' ? 'approve first' : 'scheduled, ' . (int) ias_setting('lead_hours', 48) . ' hours to veto') . ', ' . esc_html($def['window']) . '</span>') . '<br>';
     }
     echo '<p class="description">On, that type\'s posts go to OneUp. Off, none of them goes — any already on OneUp come back off — but they are still planned and drafted, so you can read them on the calendar.</p></td></tr>';
@@ -371,7 +371,7 @@ if (!function_exists('ias_settings_render')) {
       . ((string) ($g['name'] ?? '') !== '' && !ias_oneup_directory_account($g['account']) ? ' ' . ia_ui_badge((string) $g['name'], 'ok') : '') . '<br><span class="description">The Google Business Profile location in the category above.</span></td></tr>';
     echo '<tr><th scope="row">Which posts</th><td>';
     foreach (ias_post_types() as $type => $def) {
-      if ($type === 'human') continue;
+      if (in_array($type, ['human', 'manual'], true)) continue; // a person's post has no type switch: its own ticks are its switch
       echo '<label style="display:inline-block;margin:0 14px 6px 0"><input type="checkbox" name="ias[networks][gbp][types][]" value="' . esc_attr($type) . '" ' . checked(in_array($type, $g['types'], true), true, false) . '> ' . esc_html($def['short']) . '</label>';
     }
     echo '<br><span class="description">Each type still needs its own switch on (Safety switches, above) before it goes anywhere.</span></td></tr>';

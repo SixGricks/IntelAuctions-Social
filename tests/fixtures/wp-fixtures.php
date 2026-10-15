@@ -198,6 +198,10 @@ function ias_t_claude(): void {
       }
       if (stripos($said, 'alt only') !== false && $pics_now) $answer = ['reply' => 'Better alt text on the lead.', 'text' => null, 'pictures' => null, 'alt' => [$pics_now[0] => 'The farmhouse from the lane, with the bank barn behind it.'], 'rule' => null];
       $text = $answer === null ? 'Plain words, no JSON at all.' : json_encode($answer);
+    } elseif (strpos((string) ($body['system'] ?? ''), 'for a person on the team to check and post') !== false) { // Draft it for me (0.25.0)
+      $GLOBALS['ias_t_claude_manual'][] = $content;
+      $facts = strpos($content, "FACTS:\n") !== false ? json_decode(substr($content, strpos($content, "FACTS:\n") + 7), true) : null;
+      $text = json_encode(['text' => is_array($facts) ? ($facts['street'] ?? $facts['property'] ?? 'It') . ' sells ' . ($facts['auction_date'] ?? '[VERIFY: the date]') . '. Come see it first, take ' . $n . '.' : 'Thank you to everyone who came out Saturday, take ' . $n . '.']);
     } elseif (is_string($content) && strpos($content, 'THE HOUSE RULES NOW:') !== false) { // Brand voice: Suggest updates
       $text = json_encode(['rules' => ['Never use the word nestled.', 'Lead with the place.', 'Call it perfect for families.'], 'why' => 'They keep cutting the gloss.']);
     } elseif (is_array($content)) { // photo grading

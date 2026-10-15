@@ -197,14 +197,15 @@ if (!function_exists('ias_check_draft')) {
     }
 
     $allowed = array_map('floatval', (array) ($ctx['money'] ?? []));
-    foreach (ias_dollar_amounts($text) as $amt) {
+    $figures = !array_key_exists('figures', $ctx) || !empty($ctx['figures']); // false: a person's own post about no listing — nothing to check figures against
+    foreach ($figures ? ias_dollar_amounts($text) : [] as $amt) {
       $ok = false;
       foreach ($allowed as $v) if (abs($v - $amt['value']) < 0.5) { $ok = true; break; }
       if (!$ok) $holds[] = 'It gives a dollar figure that is not on the listing: ' . $amt['text'] . '.';
     }
 
     $phones = array_map('ias_digits10', (array) ($ctx['phones'] ?? []));
-    foreach (ias_phone_numbers($text) as $ph) {
+    foreach ($figures ? ias_phone_numbers($text) : [] as $ph) {
       if (!in_array($ph['digits'], $phones, true)) $holds[] = 'It gives a phone number that is not the lead\'s or the office\'s: ' . $ph['text'] . '.';
     }
 

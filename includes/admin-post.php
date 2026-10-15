@@ -92,7 +92,9 @@ add_action('ias_calendar_action', function (string $action): void {
         $flags['edited_by'] = $actor;
         $flags['holds'] = $holds;
         $flags['fixes'] = $check['fixes'];
-        unset($flags['stale'], $flags['stale_what'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
+        unset($flags['stale'], $flags['stale_what'], $flags['stale_when'], $flags['timing_why'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
+        $written_at = ias_post_written_at($p);
+        $flags['written_for'] = $written_at ? $written_at->format('Y-m-d H:i') : ''; // and for the day it goes out now
         $status = $holds ? 'held' : ($p['status'] === 'held' ? 'planned' : $p['status']);
         if (in_array($p['status'], ['waiting', 'approved'], true) && !$holds) $status = 'planned'; // changed words need a fresh yes
         if (in_array($p['status'], ['waiting', 'approved'], true) && function_exists('ias_approval_void')) ias_approval_void($id); // old links must not approve new words
@@ -191,7 +193,9 @@ add_action('ias_calendar_action', function (string $action): void {
       if (ias_has_verify((array) $p['content'])) { $flash('Put the right fact in place of the <strong>[VERIFY: …]</strong> words and press <strong>Save changes</strong> first — a marked fact never goes out as it is.', 'error'); return; }
       $flags = $p['flags'];
       $flags['released_by'] = $actor;
-      unset($flags['stale'], $flags['stale_what']); // the reasons it stopped include the listing having changed: kept as written over that too
+      unset($flags['stale'], $flags['stale_what'], $flags['stale_when'], $flags['timing_why']); // the reasons it stopped include the listing having changed: kept as written over that too
+      $written_at = ias_post_written_at($p);
+      $flags['written_for'] = $written_at ? $written_at->format('Y-m-d H:i') : ''; // kept for the day it goes out now
       [$facts_hash, $flags] = ias_facts_stamp($p, ias_post_facts($p), $flags);
       ias_post_update($id, ['status' => 'planned', 'flags' => $flags, 'note' => 'Kept as written by ' . $actor, 'facts_hash' => $facts_hash]);
       ias_post_trail($id, 'Kept as written despite: ' . implode(' ', (array) ($flags['holds'] ?? [])), $actor);
@@ -248,7 +252,7 @@ add_action('ias_post_view_bar', function (array $p): void {
   $text = (string) ($c['text'] ?? '');
   $form = function (string $action, string $label, string $class = 'button', string $extra = '', string $confirm = '') use ($p) { return ias_post_action_form($p, $action, $label, $class, $extra, $confirm); };
   $editable = ias_post_editable($p);
-  $rewrite = $editable && $p['status'] !== 'skipped' && $text !== '' ? $form('regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '';
+  $rewrite = $editable && $p['type'] !== 'manual' && $p['status'] !== 'skipped' && $text !== '' ? $form('regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '';
   $level = ''; $lines = ''; $buttons = '';
 
   if ($p['status'] === 'held' && !empty($flags['holds'])) {
@@ -258,7 +262,7 @@ add_action('ias_post_view_bar', function (array $p): void {
     foreach ((array) $flags['holds'] as $h) $lines .= '<li>' . ias_mark_verify((string) $h) . '</li>';
     $lines .= '</ul><p>' . ($verify
       ? 'Put the right fact in place of the marked words and press <strong>Save changes</strong> — or fix the listing, and the post is rewritten on the next hourly run.'
-      : 'Fix it and press <strong>Save changes</strong>, press <strong>Rewrite</strong> — or, if it is right as it is, <strong>Keep as written</strong>.') . '</p>';
+      : 'Fix it and press <strong>Save changes</strong>' . ($p['type'] !== 'manual' ? ', press <strong>Rewrite</strong>' : '') . ' — or, if it is right as it is, <strong>Keep as written</strong>.') . '</p>';
     $buttons = $rewrite . ($text !== '' && !$verify ? $form('release', 'Keep as written', 'button', '', 'Keep this draft exactly as it is, despite the reasons it stopped?') : '')
       . (!empty($p['locked']) ? $form('unlock', 'Edit it here again', 'button') : ''); // changed in OneUp: taken back here, then fixed and saved
   } elseif ($p['status'] === 'waiting') {
@@ -267,6 +271,10 @@ add_action('ias_post_view_bar', function (array $p): void {
     $level = 'warning';
     $lines = '<p><strong>Waiting for approval.</strong> Nothing goes to OneUp until ' . esc_html(implode(' or ', array_map('ias_person_name', ias_approvers())) ?: 'an approver') . ' says yes.'
       . ($first ? ' Emailed ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $first['at']))) . (count($sent) > 1 ? ', ' . count($sent) . ' emails so far' : '') . '.' : '') . '</p>';
+  } elseif (!empty($flags['stale']) && !empty($flags['stale_when'])) {
+    $level = 'warning';
+    $lines = '<p>' . esc_html(ucfirst((string) $flags['stale_when'])) . '. It is rewritten for its new day on the next hourly run, and goes nowhere until then.</p>';
+    $buttons = $rewrite;
   } elseif (!empty($flags['stale'])) {
     $level = 'warning';
     $what = array_map('strval', (array) ($flags['stale_what'] ?? []));
@@ -367,7 +375,7 @@ add_action('ias_post_view_main', function (array $p): void {
     echo '<div class="ias-foot"><div class="ias-actions"><button form="ias-text-form" class="button ias-save' . ($primary ? ' button-primary' : '') . '" data-ia-busy="Saving…">Save changes</button>'
       . ($p['lane'] === 'A' && in_array($p['status'], ['planned', 'waiting', 'held'], true) ? ' <button form="ias-text-form" class="button" name="ias_and_approve" value="1">Save and approve</button>' : '')
       . ' <span class="ias-unsaved" hidden>Not saved yet</span></div>'
-      . ($bar_owns ? '' : '<div class="ias-actions">' . ($p['status'] !== 'skipped' ? ias_post_action_form($p, 'regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '') . ias_skip_details($p) . '</div>') . '</div>';
+      . ($bar_owns ? '' : '<div class="ias-actions">' . ($p['status'] !== 'skipped' && $p['type'] !== 'manual' ? ias_post_action_form($p, 'regenerate', 'Rewrite', 'button', '', ias_rewrite_confirm($p)) : '') . ias_skip_details($p) . '</div>') . '</div>';
   } else {
     $why = !empty($p['locked']) ? 'A person moved or edited this post in OneUp, so it is changed there now — the plugin leaves their version as it is.'
       : (in_array(ias_post_shown_status($p), ['pushed', 'published'], true) ? 'This post has gone to OneUp. Live posts are never edited — editing resets their reach — so a correction is posted as a comment.' : 'This post cannot be edited now.');

@@ -156,12 +156,23 @@ if (!function_exists('ias_move_to_window')) {
 
     // Only this post moves (0.20.0): the plan waits until the person is done, and OneUp has it once the page has answered.
     ias_plan_hold($actor);
+    $redated = function_exists('ias_timing_check') && ($moved = ias_post_get($id)) ? ias_timing_check($moved) : ''; // words that count days from its old day (0.25.0)
     if (function_exists('ias_push_later')) ias_push_later($id);
     $n = ias_move_day_count($day, $id);
     $cap = (int) ias_setting('daily_cap', 3);
     $msg = 'Moved to <strong>' . esc_html(date_i18n('D M j', strtotime($day))) . ', ' . esc_html($label) . '</strong> (' . esc_html(date_i18n('g:i a', strtotime($when))) . '). It stays there' . ias_move_after_words()
-      . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . '): the plan moves one of the others when it tidies up.' : '');
-    return ['ok' => true, 'message' => $msg, 'when' => $when, 'level' => $n >= $cap ? 'warning' : 'success'];
+      . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . '): the plan moves one of the others when it tidies up.' : '')
+      . ias_timing_notice($redated);
+    return ['ok' => true, 'message' => $msg, 'when' => $when, 'level' => $n >= $cap || $redated !== '' ? 'warning' : 'success'];
+  }
+}
+
+/** A move's notice when the post's words no longer fit its new day (ias_timing_check()'s answer; '' = nothing to say). */
+if (!function_exists('ias_timing_notice')) {
+  function ias_timing_notice(string $trail): string {
+    if ($trail === '') return '';
+    if (strpos($trail, 'Needs a decision: ') === 0) return ' <strong>It needs a decision:</strong> ' . esc_html(substr($trail, strlen('Needs a decision: ')));
+    return ' <strong>Its words were written for its old day</strong> — Claude rewrites them for the new one on the next hourly run, and it goes nowhere until then.';
   }
 }
 
@@ -274,11 +285,13 @@ add_action('ias_calendar_action', function (string $action): void {
       ias_post_trail($id, $words, $actor);
       ias_log('moved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $words], $actor);
       ias_plan_hold($actor);
+      $redated = ($moved = ias_post_get($id)) ? ias_timing_check($moved) : ''; // words that count days from its old day (0.25.0)
       ias_push_later($id);
       $n = ias_move_day_count(substr($when, 0, 10), $id);
       $cap = (int) ias_setting('daily_cap', 3);
       $flash('Moved to <strong>' . esc_html($fmt($when)) . '</strong>. It stays there' . ias_move_after_words()
-        . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . '): the plan moves one of the others when it tidies up.' : ''), $n >= $cap ? 'warning' : 'success');
+        . ($n >= $cap ? ' <strong>That day now has ' . ($n + 1) . ' posts</strong> (the plan aims for ' . $cap . '): the plan moves one of the others when it tidies up.' : '')
+        . ias_timing_notice($redated), $n >= $cap || $redated !== '' ? 'warning' : 'success');
       return;
 
     case 'unpin':

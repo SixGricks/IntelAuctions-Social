@@ -184,7 +184,7 @@ if (!function_exists('ias_push_blockers')) {
   function ias_push_blockers(array $post): array {
     $out = ias_oneup_blockers(true);
     if (ias_setting('paused', false)) $out[] = 'posting is paused';
-    if (!ias_type_on((string) $post['type'])) $out[] = ias_post_type((string) $post['type'])['short'] . ' posts are off';
+    if (!ias_post_type_on($post)) $out[] = ias_post_type((string) $post['type'])['short'] . ' posts are off';
     return $out;
   }
 }
@@ -201,7 +201,8 @@ if (!function_exists('ias_push_switched_off')) {
     $out = [];
     if (!ias_setting('master', false)) $out[] = 'the master switch is off';
     if (ias_setting('paused', false)) $out[] = 'posting is paused';
-    if (!ias_type_on((string) $post['type'])) $out[] = ias_post_type((string) $post['type'])['short'] . ' posts are off';
+    if (!ias_post_type_on($post)) $out[] = ias_post_type((string) $post['type'])['short'] . ' posts are off';
+    if (($post['type'] ?? '') === 'manual' && !in_array('facebook', ias_post_networks($post), true)) $out[] = 'Facebook is not ticked for it';
     return $out;
   }
 }

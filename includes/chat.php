@@ -246,6 +246,7 @@ if (!function_exists('ias_chat_prompt')) {
 
     $facts = ias_post_prompt_facts($post, $facts_list);
     $user = 'POST TYPE: ' . ias_type_brief($post, $facts_list) . "\n\n"
+      . ias_post_date_brief($post) . "\n\n"
       . "FACTS:\n" . wp_json_encode($facts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n\n"
       . "THE POST TEXT NOW (as {$person} sees it, with any edits of their own):\n<<<\n" . $screen['text'] . "\n>>>\n\n";
     if ($has_comment) $user .= "THE FIRST COMMENT NOW:\n<<<\n" . $screen['comment'] . "\n>>>\n\n";
@@ -563,6 +564,7 @@ if (!function_exists('ias_chat_list')) {
 add_action('ias_post_view_after_edit', function (array $p): void {
   $max = (int) ias_setting('chat_turns', 30);
   if ($max <= 0 || !ias_post_editable($p) || trim((string) ($p['content']['text'] ?? '')) === '') return;
+  if ($p['type'] === 'manual' && !ias_post_facts($p)) return; // a person's own post about no listing: no facts to keep it to
   $why = ias_ai_blocker();
   $used = ias_chat_turns_used((int) $p['id']);
   $rows = ias_chat_rows((int) $p['id'], true, 40);

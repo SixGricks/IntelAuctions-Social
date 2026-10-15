@@ -58,6 +58,10 @@ if (!function_exists('ias_calendar_render')) {
       ias_calendar_render_post($post_id);
       return;
     }
+    if (!empty($_GET['new']) && function_exists('ias_manual_render_form')) { // New post (manual.php, 0.25.0)
+      ias_manual_render_form();
+      return;
+    }
 
     $paused = (bool) ias_setting('paused', false);
     $button = '<form method="post" style="display:inline">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)

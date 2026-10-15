@@ -51,7 +51,8 @@ $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ia\\_job\\_la
 // ias_youtube_tmp_sweep (the daily sweep of stray files in uploads/intel-social/video-tmp).
 delete_transient('ias_updater_response');
 // Every other transient is ias_-prefixed and goes with the statement below: ias_visits_* (the summary's site visits),
-// ias_youtube_tmp_sweep, ias_youtube_page_check, ias_appr_refused_* (0.24.1: a refused approval link, logged once a day).
+// ias_youtube_tmp_sweep, ias_youtube_page_check, ias_appr_refused_* (0.24.1: a refused approval link, logged once a day),
+// ias_manual_form_<user>, ias_manual_draft_<hash> and ias_manual_drafting_<user> (0.25.0: the New post form, Draft it for me).
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ias\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ias\\_%'");
 
 // Post meta on listings and attachments (photo grades, crops, markers): every key starts _ias_.

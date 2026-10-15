@@ -40,7 +40,7 @@ t_ok(count($shapes) >= 3 && isset($shapes['paragraphs'], $shapes['bullets']), 't
 t_ok(($shapes['emoji'] ?? 0) >= 1 && ($shapes['emoji'] ?? 0) <= (int) ceil(count($results) / 4), '…the emoji-led shape about one in five');
 t_ok(count($ctas) >= 5, 'their calls to action vary: ' . implode(', ', array_keys($ctas)));
 t_ok((bool) array_intersect(array_keys($ctas), ['selling', 'follow', 'share', 'thanks']), '…the new ones among them');
-t_ok(count($tpls) >= 4 && !array_diff(array_keys($tpls), array_keys(ias_templates_results())), 'they open in different ways, from the Results openings (' . implode(', ', array_keys($tpls)) . ')');
+t_ok(count($tpls) >= 4 && !array_diff(array_keys($tpls), array_keys(ias_templates_for('results'))), 'they open in different ways, from the Results openings (' . implode(', ', array_keys($tpls)) . ')');
 $prompt = (string) ($GLOBALS['ias_t_claude_last']['user'] ?? '');
 t_ok(strpos($prompt, 'SHAPE: ') !== false, 'the shape is in what Claude is asked');
 $emoji = array_values(array_filter($results, function ($p) { return ($p['content']['shape'] ?? '') === 'emoji'; }));
@@ -102,7 +102,7 @@ $withoh = ias_t_listing(['title' => '2 Open Way', 'address' => '2 Open Way, Gap,
   'gallery' => [ias_t_photo('Open 1'), ias_t_photo('Open 2'), ias_t_photo('Open 3')], 'oh' => [['2026-11-21 13:00', 2]]]);
 ias_sync(); ias_drafts_run(30);
 [, $ouser] = $prompt_for($lpost($withoh));
-t_ok(strpos($ouser, 'private showing') === false && strpos($ouser, 'leave showings out') === false && strpos($ouser, 'the open houses with their times') !== false, 'with an open house set: the open house, and nothing about showings');
+t_ok(strpos($ouser, 'private showing') === false && strpos($ouser, 'leave showings out') === false && strpos($ouser, 'the open houses still ahead with their times') !== false, 'with an open house set: the open house, and nothing about showings');
 $pastoh = ias_t_listing(['title' => '4 Past Way', 'address' => '4 Past Way, Gap, PA 17527, USA', 'town' => 'Gap', 'county' => 'Chester',
   'stage' => 'upcoming', 'sale' => '2026-11-28 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$300,000',
   'gallery' => [ias_t_photo('Past 1'), ias_t_photo('Past 2'), ias_t_photo('Past 3')], 'oh' => [['2026-10-31 13:00', 2]]]);

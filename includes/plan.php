@@ -104,6 +104,7 @@ if (!function_exists('ias_plan_run')) {
       if ($r && !empty($r['scheduled_at']) && $r['status'] !== 'pushed') ias_post_update((int) $r['id'], ['scheduled_at' => null]);
     }
 
+    $sum['redated'] = function_exists('ias_timing_run') ? ias_timing_run() : 0; // words that no longer fit the day a post now goes out (0.25.0)
     update_option('ias_last_plan', $now->format('Y-m-d'), false);
     update_option('ias_last_plan_summary', ['at' => $now->format('Y-m-d H:i'), 'by' => $actor] + $sum, false);
     delete_option('ias_plan_hold'); // planned: whatever a person moved is worked around now
@@ -123,8 +124,9 @@ if (!function_exists('ias_plan_due')) {
 
 /** Is this post ready to go to OneUp (apart from the switches)? '' = yes, else why not. */
 if (!function_exists('ias_push_ready')) {
-  function ias_push_ready(array $p): string {
+  function ias_push_ready(array $p, string $network = 'facebook'): string {
     if (empty($p['scheduled_at'])) return 'no time yet';
+    if ($network === 'facebook' && ($p['type'] ?? '') === 'manual' && !in_array('facebook', ias_post_networks($p), true)) return 'Facebook is not ticked for it';
     if (empty($p['content']['text'])) return 'no draft yet';
     if (ias_has_verify((array) $p['content'])) return 'the text still has a [VERIFY] marker';
     if ($p['status'] === 'held' || ias_post_needs_decision($p)) return 'it needs a decision';
@@ -436,6 +438,23 @@ if (!function_exists('ias_push_one')) {
     $flags = $p['flags'];
     $sent = ias_post_sent($p);
     $at = (string) ($p['scheduled_at'] ?? '');
+
+    // A person's own post not for Facebook (0.25.0): nothing of it is Facebook's — only its time coming is noted here.
+    if ($p['type'] === 'manual' && $sent['mode'] !== 'live' && !in_array('facebook', ias_post_networks($p), true)) {
+      if ($at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'approved'], true)) {
+        if (!empty($flags['gbp']['id'])) {
+          ias_post_update((int) $p['id'], ['status' => 'published', 'published_at' => $at, 'note' => '']);
+          ias_post_trail((int) $p['id'], 'Its time came on OneUp (Google)');
+          $out['published']++;
+        } elseif (!in_array('gbp', ias_post_networks($p), true)) {
+          $flags['cancelled_by'] = 'system';
+          $why = 'Its time passed — none of the networks ticked for it posts yet, so nothing went out.';
+          ias_post_update((int) $p['id'], ['status' => 'cancelled', 'flags' => $flags, 'note' => $why]);
+          ias_post_trail((int) $p['id'], $why);
+        }
+      }
+      return;
+    }
 
     // Its time came while it was on OneUp: it went out.
     if ($sent['mode'] === 'live' && $at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'pushed'], true)) {

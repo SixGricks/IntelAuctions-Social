@@ -301,7 +301,7 @@ if (!function_exists('ias_switches_strip')) {
     $out .= $chip('Master switch', !empty($s['master']) ? 'On' : 'Off — nothing posts', !empty($s['master']) ? 'on' : 'off');
     if (!empty($s['paused'])) $out .= $chip('Paused', 'Nothing posts until resumed', 'alert');
     foreach (ias_post_types() as $type => $def) {
-      if ($type === 'human') continue;
+      if (in_array($type, ['human', 'manual'], true)) continue; // a person's post has no type switch: its own ticks are its switch
       $on = ias_type_on($type);
       $out .= $chip($def['short'], $on ? 'On' : 'Off', $on ? 'on' : 'off');
     }
@@ -314,11 +314,11 @@ if (!function_exists('ias_switches_strip')) {
     }
     $out .= '</div>';
     if ($compact) {
-      $on = array_values(array_filter(array_keys(ias_post_types()), function ($t) { return $t !== 'human' && ias_type_on($t); }));
+      $on = array_values(array_filter(array_keys(ias_post_types()), function ($t) { return !in_array($t, ['human', 'manual'], true) && ias_type_on($t); }));
       $setup = function_exists('ias_oneup_blockers') ? ias_oneup_blockers(true) : [];
       if (empty($s['master'])) $line = ['off', 'Off: nothing goes to Facebook — the master switch is off.'];
       elseif (!empty($s['paused'])) $line = ['alert', 'Paused: nothing goes out until you resume.'];
-      elseif (!$on) $line = ['off', 'Off: no post type is switched on, so nothing goes to Facebook.'];
+      elseif (!$on) $line = ['off', 'Off: no post type is switched on, so the plan sends nothing to Facebook — only posts you write yourself (New post) go.'];
       elseif ($setup) $line = ['alert', 'Not posting yet: ' . $setup[0] . '.'];
       else $line = ['on', 'On: ' . implode(', ', array_map(function ($t) { return ias_post_type($t)['short']; }, $on)) . ' posts go to Facebook.'];
       $more = '';

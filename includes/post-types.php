@@ -38,6 +38,11 @@ if (!function_exists('ias_post_types')) {
         'window' => 'next day → next day → whenever approved',
         'what'   => 'When a listing moves to Past with a sale price: the featured photo with the price over it, the name, address, date and result. Liquidations get a thank-you post with no price.',
       ],
+      'manual' => [
+        'label' => 'Your post', 'short' => 'Yours', 'lane' => '', 'guaranteed' => true, 'droppable' => false,
+        'window' => 'where a person puts it',
+        'what'   => 'Written on the Social Calendar by a person (New post): their words, or a draft Claude wrote for them to check, on the networks they tick. Pinned where they put it; the plan counts it and works around it, and when it stands for one of a listing\'s own posts that post is turned off.',
+      ],
       'human' => [
         'label' => 'Human post', 'short' => 'Human', 'lane' => '', 'guaranteed' => true, 'droppable' => false,
         'window' => '—',
