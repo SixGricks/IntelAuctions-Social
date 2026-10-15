@@ -95,6 +95,9 @@ t_eq([], array_values(array_filter(ias_check_draft('41 Plain Road sells November
 $c = ias_t_listing(['title' => '42 Ring Road — Phone Bid Auction', 'address' => '42 Ring Road, Strasburg, PA 17579, USA', 'town' => 'Strasburg', 'county' => 'Lancaster',
   'stage' => 'upcoming', 'sale' => '2026-12-01 10:00', 'terms' => [$T['farm']], 'gallery' => $photos('Ring')]);
 t_eq('phone', ias_listing_facts($c)['bidding'], 'no auction type set, but the listing says phone bid: Intel Phone Bidding');
+$d = ias_t_listing(['title' => '44 Floor Road', 'address' => '44 Floor Road, Strasburg, PA 17579, USA', 'town' => 'Strasburg', 'county' => 'Lancaster',
+  'stage' => 'upcoming', 'sale' => '2026-12-02 10:00', 'terms' => [$T['farm']], 'content' => 'Sold on site from the auction floor. No phone bids accepted.']);
+t_eq('in_person', ias_listing_facts($d)['bidding'], 'the listing says "No phone bids accepted": in person, never Intel Phone Bidding (0.24.1)');
 
 // ---- 7. A Results post never names the sellers ----
 $s = ias_t_listing(['title' => '43 Sold Lane', 'address' => '43 Sold Lane, Strasburg, PA 17579, USA', 'town' => 'Strasburg', 'county' => 'Lancaster',

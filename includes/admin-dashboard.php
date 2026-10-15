@@ -141,10 +141,11 @@ if (!function_exists('ias_dashboard_widget')) {
       echo '</div>';
       echo '<p class="ia-wd-muted">' . (int) $fb['counted'] . ' of ' . (int) $fb['published'] . ' posts have numbers' . ($fb['rate'] !== null ? ' · <strong>' . esc_html(number_format((float) $fb['rate'], 1)) . '%</strong> engagement' : '') . '.</p>';
     }
-    $visits = function_exists('ias_summary_visits') ? ias_summary_visits($now->modify('-30 days')->format('Y-m-d'), $now->format('Y-m-d')) : null;
+    // This month's visits as the Log's monthly summary read them (cached six hours) — never a Google call from here (0.24.1).
+    $visits = function_exists('ias_summary_visits') ? ias_summary_visits($now->format('Y-m-01'), $now->format('Y-m-d'), true) : null;
     if (is_array($visits)) {
       $total = array_sum(array_map('intval', (array) ($visits['by_campaign'] ?? [])));
-      echo '<p class="ia-wd-muted">Visits to the site from social posts, 30 days: <strong>' . esc_html(number_format($total)) . '</strong>.</p>';
+      echo '<p class="ia-wd-muted">Visits to the site from social posts this month: <strong>' . esc_html(number_format($total)) . '</strong>.</p>';
     }
 
     echo '<p class="ia-wd-h">Next up</p>';

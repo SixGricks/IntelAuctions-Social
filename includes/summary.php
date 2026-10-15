@@ -29,13 +29,14 @@ if (!defined('ABSPATH')) exit;
  * filter can answer instead.
  */
 if (!function_exists('ias_summary_visits')) {
-  function ias_summary_visits(string $from, string $to): ?array {
+  function ias_summary_visits(string $from, string $to, bool $cached_only = false): ?array {
     $pre = apply_filters('ias_summary_visits', null, $from, $to);
     if (is_array($pre)) return $pre;
     if (!function_exists('ia_sitekit_ready') || !ia_sitekit_ready() || !function_exists('ia_stats_ga4') || !function_exists('ia_stats_ga4_rows')) return null;
     $key = 'ias_visits_' . md5($from . $to);
     $cached = get_transient($key);
     if (is_array($cached)) return $cached;
+    if ($cached_only) return null; // the Dashboard box (0.24.1): what the Log's summary already read, never a Google call while /wp-admin draws
     $data = ia_stats_ga4(['start' => $from, 'end' => $to], ['sessionCampaignName', 'sessionManualAdContent'], ['sessions'], '', 1000);
     $rows = ia_stats_ga4_rows($data);
     if ($rows === null) return null;

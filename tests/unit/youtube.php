@@ -108,13 +108,22 @@ t_eq(['A title', 'Words with ~~~ in them'], [$row['title'], $row['content']], 's
 t_eq(['content' => 'A Facebook post'], ias_oneup_row_split(['content' => 'A Facebook post']), 'a post with no title is left as it is');
 t_eq(['content' => 'Other~~~Words', 'title' => 'Kept'], ias_oneup_row_split(['content' => 'Other~~~Words', 'title' => 'Kept']), 'a row OneUp gave a title of its own is left as it is');
 
-// Only OneUp's storage may receive a video (0.24.1).
-t_ok(ias_youtube_host_ok('https://oneupdata.sfo3.digitaloceanspaces.com/x?sig=1'), 'DigitalOcean Spaces: OneUp\'s storage today');
-t_ok(ias_youtube_host_ok('https://oneupdata.s3.us-east-2.amazonaws.com/api-uploads/y'), 'S3: where OneUp\'s docs put it');
+// Only OneUp's storage may receive a video (0.24.1) — OneUp's own bucket, not any bucket on the same service.
+t_eq('do:sfo3:oneupdata', ias_youtube_bucket('https://oneupdata.sfo3.digitaloceanspaces.com/x?sig=1'), 'a DigitalOcean bucket, virtual-hosted');
+t_eq('do:sfo3:oneupdata', ias_youtube_bucket('https://sfo3.digitaloceanspaces.com/oneupdata/api-uploads/x'), '…and path-style: the same bucket');
+t_eq('s3:oneupdata', ias_youtube_bucket('https://oneupdata.s3.us-east-2.amazonaws.com/api-uploads/y'), 'an S3 bucket, virtual-hosted');
+t_eq('s3:oneupdata', ias_youtube_bucket('https://s3.us-east-2.amazonaws.com/oneupdata/api-uploads/y'), '…and path-style');
+t_eq('', ias_youtube_bucket('https://www.oneupapp.io/files/z'), 'not a storage service: no bucket');
+update_option('ias_youtube_storage', ['do:sfo3:oneupdata', 's3:oneupdata']);
+t_ok(ias_youtube_host_ok('https://oneupdata.sfo3.digitaloceanspaces.com/x?sig=1'), 'OneUp\'s own bucket on DigitalOcean');
+t_ok(ias_youtube_host_ok('https://s3.us-east-2.amazonaws.com/oneupdata/y'), 'OneUp\'s own bucket on S3, path-style');
 t_ok(ias_youtube_host_ok('https://www.oneupapp.io/files/z'), 'OneUp itself');
+t_ok(!ias_youtube_host_ok('https://attacker.sfo3.digitaloceanspaces.com/x'), 'someone else\'s bucket on the same service: refused (anyone can own one)');
+t_ok(!ias_youtube_host_ok('https://evil.s3.amazonaws.com/x'), '…on S3 too');
 t_ok(!ias_youtube_host_ok('https://attacker.example/x'), 'anywhere else: refused');
-t_ok(!ias_youtube_host_ok('https://evil-digitaloceanspaces.com/x'), 'a look-alike that merely ends with the name: refused');
-t_ok(!ias_youtube_host_ok('http://169.254.169.254/latest'), 'an address inside the host: refused');
+t_ok(!ias_youtube_host_ok('https://evil-oneupapp.io/x'), 'a look-alike that merely ends with the name: refused');
+t_ok(!ias_youtube_host_ok('http://oneupdata.sfo3.digitaloceanspaces.com/x'), 'not https: refused');
 t_ok(!ias_youtube_host_ok(''), 'nothing: refused');
-add_filter('ias_youtube_upload_hosts', function ($h) { $h[] = 'storage.example'; return $h; });
-t_ok(ias_youtube_host_ok('https://cdn.storage.example/v'), 'a host allowed by the filter (OneUp moving its storage)');
+add_filter('ias_youtube_storage_buckets', function ($b) { $b[] = 's3:oneup-new'; return $b; });
+t_ok(ias_youtube_host_ok('https://oneup-new.s3.amazonaws.com/v'), 'a bucket allowed by the filter (OneUp moving its storage)');
+delete_option('ias_youtube_storage');

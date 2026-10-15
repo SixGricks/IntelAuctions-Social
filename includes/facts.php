@@ -88,7 +88,12 @@ if (!function_exists('ias_bidding_type')) {
       // auction" hold "shouldn't be required") — unless the listing's own name or words speak of phone bidding.
       $post = get_post($id);
       $words = $post ? get_the_title($id) . ' ' . ias_listing_text($id) : '';
-      if (preg_match('/\bphone[\s-]*bid/i', $words)) return ['phone', 'The listing\'s auction type is not set; its own words say Intel Phone Bidding.'];
+      // A mention the sentence denies ("No phone bids accepted") is not phone bidding (0.24.1).
+      if (preg_match_all('/\bphone[\s-]*bid/i', $words, $hits, PREG_OFFSET_CAPTURE)) {
+        foreach ($hits[0] as [$hit, $at]) {
+          if (!function_exists('ias_negated_at') || !ias_negated_at($words, (int) $at, strlen($hit))) return ['phone', 'The listing\'s auction type is not set; its own words say Intel Phone Bidding.'];
+        }
+      }
       return ['in_person', ''];
     }
     return [$type, ''];
