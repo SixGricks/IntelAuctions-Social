@@ -126,7 +126,9 @@ if (!function_exists('ias_approve')) {
     $a = $p['approvals'];
     foreach ((array) ($a['tokens'] ?? []) as $i => $t) $a['tokens'][$i]['used'] = 1;
     $a['decision'] = ['by' => $by, 'at' => ias_now_sql(), 'via' => $via];
-    ias_post_update($post_id, ['status' => 'approved', 'approvals' => $a, 'approved_by' => mb_substr($by, 0, 100), 'approved_at' => ias_now_sql(), 'note' => '']);
+    $flags = (array) $p['flags'];
+    unset($flags['plan_chooses']); // a fresh yes keeps its time again (0.26.0)
+    ias_post_update($post_id, ['status' => 'approved', 'approvals' => $a, 'approved_by' => mb_substr($by, 0, 100), 'approved_at' => ias_now_sql(), 'note' => '', 'flags' => $flags]);
     ias_post_trail($post_id, 'Approved by ' . $by . ' (' . $via . ')', $by);
     ias_log('approved', (int) $p['listing_id'], ['post' => $post_id, 'type' => $p['type'], 'summary' => 'Approved by ' . $by . ' (' . $via . ')'], $by);
     if (function_exists('ias_voice_record')) ias_voice_record($post_id, 'kept'); // a person said yes to these words: the brand-voice log keeps them

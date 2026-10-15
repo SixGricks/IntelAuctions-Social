@@ -196,10 +196,22 @@ it, and the spec stays verbatim, so they are recorded here:
   open houses over by then are not in the facts, days within the week are
   counted from it; `flags.written_for` records it, and when the day moves
   under words that count days or name a past open house (`ias_timing_check()`,
-  after every plan and move), Claude's draft is rewritten and a person's
-  words stop for them — never rewritten under them. The templates from DJ's
+  after every plan and move), Claude's unapproved draft is rewritten. The templates from DJ's
   list (`ias_templates_more()`) are used only when the post has the facts
   they need, and never sign with a division's name.
+- **A person's yes keeps its time** (Oct 15, 2026: "When a post has been
+  reviewed and approved the plugin should not move it and trigger a review
+  again"). Approved, edited or kept as written, a post is **fixed in the
+  scheduler** at its time while that is more than an hour ahead; the plan never
+  moves it and nothing automatic sends it back for review (the day check only
+  warns, on the person's own move). Only a post whose time passed unsent is
+  placed again, still approved; so is one handed back with Let the plan choose
+  (`flags.plan_chooses`) or a never-sent Lane B post inside the veto window.
+  Otherwise never let the plan re-place such a post.
+- **The Sold picture takes turns** (Oct 15, 2026: "2 other 'Sold' templates…
+  so they are not all identical"): `ias_sold_layouts()` — photo, panel,
+  stamp (one sale) — least used lately, never the last one's, kept through a
+  rewrite.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

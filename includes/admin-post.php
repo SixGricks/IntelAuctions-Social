@@ -92,7 +92,7 @@ add_action('ias_calendar_action', function (string $action): void {
         $flags['edited_by'] = $actor;
         $flags['holds'] = $holds;
         $flags['fixes'] = $check['fixes'];
-        unset($flags['stale'], $flags['stale_what'], $flags['stale_when'], $flags['timing_why'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
+        unset($flags['stale'], $flags['stale_what'], $flags['stale_when'], $flags['timing_why'], $flags['released_by'], $flags['plan_chooses']); // a person read it against today's listing; any old "keep as written" was for other words
         $written_at = ias_post_written_at($p);
         $flags['written_for'] = $written_at ? $written_at->format('Y-m-d H:i') : ''; // and for the day it goes out now
         $status = $holds ? 'held' : ($p['status'] === 'held' ? 'planned' : $p['status']);
@@ -193,7 +193,7 @@ add_action('ias_calendar_action', function (string $action): void {
       if (ias_has_verify((array) $p['content'])) { $flash('Put the right fact in place of the <strong>[VERIFY: …]</strong> words and press <strong>Save changes</strong> first — a marked fact never goes out as it is.', 'error'); return; }
       $flags = $p['flags'];
       $flags['released_by'] = $actor;
-      unset($flags['stale'], $flags['stale_what'], $flags['stale_when'], $flags['timing_why']); // the reasons it stopped include the listing having changed: kept as written over that too
+      unset($flags['stale'], $flags['stale_what'], $flags['stale_when'], $flags['timing_why'], $flags['plan_chooses']); // the reasons it stopped include the listing having changed: kept as written over that too
       $written_at = ias_post_written_at($p);
       $flags['written_for'] = $written_at ? $written_at->format('Y-m-d H:i') : ''; // kept for the day it goes out now
       [$facts_hash, $flags] = ias_facts_stamp($p, ias_post_facts($p), $flags);

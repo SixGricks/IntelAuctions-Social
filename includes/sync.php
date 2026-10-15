@@ -355,9 +355,13 @@ if (!function_exists('ias_post_cancel')) {
  * words that count the days, or past an open house it mentions: Claude's draft is marked to be rewritten for
  * the new day on the next hourly run (and goes nowhere until then); words a person wrote, kept or said yes to
  * stop for that person instead — never rewritten under them. Returns why ('' when it fits or was already marked).
+ *
+ * A post a person approved, edited or kept as written is never sent back for review by this (0.26.0, DJ: "When a
+ * post has been reviewed and approved the plugin should not move it and trigger a review again"): the plan no
+ * longer moves it, so only that person can, and then ($by_person) they are told what to check — nothing changes.
  */
 if (!function_exists('ias_timing_check')) {
-  function ias_timing_check(array $p): string {
+  function ias_timing_check(array $p, bool $by_person = false): string {
     if ($p['type'] === 'human' || !in_array($p['status'], ['planned', 'held', 'waiting', 'approved'], true)) return '';
     $flags = (array) $p['flags'];
     $text = (string) ($p['content']['text'] ?? '');
@@ -371,25 +375,24 @@ if (!function_exists('ias_timing_check')) {
     $why = $at->format('D M j') . ', and ' . implode('; and ', $problems);
     if (($flags['timing_why'] ?? '') === $why) return '';
     $id = (int) $p['id'];
-    $flags['timing_why'] = $why;
     $edited = !empty($flags['edited_by']) || !empty($flags['released_by']);
+    if ($edited || $p['status'] === 'approved') return $by_person ? 'Check: this post now goes out on ' . $why . '.' : ''; // a person's yes holds
+    $flags['timing_why'] = $why;
     $fields = [];
-    if ($edited || $p['status'] === 'held' || $p['status'] === 'approved') {
-      $hold = ias_timing_hold($why, $edited || $p['status'] === 'held', $p['status'] === 'approved');
+    if ($p['status'] === 'held') { // already stopped for a person: the new reason joins the others
+      $hold = ias_timing_hold($why, true);
       $flags['holds'] = array_values(array_unique(array_merge([$hold], (array) ($flags['holds'] ?? []))));
-      unset($flags['released_by']);
-      $fields = ['status' => 'held', 'note' => 'Needs a decision: ' . $hold];
-      if ($p['status'] === 'approved') $fields += ['approved_at' => null, 'approved_by' => ''];
+      $fields = ['note' => 'Needs a decision: ' . $hold];
       $trail = 'Needs a decision: ' . $hold;
     } else {
       $flags['stale'] = true;
       $flags['stale_when'] = 'this post now goes out on ' . $why;
       $trail = 'Its day moved: ' . $why . ' — rewritten for the new day on the next hourly run';
     }
-    if (in_array($p['status'], ['waiting', 'approved'], true) && function_exists('ias_approval_void')) ias_approval_void($id); // a yes was for words on another day
+    if ($p['status'] === 'waiting' && function_exists('ias_approval_void')) ias_approval_void($id); // not answered yet: the links were for words on another day
     ias_post_update($id, ['flags' => $flags] + $fields);
     ias_post_trail($id, $trail);
-    ias_log(isset($fields['status']) ? 'held' : 'planned', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $trail]);
+    ias_log($p['status'] === 'held' ? 'held' : 'planned', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $trail]);
     return $trail;
   }
 }
@@ -399,7 +402,7 @@ if (!function_exists('ias_timing_run')) {
   function ias_timing_run(array $ids = []): int {
     $n = 0;
     $rows = $ids ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $ids)))) : ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved'], 'limit' => 2000]);
-    foreach ($rows as $p) if (ias_timing_check($p) !== '') $n++;
+    foreach ($rows as $p) if (ias_timing_check($p) !== '') $n++; // the plan's own moves: a person's yes is never sent back for review
     return $n;
   }
 }

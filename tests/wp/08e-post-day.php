@@ -76,7 +76,7 @@ t_ok(ias_t_claude_calls() > $n && empty($p['flags']['stale']) && (string) $p['fl
 t_ok(strpos((string) $GLOBALS['ias_t_claude_last']['user'], 'goes out on Wednesday, November 11, 2026') !== false, '…telling Claude the new day');
 t_ok(strpos((string) $GLOBALS['ias_t_claude_last']['user'], '"auction_is": "tomorrow"') !== false, '…from which the sale is tomorrow');
 
-// ---- 3. A person's words, moved past the open house they name: stopped for that person ----
+// ---- 3. A person's words naming an open house: the plan's check never stops them (0.26.0); their own move warns ----
 $c = $p['content']; $c['text'] = "Come to the open house Monday, November 9, 4–6 pm, then bid Thursday, November 12.";
 $act('edit', ['ias_post' => $p['id'], 'ias_text' => $c['text']]);
 $flash();
@@ -86,17 +86,12 @@ $fl = $p['flags']; $fl['written_for'] = '2026-11-06 09:00';
 ias_post_update((int) $p['id'], ['flags' => $fl]); // as if they wrote it when it went out on Nov 6, before the open house
 ias_timing_run();
 $p = ias_post_get((int) $lp['id']);
-t_eq('held', $p['status'], 'past the Nov 9 open house it names: the post stops');
-t_ok(strpos((string) ($p['flags']['holds'][0] ?? ''), 'open house on Mon Nov 9') !== false && strpos((string) $p['flags']['holds'][0], 'save them') !== false, '…for the person, naming the open house: ' . ($p['flags']['holds'][0] ?? ''));
-t_ok(empty($p['flags']['stale']) && $p['content']['text'] === $c['text'], 'their words are never rewritten under them');
-$holds = $p['flags']['holds'];
-ias_timing_run();
-t_eq($holds, ias_post_get((int) $lp['id'])['flags']['holds'], 'checking again adds nothing');
-$act('release', ['ias_post' => $p['id']]);
-$flash();
-ias_timing_run();
+t_ok($p['status'] === 'planned' && empty($p['flags']['holds']) && empty($p['flags']['stale']), 'the plan\'s check leaves a person\'s words alone — a person\'s yes is never sent back for review (DJ, 0.26.0)');
+$act('move', ['ias_post' => $p['id'], 'ias_day' => '2026-11-11', 'ias_time' => '15:30']);
+$f = $flash();
 $p = ias_post_get((int) $lp['id']);
-t_ok($p['status'] === 'planned' && (string) $p['flags']['written_for'] === '2026-11-11 09:00', 'Keep as written: their call holds, for the day it goes out now');
+t_ok($p['status'] === 'planned' && $p['content']['text'] === $c['text'], 'moved by the person: their words stay, and it is not stopped');
+t_ok(strpos($f, 'Check its words') !== false && strpos($f, 'open house on Mon Nov 9') !== false, '…the notice names the open house to check (' . strip_tags($f) . ')');
 
 // ---- 4. The plan moves a draft: checked after every plan ----
 $c = $p['content']; $c['text'] = "Bid tomorrow on 7 Calendar Road.";

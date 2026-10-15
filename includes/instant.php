@@ -156,7 +156,7 @@ if (!function_exists('ias_move_to_window')) {
 
     // Only this post moves (0.20.0): the plan waits until the person is done, and OneUp has it once the page has answered.
     ias_plan_hold($actor);
-    $redated = function_exists('ias_timing_check') && ($moved = ias_post_get($id)) ? ias_timing_check($moved) : ''; // words that count days from its old day (0.25.0)
+    $redated = function_exists('ias_timing_check') && ($moved = ias_post_get($id)) ? ias_timing_check($moved, true) : ''; // words that count days from its old day (0.25.0)
     if (function_exists('ias_push_later')) ias_push_later($id);
     $n = ias_move_day_count($day, $id);
     $cap = (int) ias_setting('daily_cap', 3);
@@ -171,6 +171,7 @@ if (!function_exists('ias_move_to_window')) {
 if (!function_exists('ias_timing_notice')) {
   function ias_timing_notice(string $trail): string {
     if ($trail === '') return '';
+    if (strpos($trail, 'Check: ') === 0) return ' <strong>Check its words:</strong> ' . esc_html(substr($trail, strlen('Check: '))) . ' Your yes still stands — change the words if they need it.';
     if (strpos($trail, 'Needs a decision: ') === 0) return ' <strong>It needs a decision:</strong> ' . esc_html(substr($trail, strlen('Needs a decision: ')));
     return ' <strong>Its words were written for its old day</strong> — Claude rewrites them for the new one on the next hourly run, and it goes nowhere until then.';
   }
@@ -285,7 +286,7 @@ add_action('ias_calendar_action', function (string $action): void {
       ias_post_trail($id, $words, $actor);
       ias_log('moved', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $words], $actor);
       ias_plan_hold($actor);
-      $redated = ($moved = ias_post_get($id)) ? ias_timing_check($moved) : ''; // words that count days from its old day (0.25.0)
+      $redated = ($moved = ias_post_get($id)) ? ias_timing_check($moved, true) : ''; // words that count days from its old day (0.25.0)
       ias_push_later($id);
       $n = ias_move_day_count(substr($when, 0, 10), $id);
       $cap = (int) ias_setting('daily_cap', 3);
@@ -297,6 +298,7 @@ add_action('ias_calendar_action', function (string $action): void {
     case 'unpin':
       if (empty($flags['pinned'])) return;
       unset($flags['pinned'], $flags['pinned_by']);
+      $flags['plan_chooses'] = true; // handed back to the plan: a yes no longer keeps its time, until the next one (0.26.0)
       ias_post_update($id, ['flags' => $flags]);
       ias_post_trail($id, 'The plan chooses its time again', $actor);
       $was = (string) ($p['scheduled_at'] ?? '');

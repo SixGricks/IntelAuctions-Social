@@ -443,9 +443,11 @@ if (!function_exists('ias_slot_minute')) {
  * fixed in place, and what each must come after. $rows are decoded post rows;
  * $lead is the Lane B floor in minutes. Pure.
  *
- *   fixed   — published and human posts, posts locked by an edit in OneUp, and
+ *   fixed   — published and human posts, posts locked by an edit in OneUp,
  *             posts already sent inside the veto window (on the OneUp calendar:
- *             `flags.oneup`);
+ *             `flags.oneup`), a person's Move (`flags.pinned`) and own posts
+ *             (`manual`), and posts a person approved, edited or kept while their
+ *             time is more than an hour ahead (0.26.0);
  *   blocked — a property's Open House and Auction Week posts while its Listing
  *             post waits for photos (the Listing post comes first);
  *   left out — skipped and cancelled posts, posts dropped for want of a window,
@@ -454,6 +456,7 @@ if (!function_exists('ias_slot_minute')) {
 if (!function_exists('ias_engine_posts')) {
   function ias_engine_posts(array $rows, DateTimeImmutable $now, int $lead): array {
     $floor = $now->modify('+' . $lead . ' minutes')->format('Y-m-d H:i');
+    $kept_floor = $now->modify('+60 minutes')->format('Y-m-d H:i');
     $today = $now->format('Y-m-d');
     $no_photos = []; // listing id => true while its Listing post waits for photos
     foreach ($rows as $r) {
@@ -481,6 +484,12 @@ if (!function_exists('ias_engine_posts')) {
       }
       elseif (in_array($status, ['published', 'human'], true) || !empty($r['locked'])) $fixed = $at;
       elseif ($pin !== '' && $pin > $now->format('Y-m-d H:i')) $fixed = $pin;
+      // A person's yes holds the time it was given (0.26.0, DJ, Oct 15, 2026: "When a post has been reviewed and
+      // approved the plugin should not move it and trigger a review again"): approved, edited or kept as written,
+      // it stays while that time is still more than an hour ahead; only a post whose time is gone is placed again.
+      // Not where it could never go (a Lane B post never sent, inside the veto window), nor once a person handed its time back (`plan_chooses`).
+      elseif (($status === 'approved' || !empty($r['flags']['edited_by']) || !empty($r['flags']['released_by'])) && empty($r['flags']['plan_chooses'])
+        && $at !== '' && $at > $kept_floor && ($r['lane'] === 'A' || $at >= $floor || !empty($live['hash']) || !empty($live['id']) || !empty($r['flags']['was_on_oneup']))) $fixed = $at;
       elseif ($sent && $at !== '' && $at < $floor) $fixed = $at; // sent and inside the veto window: it stays
       if ($fixed === '' && in_array($status, ['published', 'human'], true)) continue;
       if ($fixed !== '' && substr($fixed, 0, 10) < $today) continue; // already behind us

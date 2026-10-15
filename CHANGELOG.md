@@ -1,5 +1,35 @@
 # Intel Auctions Social changelog
 
+## 0.26.0 (2026-10-15) — three Sold pictures; a person's yes keeps its time
+DJ, Oct 15, 2026: "Create 2 other 'Sold' templates for images to switch between
+them so they are not all identical. When a post has been reviewed and approved
+the plugin should not move it and trigger a review again."
+- **Three Sold looks** (`graphics.php`): the photo-and-price picture as before,
+  plus **Navy panel** (`ias_graphic_results_panel()`: the photo above a navy
+  panel, "SOLD AT AUCTION", the price, the street, the town and date) and
+  **Sold badge** (`ias_graphic_results_stamp()`: the photo dimmed behind a
+  framed navy badge, "SOLD" over the price; one sale only — two or three get
+  the panel). `ias_pick_sold_layout()` takes the least used lately and never
+  the last Results picture's (history `sold_layout`); a rewrite keeps its
+  picture's look (`layout` on the graphic). Alt text is the same whatever the
+  look (`ias_sold_alt()`).
+- **A person's yes keeps its time** (`ias_engine_posts()`): an approved post,
+  and one a person edited or kept as written, is fixed at its time while that
+  time is more than an hour ahead — the morning plan used to re-place every
+  unpinned post, approved ones included, so an approved post could be moved,
+  replaced on OneUp and (with 0.25.0's day check) sent back for a yes. Only a
+  post whose time passed without going out is placed again, still approved —
+  and one handed back with **Let the plan choose the time** (`flags.plan_chooses`,
+  cleared by the next edit, keep or yes), or a Lane B post never sent whose time
+  is inside the veto window, where it could never go.
+- The day check (`ias_timing_check()`) never stops a person's approved, edited
+  or kept words: run by the plan it leaves them alone, and after the person's
+  own move it only says what to check ("Check its words") — their yes stands.
+  Claude's unapproved drafts are still rewritten for their new day.
+
+Tests: `tests/unit/sold-layouts.php`, `tests/wp/08g-kept-times.php` (fails
+without the scheduler change); `08e-post-day.php` follows the new rule.
+
 ## 0.25.0 (2026-10-15) — your own posts, the post's own day, more templates
 DJ, Oct 15, 2026: "I want to be able to create a post from in the social
 calendar manually and choose what platforms it goes to… make sure the social

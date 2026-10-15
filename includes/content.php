@@ -552,7 +552,37 @@ if (!function_exists('ias_media_best_photo')) {
 /** A generated graphic as an image entry. */
 if (!function_exists('ias_media_graphic')) {
   function ias_media_graphic(array $g): array {
-    return ['id' => 0, 'url' => $g['url'], 'alt' => $g['alt'], 'kind' => 'graphic', 'crops' => []];
+    return ['id' => 0, 'url' => $g['url'], 'alt' => $g['alt'], 'kind' => 'graphic', 'crops' => []] + (!empty($g['layout']) ? ['layout' => (string) $g['layout']] : []);
+  }
+}
+
+/**
+ * Which Sold layout a Results picture takes (0.26.0): the one it already has (a rewrite keeps its picture's look),
+ * else of those that can show $n sales, the least used lately ($recent: layout => count), never the one the last
+ * Results picture had when there is another, ties in turn order. Pure.
+ */
+if (!function_exists('ias_choose_sold_layout')) {
+  function ias_choose_sold_layout(array $recent, string $last, int $n, string $keep = ''): string {
+    $all = array_keys(ias_sold_layouts());
+    $ok = array_values(array_filter($all, function ($k) use ($n) { return ias_sold_layout_for($k, $n) === $k; }));
+    if ($keep !== '' && in_array($keep, $ok, true)) return $keep;
+    $best = ''; $best_n = PHP_INT_MAX;
+    foreach ($ok as $k) {
+      if ($k === $last && count($ok) > 1) continue;
+      $c = (int) ($recent[$k] ?? 0);
+      if ($c < $best_n) { $best = $k; $best_n = $c; }
+    }
+    return $best !== '' ? $best : $ok[0];
+  }
+}
+
+/** The Sold layout for this Results post, from the history of the last ones (`sold_layout`). */
+if (!function_exists('ias_pick_sold_layout')) {
+  function ias_pick_sold_layout(array $post, int $n): string {
+    $keep = '';
+    foreach ((array) ($post['content']['media']['images'] ?? []) as $img) if (($img['kind'] ?? '') === 'graphic' && !empty($img['layout'])) $keep = (string) $img['layout'];
+    $hist = ias_history_recent('sold_layout', 60, 0, 60);
+    return ias_choose_sold_layout(array_count_values($hist), (string) ($hist[0] ?? ''), $n, $keep);
   }
 }
 
@@ -604,7 +634,8 @@ if (!function_exists('ias_media_for_post')) {
       }
       $sold_on = !empty($facts_list[0]['date']) ? $facts_list[0]['date']->format('F j, Y') : '';
       if ($items) {
-        $g = ias_graphic_results($items, $sold_on, $slug . '-' . substr(md5((string) wp_json_encode($items)), 0, 8));
+        $layout = ias_sold_layout_for(ias_pick_sold_layout($post, count($items)), count($items)); // one of three looks, in turn (0.26.0)
+        $g = ias_graphic_results($items, $sold_on, $slug . '-' . substr(md5((string) wp_json_encode($items) . $layout), 0, 8), $layout);
         if ($g) {
           $media['images'][] = ias_media_graphic($g);
         } else {
@@ -1385,6 +1416,7 @@ if (!function_exists('ias_generate_post')) {
     ias_history_add('cta_kind', $cta_kind, $first, $post_id);
     ias_history_add('template', $template, $first, $post_id);
     ias_history_add('shape', (string) $post['type'] . ':' . $shape, $first, $post_id);
+    foreach ((array) $media['images'] as $img) if (($img['kind'] ?? '') === 'graphic' && !empty($img['layout'])) ias_history_add('sold_layout', (string) $img['layout'], $first, $post_id); // the next Results picture takes another look
     ias_history_add('hashtags', implode(' ', array_map('strtolower', $hashtags)), $first, $post_id);
     foreach ((array) $media['images'] as $img) {
       if ((int) $img['id'] <= 0) continue;
