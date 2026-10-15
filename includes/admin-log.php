@@ -28,7 +28,9 @@ if (!function_exists('ias_log_render')) {
     echo '<input type="hidden" name="post_type" value="' . esc_attr(ia_schema_post_type()) . '"><input type="hidden" name="page" value="' . esc_attr(IAS_PAGE_LOG) . '">';
     echo '<label>Show <select name="event" style="max-width:calc(100vw - 140px)"><option value="">everything</option>';
     foreach ($kinds as $key => $label) echo '<option value="' . esc_attr($key) . '" ' . selected($event, $key, false) . '>' . esc_html($label) . '</option>';
-    echo '</select></label> <button class="button">Filter</button></form>';
+    echo '</select></label> <button class="button">Filter</button> '
+      // DJ, Oct 15, 2026: "I also want to be able to export the log page." Everything kept, as shown by the filter.
+      . '<a class="button" href="' . esc_url(wp_nonce_url(admin_url('admin-post.php?action=ias_log_export' . ($event !== '' ? '&event=' . rawurlencode($event) : '')), 'ias_log_export')) . '">Download CSV</a></form>';
 
     $rows = ias_log_recent($event, 200);
     if (!$rows) {
@@ -76,3 +78,79 @@ if (!function_exists('ias_log_meta_html')) {
     return $out !== '' ? $out : '—';
   }
 }
+
+/**
+ * The log as a spreadsheet (0.23.0): every entry the toolkit's event log still
+ * keeps (its newest 5,000, across both plugins), newest first, narrowed like the
+ * page by ?event=. A row: when, what, the listing, the post, the summary, the
+ * rest of its details and its payload as JSON, and who.
+ */
+if (!function_exists('ias_log_export_rows')) {
+  function ias_log_export_rows(string $event = '', int $limit = 5000): array {
+    if (!function_exists('ia_table')) return ias_log_recent($event, 500); // an older toolkit: its own reader, 500 at most
+    global $wpdb;
+    $t = ia_table('events');
+    $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$t} WHERE event LIKE %s ORDER BY id DESC LIMIT %d", $wpdb->esc_like('ias.' . $event) . '%', max(1, min(5000, $limit))), ARRAY_A);
+    $out = [];
+    foreach (is_array($rows) ? $rows : [] as $row) {
+      $meta = isset($row['meta']) ? json_decode((string) $row['meta'], true) : null;
+      $row['meta'] = is_array($meta) ? $meta : [];
+      $row['short'] = substr((string) $row['event'], 4);
+      $out[] = $row;
+    }
+    return $out;
+  }
+}
+
+/** One log entry as spreadsheet cells, in the order of ias_log_csv_head(). */
+if (!function_exists('ias_log_csv_row')) {
+  function ias_log_csv_row(array $row, array $kinds): array {
+    $meta = (array) $row['meta'];
+    $listing = (int) $row['object_id'];
+    $short = (string) $row['short'];
+    $rest = $meta;
+    unset($rest['summary'], $rest['post'], $rest['payload'], $rest['type'], $rest['channel']);
+    $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+    return [
+      (string) $row['created_at'],
+      (string) ($kinds[$short] ?? $short),
+      $listing > 0 ? (string) $listing : '',
+      $listing > 0 ? html_entity_decode(get_the_title($listing), ENT_QUOTES, 'UTF-8') : '',
+      isset($meta['post']) ? (string) (int) $meta['post'] : '',
+      !empty($meta['type']) ? (string) (ias_post_type((string) $meta['type'])['short'] ?? $meta['type']) : '',
+      (!empty($meta['channel']) && function_exists('ias_channel') ? (string) (ias_channel((string) $meta['channel'])['label'] ?? $meta['channel']) . ': ' : '') . (string) ($meta['summary'] ?? ''),
+      $rest ? (string) wp_json_encode($rest, $flags) : '',
+      isset($meta['payload']) ? (string) wp_json_encode($meta['payload'], $flags) : '',
+      ias_actor_name((string) $row['actor']),
+    ];
+  }
+}
+
+if (!function_exists('ias_log_csv_head')) {
+  function ias_log_csv_head(): array {
+    return ['When (site time)', 'What', 'Listing ID', 'Listing', 'Post ID', 'Post type', 'Details', 'More', 'Payload', 'Who'];
+  }
+}
+
+/** A spreadsheet cell that can never run as a formula (=, +, -, @ first: a leading apostrophe). Pure. */
+if (!function_exists('ias_csv_safe')) {
+  function ias_csv_safe(string $v): string {
+    return $v !== '' && strpos("=+-@\t\r", $v[0]) !== false ? "'" . $v : $v;
+  }
+}
+
+add_action('admin_post_ias_log_export', function () {
+  if (!current_user_can('manage_options') || !check_admin_referer('ias_log_export')) wp_die('Not allowed.', '', ['response' => 403]);
+  $kinds = ias_log_events();
+  $event = isset($_GET['event']) ? sanitize_key(wp_unslash($_GET['event'])) : '';
+  if (!isset($kinds[$event])) $event = '';
+  nocache_headers();
+  header('Content-Type: text/csv; charset=utf-8');
+  header('Content-Disposition: attachment; filename="social-log-' . gmdate('Y-m-d') . ($event !== '' ? '-' . $event : '') . '.csv"');
+  $out = fopen('php://output', 'w');
+  fwrite($out, "\xEF\xBB\xBF"); // so Excel reads it as UTF-8
+  fputcsv($out, ias_log_csv_head());
+  foreach (ias_log_export_rows($event) as $row) fputcsv($out, array_map('ias_csv_safe', ias_log_csv_row($row, $kinds)));
+  fclose($out);
+  exit;
+});

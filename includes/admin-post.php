@@ -92,11 +92,12 @@ add_action('ias_calendar_action', function (string $action): void {
         $flags['edited_by'] = $actor;
         $flags['holds'] = $holds;
         $flags['fixes'] = $check['fixes'];
-        unset($flags['stale'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
+        unset($flags['stale'], $flags['stale_what'], $flags['released_by']); // a person read it against today's listing; any old "keep as written" was for other words
         $status = $holds ? 'held' : ($p['status'] === 'held' ? 'planned' : $p['status']);
         if (in_array($p['status'], ['waiting', 'approved'], true) && !$holds) $status = 'planned'; // changed words need a fresh yes
         if (in_array($p['status'], ['waiting', 'approved'], true) && function_exists('ias_approval_void')) ias_approval_void($id); // old links must not approve new words
-        $update = ['content' => $content, 'flags' => $flags, 'status' => $status, 'note' => $holds ? 'Needs a decision: ' . $holds[0] : '', 'facts_hash' => ias_facts_hash($p, ias_post_facts($p))];
+        [$facts_hash, $flags] = ias_facts_stamp($p, ias_post_facts($p), $flags);
+        $update = ['content' => $content, 'flags' => $flags, 'status' => $status, 'note' => $holds ? 'Needs a decision: ' . $holds[0] : '', 'facts_hash' => $facts_hash];
         if ($p['status'] === 'approved') $update += ['approved_at' => null, 'approved_by' => ''];
         ias_post_update($id, $update);
         ias_history_forget_post($id, ['opener']);
@@ -190,8 +191,9 @@ add_action('ias_calendar_action', function (string $action): void {
       if (ias_has_verify((array) $p['content'])) { $flash('Put the right fact in place of the <strong>[VERIFY: …]</strong> words and press <strong>Save changes</strong> first — a marked fact never goes out as it is.', 'error'); return; }
       $flags = $p['flags'];
       $flags['released_by'] = $actor;
-      unset($flags['stale']); // the reasons it stopped include the listing having changed: kept as written over that too
-      ias_post_update($id, ['status' => 'planned', 'flags' => $flags, 'note' => 'Kept as written by ' . $actor, 'facts_hash' => ias_facts_hash($p, ias_post_facts($p))]);
+      unset($flags['stale'], $flags['stale_what']); // the reasons it stopped include the listing having changed: kept as written over that too
+      [$facts_hash, $flags] = ias_facts_stamp($p, ias_post_facts($p), $flags);
+      ias_post_update($id, ['status' => 'planned', 'flags' => $flags, 'note' => 'Kept as written by ' . $actor, 'facts_hash' => $facts_hash]);
       ias_post_trail($id, 'Kept as written despite: ' . implode(' ', (array) ($flags['holds'] ?? [])), $actor);
       ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'summary' => 'Kept as written despite the hold'], $actor);
       do_action('ias_post_released', $id);
@@ -267,9 +269,11 @@ add_action('ias_post_view_bar', function (array $p): void {
       . ($first ? ' Emailed ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $first['at']))) . (count($sent) > 1 ? ', ' . count($sent) . ' emails so far' : '') . '.' : '') . '</p>';
   } elseif (!empty($flags['stale'])) {
     $level = 'warning';
+    $what = array_map('strval', (array) ($flags['stale_what'] ?? []));
+    $changed = $what ? 'The listing\'s <strong>' . esc_html(count($what) > 1 ? implode(', ', array_slice($what, 0, -1)) . ' and ' . end($what) : $what[0]) . '</strong> changed' : 'The listing changed';
     $lines = '<p>' . (!empty($flags['edited_by'])
-      ? 'The listing changed since <strong>' . esc_html(ias_actor_name((string) $flags['edited_by'])) . '</strong> edited this post. Check the text and save it, or press Rewrite.'
-      : 'The listing changed since this draft was written; it is rewritten on the next hourly run, and goes nowhere until then.') . '</p>';
+      ? $changed . ' since <strong>' . esc_html(ias_actor_name((string) $flags['edited_by'])) . '</strong> edited this post. Check the text and save it, or press Rewrite.'
+      : $changed . ' since this draft was written; it is rewritten on the next hourly run, and goes nowhere until then.') . '</p>';
     $buttons = $rewrite;
   } elseif (!empty($flags['needs'])) {
     $level = 'info';

@@ -15,8 +15,11 @@
  *         14, 2026: "We only need to say when it's a phone bid auction.")
  *   hold  a dollar figure or a phone number that is not on the listing
  *   hold  a fair-housing phrase (fairhousing.php)
- *   hold  more than three emoji (no emoji walls) — eight for an emoji-led post
+ *   hold  more than three emoji (no emoji walls) — eight for an emoji-led post; Claude's drafts only,
+ *         never a person's own words (ias_recheck_post())
  *   (a bidding way the sentence denies — "no onsite auction" — is no mention of it)
+ *   hold  a Results post that names a seller (DJ, Oct 15, 2026: sellers do not want their name beside
+ *         what a place sold for) — the sellers' names, and each surname, unless it is also the place's own name
  *   fix   a web address in the text — removed (the link goes in the first comment)
  *   fix   stacked exclamation points — one is plenty
  */
@@ -120,6 +123,33 @@ if (!function_exists('ias_has_verify')) {
 }
 
 /**
+ * The sellers named in $text: each seller as the listing gives them ("John and
+ * Mary Smith", "Smith Family Trust"), and each name word of four letters or more
+ * that is not a word of the place itself ($place: its name, street, town,
+ * county) or a word like Family, Estate or Trust. Whole words, any case. Pure.
+ */
+if (!function_exists('ias_seller_names_in')) {
+  function ias_seller_names_in(string $text, string $sellers, string $place = ''): array {
+    $sellers = trim($sellers);
+    if ($sellers === '' || trim($text) === '') return [];
+    $common = ['family', 'estate', 'estates', 'trust', 'trustee', 'trustees', 'living', 'revocable', 'irrevocable', 'heirs', 'executor', 'executrix',
+      'llc', 'inc', 'corp', 'company', 'farm', 'farms', 'the', 'and', 'of', 'late', 'deceased', 'mr', 'mrs', 'ms', 'dr', 'jr', 'sr', 'partnership', 'properties', 'holdings'];
+    $place_words = array_map('mb_strtolower', preg_split('/[^\p{L}\']+/u', $place, -1, PREG_SPLIT_NO_EMPTY) ?: []);
+    $found = [];
+    foreach (preg_split('/\s*(?:,|;|&|\/|\band\b|\n)\s*/iu', $sellers, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $one) {
+      $one = trim($one);
+      if (mb_strlen($one) >= 4 && preg_match('/(?<![\p{L}])' . preg_quote($one, '/') . '(?![\p{L}])/iu', $text)) $found[$one] = true;
+    }
+    foreach (preg_split('/[^\p{L}\']+/u', $sellers, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $word) {
+      $low = mb_strtolower($word);
+      if (mb_strlen($word) < 4 || in_array($low, $common, true) || in_array($low, $place_words, true)) continue;
+      if (preg_match('/(?<![\p{L}])' . preg_quote($word, '/') . '(?![\p{L}])/iu', $text)) $found[$word] = true;
+    }
+    return array_keys($found);
+  }
+}
+
+/**
  * Check one draft. $ctx:
  *   type        post type
  *   bidding     the bidding type of each listing in the post ('phone'|'in_person'|'')
@@ -127,6 +157,8 @@ if (!function_exists('ias_has_verify')) {
  *   phones      phone numbers the post may give (the lead's, the office)
  *   fair_extra  extra fair-housing phrases from Settings
  *   emoji_max   the most emoji allowed (3; an emoji-led post's shape gives 8)
+ *   sellers     a Results post's sellers, as the listing gives them (never to be named)
+ *   place       the place's own words (name, street, town, county), which a surname may share
  * Returns ['text' => fixed text, 'holds' => [reason, …], 'fixes' => [what was changed, …]].
  */
 if (!function_exists('ias_check_draft')) {
@@ -151,7 +183,7 @@ if (!function_exists('ias_check_draft')) {
     $must_say = in_array($type, ['listing', 'open_house', 'auction_week'], true);
     if ($must_say) {
       if (in_array('', $types, true) || !$types) {
-        $holds[] = 'The listing does not say whether it is Intel Phone Bidding or an in-person auction (its Auction type): a phone-bid sale has to say so.';
+        $holds[] = 'The listing contradicts itself on whether it is Intel Phone Bidding or in person (its auction type and its Auction Type category disagree) — fix the listing: a phone-bid sale has to say so.';
       } elseif (count($types) === 1) {
         if ($types[0] === 'phone') {
           if (!$said['phone']) $holds[] = 'It does not say this is Intel Phone Bidding.';
@@ -178,6 +210,10 @@ if (!function_exists('ias_check_draft')) {
 
     foreach (ias_fair_housing_check($text, (string) ($ctx['fair_extra'] ?? '')) as $hit) {
       $holds[] = 'Fair housing: "' . $hit['phrase'] . '" ' . $hit['why'] . '.';
+    }
+
+    if ($type === 'results' && ($named = ias_seller_names_in($text, (string) ($ctx['sellers'] ?? ''), (string) ($ctx['place'] ?? '')))) {
+      $holds[] = 'It names the seller ("' . implode('", "', $named) . '") — a Results post never names the sellers.';
     }
 
     $emoji_max = (int) ($ctx['emoji_max'] ?? 3); // an emoji-led post (its shape) may carry more, one a line

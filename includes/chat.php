@@ -244,7 +244,7 @@ if (!function_exists('ias_chat_prompt')) {
       . ($has_comment ? "\"comment\": \"the whole revised first comment, or null\", " : '')
       . "\"pictures\": [\"the keys of the pictures, in order\"] or null, \"alt\": {\"a123\": \"new alt text\"} or null, \"rule\": null}";
 
-    $facts = count($facts_list) > 1 ? array_map('ias_facts_for_prompt', $facts_list) : ias_facts_for_prompt($facts_list[0]);
+    $facts = ias_post_prompt_facts($post, $facts_list);
     $user = 'POST TYPE: ' . ias_type_brief($post, $facts_list) . "\n\n"
       . "FACTS:\n" . wp_json_encode($facts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n\n"
       . "THE POST TEXT NOW (as {$person} sees it, with any edits of their own):\n<<<\n" . $screen['text'] . "\n>>>\n\n";

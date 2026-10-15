@@ -1,5 +1,48 @@
 # Intel Auctions Social changelog
 
+## 0.23.0 (2026-10-15) — posts stop flipping to "the listing changed"
+DJ, Oct 15, 2026: "I keep having posts that i personally rewrite and approve or
+just save and then a few minutes later they go from green to blue with the note:
+The listing changed since this draft was written… Generally speaking it seems
+like results are going out and nothing else is."
+- **The cause.** A draft is checked against a fingerprint of the facts it was
+  written from, and that fingerprint was a hash of the prompt's facts — whose
+  description came from `get_the_excerpt()`, the page as every plugin's content
+  filters print it. What Elementor and the rest print differs between a
+  person's own request (a save, an approval, Plan now) and the hourly run, so
+  the next run found "the listing changed" on posts nobody had touched: a post
+  just approved or saved went blue, was taken off OneUp and rewritten, and few
+  posts but Results (approved and gone within hours) ever reached their day.
+- **The fingerprint is the facts themselves** (`ias_facts_fields()`,
+  `ias_facts_sig()`): plain values, field by field, never as the prompt words
+  them, with the description as the listing stores it (`ias_listing_text()`:
+  its excerpt, else its text without markup or shortcodes — the prompt uses it
+  too). Photos and videos never count; a Results post is not written from the
+  open houses, lead, starting bid or sellers; the others not from the price.
+- **The update re-stamps every post once** (`ias_facts_sig_v`), as it stands —
+  never all called changed at once.
+- **What changed is named**: "The listing's open houses changed since this
+  draft was written" (`flags.stale_what`), on the post and in its hold.
+- **A person's yes holds.** A post a person approved or kept as written stops
+  for them when a fact really changes ("…changed after this post was
+  approved") — never rewritten under them. Only a listing leaving the post
+  sends an approved post back to be rewritten.
+- **A person's emoji are theirs.** The emoji cap (three; eight on an
+  emoji-led post) applies to Claude's drafts only, never to a person's own
+  words, typed or asked of Talk it over.
+- **An unstated auction type is in-person** — the usual kind — unless the
+  listing's own name or words speak of phone bidding (then Intel Phone
+  Bidding). Only a listing that contradicts itself still stops the post.
+- **Results posts never name the sellers** (DJ: "Sellers tend not to want
+  associated with how much they made on properties. Let's mention them on
+  listings but not on results posts."): the sellers are left out of a Results
+  prompt, the thanks opening and the call to action thank them never by name,
+  and a Results post that names a seller (or a surname of theirs, unless it is
+  also the place's name) stops for a person.
+- **Download CSV on the Log** (DJ: "I also want to be able to export the log
+  page"): every entry the event log keeps, narrowed by Show, with each entry's
+  details and payload; cells that would run as a formula are made plain.
+
 ## 0.22.3 (2026-10-14) — review fixes for 0.22.2
 From the review of SixGricks/IntelAuctions-Social#11:
 - **Facebook and Google rows are read as they are.** 0.22.2 split every row

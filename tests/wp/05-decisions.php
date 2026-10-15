@@ -92,7 +92,7 @@ update_post_meta($held, 'Starting_Bid', '$275,000');
 ias_sync();
 $e = ias_post_get($hid);
 t_eq('held', $e['status'], 'the listing changed under an edited post: it stops for its editor');
-t_ok(!empty($e['flags']['stale']) && in_array(ias_stale_hold(true), (array) $e['flags']['holds'], true), '…saying the listing changed after the edit');
+t_ok(!empty($e['flags']['stale']) && in_array(ias_stale_hold(true, false, ['starting bid']), (array) $e['flags']['holds'], true) && $e['flags']['stale_what'] === ['starting bid'], '…saying what changed after the edit: "The listing\'s starting bid changed after a person edited this post"');
 t_ok(!in_array($hid, array_map(function ($p) { return (int) $p['id']; }, ias_drafts_due()), true), '…and Claude does not rewrite it');
 $act('edit', ['ias_post' => $hid, 'ias_text' => "12 Held Lane in Strasburg sells November 28. It is an in-person auction. Starting bid \$275,000.\n\nCall the office."]);
 ias_sync();

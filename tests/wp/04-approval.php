@@ -176,13 +176,14 @@ t_eq('approved', ias_post_get((int) $r3['id'])['status'], 'approved');
 update_post_meta($sold3, '_ia_result_price', '505000'); // the price is corrected after the yes
 ias_sync();
 $r3 = ias_post_get((int) $r3['id']);
-t_eq('planned', $r3['status'], 'a corrected price after approval withdraws the approval');
-t_eq('the listing changed and the draft has not been rewritten yet', ias_push_ready($r3), '…and it cannot be pushed with the old price');
-$GLOBALS['ias_t_mail'] = [];
-global $wpdb;
-$wpdb->update(ias_table('posts'), ['generated_at' => '2026-11-10 03:00:00'], ['id' => $r3['id']]);
+// 0.23.0: the yes was a person's decision — the post stops for them, saying what changed, and is never rewritten under them.
+t_ok($r3['status'] === 'held' && empty($r3['approved_at']) && strpos((string) $r3['note'], "The listing's sale price changed after this post was approved") !== false, 'a corrected price after approval withdraws the approval and holds the post, naming what changed (' . $r3['note'] . ')');
+t_eq('it needs a decision', ias_push_ready($r3), '…and it cannot be pushed with the old price');
 ias_job_run();
+t_ok(strpos((string) ias_post_get((int) $r3['id'])['content']['text'], '$505,000') === false, '…nor rewritten by the hourly run under the person who approved it');
+$GLOBALS['ias_t_mail'] = [];
+$r = ias_generate_post((int) $r3['id'], true, 'admin'); // Rewrite, pressed by a person
 $r3 = ias_post_get((int) $r3['id']);
-t_ok(strpos((string) $r3['content']['text'], '$505,000') !== false && $r3['status'] === 'waiting', 'it is rewritten with the new price and sent for a fresh yes');
+t_ok($r['ok'] && strpos((string) $r3['content']['text'], '$505,000') !== false && in_array($r3['status'], ['planned', 'waiting'], true), 'Rewrite: written with the new price, for a fresh yes');
 remove_all_filters('pre_wp_mail');
 ias_t_claude_off();

@@ -26,7 +26,7 @@ t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'does no
 $r = ias_check_draft("Intel Phone Bidding, or bid online.", $ctx);
 t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'online') !== false; }), 'online bidding: held');
 $r = ias_check_draft("In-person auction.", array_merge($ctx, ['bidding' => ['']]));
-t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'listing does not say') !== false; }), 'the listing itself not saying: held');
+t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'contradicts itself') !== false; }), 'a listing that contradicts itself on how bidding works: held (an unstated type reads as in-person before it gets here)');
 $r = ias_check_draft("Thanks to everyone who came out.", array_merge($ctx, ['type' => 'results']));
 t_eq([], $r['holds'], 'a Results post need not state bidding');
 
@@ -84,3 +84,14 @@ t_eq([], ias_check_draft("Two sales Nov 18. The lot is Intel Phone Bidding.", $t
 $r = ias_check_draft("Two sales Nov 18 in Narvon.", $two);
 t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'One of these sales is Intel Phone Bidding') === 0; }), '…and when the phone one is not: held');
 t_eq([], ias_check_draft("Two farms sell Nov 18 in Narvon.", array_merge($two, ['bidding' => ['in_person', 'in_person']]))['holds'], 'two in-person sales: nothing to say');
+
+// A Results post never names the sellers (0.23.0; DJ, Oct 15, 2026).
+$res = ['type' => 'results', 'bidding' => ['in_person'], 'money' => [412000.0], 'phones' => [], 'fair_extra' => '', 'emoji_max' => 3,
+  'sellers' => 'John and Mary Hershey', 'place' => 'Hershey Road Farm 12 Hershey Road Narvon Lancaster'];
+$r = ias_check_draft("Sold! Thank you to John and Mary for trusting us. 12 Hershey Road brought \$412,000.", $res);
+t_ok((bool) array_filter($r['holds'], function ($h) { return strpos($h, 'It names the seller') === 0 && strpos($h, '"John"') !== false; }), 'a Results post that names a seller is held, naming who');
+t_eq([], ias_check_draft("Sold! Thank you to the sellers for trusting us. 12 Hershey Road brought \$412,000.", $res)['holds'], 'a surname that is also the road\'s name is never taken for the seller');
+t_eq(['Smith Family Trust', 'Smith'], ias_seller_names_in('Thanks to the Smith Family Trust.', 'Smith Family Trust'), 'the seller as the listing gives them, and the surname; never "Family" or "Trust" alone');
+t_eq([], ias_seller_names_in('Thanks to the family that trusted us.', 'Smith Family Trust'), 'ordinary words that appear in a seller\'s name are not a seller');
+t_eq([], ias_check_draft("Sold for \$412,000 — thanks to John and Mary.", array_merge($res, ['type' => 'listing', 'money' => [412000.0]]))['holds'], 'a Listing post may name the sellers');
+t_eq([], ias_seller_names_in('Thanks to everyone.', ''), 'no sellers on the listing: nothing to find');

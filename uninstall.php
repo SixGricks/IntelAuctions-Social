@@ -34,6 +34,7 @@ foreach ([
   'ias_pulse', // the last time an open calendar asked OneUp what changed, and what it found
   'ias_oneup_id_form', // how OneUp took the account as a list: a JSON list or social_network_id[0]
   'ias_oneup_verify_leftovers', // test drafts an earlier Verify could not delete, by id — the next Verify deletes them
+  'ias_facts_sig_v', // 0.23.0: which way a post's facts fingerprint is worked out — a new one re-stamps every post once
   'ias_youtube_route', // 0.22.2: how a video reaches OneUp's storage, as Verify for YouTube found — 'site' (through this website, its copy in uploads/intel-social/video-tmp, removed below) or 'direct'
   'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', // Brand voice: the house rules, Claude's unsaved suggestion, when it last read the log, the day the log was last pruned
 ] as $key) {
