@@ -164,6 +164,21 @@ it, and the spec stays verbatim, so they are recorded here:
   Sunday). The same file is Facebook's native video. No Google Cloud project:
   OneUp's own YouTube connection does the upload (a project of our own would
   have its uploads kept private until Google audited it).
+- **"The listing changed" means a fact changed** (Oct 15, 2026: "posts that i
+  personally rewrite and approve or just save … a few minutes later … go from
+  green to blue"). The fingerprint is the plain facts field by field
+  (`ias_facts_fields()`/`ias_facts_sig()`, kept in `flags.facts_sig`), never
+  the prompt's wording of them and never the page as rendered: the description
+  is `ias_listing_text()` (stored excerpt or stripped content) — never
+  `get_the_excerpt()`, whose filters print differently in a person's request
+  and the hourly run. A change of how it is worked out bumps `IAS_FACTS_SIG_V`,
+  which re-stamps every post once; never ship one that calls every post
+  changed. A post a person approved, kept or edited stops for them, naming
+  what changed (`flags.stale_what`) — never rewritten under them. **Emoji are a
+  person's call**: the cap is for Claude's drafts only. **An unstated auction
+  type is in-person** unless the listing's words say phone bid. **Results posts
+  never name the sellers** ("Sellers tend not to want associated with how much
+  they made on properties"): not in the prompt, held if named.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

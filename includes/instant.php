@@ -340,7 +340,8 @@ add_action('ias_calendar_action', function (string $action): void {
       unset($flags['edited_in_oneup']);
       $after = array_merge($p, ['content' => $c, 'flags' => $flags]);
       if (!empty($flags['oneup'])) $flags['oneup']['hash'] = md5((string) wp_json_encode(ias_render_facebook($after))); // OneUp has it as it is now: nothing to replace
-      ias_post_update($id, ['content' => $c, 'flags' => $flags, 'locked' => 0, 'note' => '', 'facts_hash' => ias_facts_hash($after, ias_post_facts($after))]);
+      [$facts_hash, $flags] = ias_facts_stamp($after, ias_post_facts($after), $flags);
+      ias_post_update($id, ['content' => $c, 'flags' => $flags, 'locked' => 0, 'note' => '', 'facts_hash' => $facts_hash]);
       if (!empty($o['text']) && function_exists('ias_voice_record')) ias_voice_record($id, 'kept'); // a person's words: the brand-voice log keeps them
       ias_post_trail($id, 'Edit it here again: the version changed in OneUp is kept, and edited here from now on', $actor);
       ias_log('edited', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => 'Taken back from OneUp: its version there kept, edited here from now on'], $actor);

@@ -30,10 +30,11 @@ foreach ([
   'ias_readback_last', 'ias_stats_last', 'ias_comments_no_plan', 'ias_plan_hold', 'ias_push_queue', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
   'ias_oneup_directory', // Look up accounts: OneUp's categories and accounts (ids and names, never the key)
   'ias_gbp_verify', 'ias_gbp_mode', // Google Business Profile: its Verify (and, before 0.12.0, whether it was last sent for real)
-  'ias_youtube_verify', 'ias_youtube_playlists', // YouTube (0.22.0): its Verify, and the channel's playlists as Verify read them (each listing's video record is the _ias_youtube meta below; the ias_youtube_page_check transient goes with the others)
+  'ias_youtube_verify', 'ias_youtube_playlists', 'ias_youtube_storage', // YouTube (0.22.0): its Verify, and the channel's playlists as Verify read them (each listing's video record is the _ias_youtube meta below; the ias_youtube_page_check transient goes with the others)
   'ias_pulse', // the last time an open calendar asked OneUp what changed, and what it found
   'ias_oneup_id_form', // how OneUp took the account as a list: a JSON list or social_network_id[0]
   'ias_oneup_verify_leftovers', // test drafts an earlier Verify could not delete, by id — the next Verify deletes them
+  'ias_facts_sig_v', // 0.23.0: which way a post's facts fingerprint is worked out — a new one re-stamps every post once
   'ias_youtube_route', // 0.22.2: how a video reaches OneUp's storage, as Verify for YouTube found — 'site' (through this website, its copy in uploads/intel-social/video-tmp, removed below) or 'direct'
   'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', // Brand voice: the house rules, Claude's unsaved suggestion, when it last read the log, the day the log was last pruned
 ] as $key) {
@@ -49,6 +50,8 @@ $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ia\\_job\\_la
 // Transients — among them ias_youtube_page_check (Property Videos' read-back, at most every two minutes) and
 // ias_youtube_tmp_sweep (the daily sweep of stray files in uploads/intel-social/video-tmp).
 delete_transient('ias_updater_response');
+// Every other transient is ias_-prefixed and goes with the statement below: ias_visits_* (the summary's site visits),
+// ias_youtube_tmp_sweep, ias_youtube_page_check, ias_appr_refused_* (0.24.1: a refused approval link, logged once a day).
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ias\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ias\\_%'");
 
 // Post meta on listings and attachments (photo grades, crops, markers): every key starts _ias_.

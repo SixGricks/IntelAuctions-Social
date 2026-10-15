@@ -83,7 +83,20 @@ if (!function_exists('ias_bidding_type')) {
       return ['', 'The listing\'s auction type says ' . ias_bidding_label($from_field) . ' but its Auction Type category says ' . ias_bidding_label($from_cat) . '.'];
     }
     $type = $from_field !== '' ? $from_field : $from_cat;
-    return [$type, $type === '' ? 'The listing does not say whether bidding is in person or by Intel Phone Bidding.' : ''];
+    if ($type === '') {
+      // Not stated (0.23.0): an in-person auction is the usual kind and need not be said (DJ, Oct 15, 2026: the "in person
+      // auction" hold "shouldn't be required") — unless the listing's own name or words speak of phone bidding.
+      $post = get_post($id);
+      $words = $post ? get_the_title($id) . ' ' . ias_listing_text($id) : '';
+      // A mention the sentence denies ("No phone bids accepted") is not phone bidding (0.24.1).
+      if (preg_match_all('/\bphone[\s-]*bid/i', $words, $hits, PREG_OFFSET_CAPTURE)) {
+        foreach ($hits[0] as [$hit, $at]) {
+          if (!function_exists('ias_negated_at') || !ias_negated_at($words, (int) $at, strlen($hit))) return ['phone', 'The listing\'s auction type is not set; its own words say Intel Phone Bidding.'];
+        }
+      }
+      return ['in_person', ''];
+    }
+    return [$type, ''];
   }
 }
 
@@ -238,9 +251,7 @@ if (!function_exists('ias_listing_facts')) {
     if ($video_file_url === '' && $video !== '' && $video_link === '') $video_file_url = $video;
     $video_file = $video_file_url !== '';
 
-    $excerpt = function_exists('ia_get_excerpt_plain') ? ia_get_excerpt_plain($id) : '';
-    if ($excerpt === '' && $post) $excerpt = trim(wp_strip_all_tags((string) $post->post_content));
-    $excerpt = trim((string) preg_replace('/\s+/', ' ', $excerpt));
+    $excerpt = ias_listing_text($id); // as stored, never as rendered (0.23.0)
 
     // The full listing already went to Facebook through the toolkit's webhook.
     $webhook = '';
@@ -302,6 +313,26 @@ if (!function_exists('ias_listing_facts')) {
       'published_at' => $post ? substr((string) $post->post_date, 0, 10) : '',
       'posts_cancelled' => (string) get_post_meta($id, '_ias_posts_cancelled', true),
     ];
+  }
+}
+
+/**
+ * The listing's own description, as stored: its excerpt when one was written,
+ * else its content with shortcodes, scripts and markup taken out. Never the
+ * page as rendered — get_the_excerpt() runs every plugin's content filters,
+ * and what Elementor and the rest print differs between a person's request
+ * and the hourly run, which read as "the listing changed" every hour and sent
+ * approved posts back to be rewritten (0.23.0).
+ */
+if (!function_exists('ias_listing_text')) {
+  function ias_listing_text(int $id): string {
+    $post = get_post($id);
+    if (!$post) return '';
+    $raw = trim((string) $post->post_excerpt) !== '' ? (string) $post->post_excerpt : (string) $post->post_content;
+    $raw = (string) preg_replace('#<(script|style)\b[^>]*>.*?</\1>#is', ' ', $raw);
+    $raw = (string) preg_replace('/\[\/?[A-Za-z][\w-]*(?:\s[^\]]*)?\]/', ' ', $raw); // any shortcode, registered here or not
+    $raw = html_entity_decode(wp_strip_all_tags($raw), ENT_QUOTES, 'UTF-8');
+    return trim((string) preg_replace('/\s+/u', ' ', $raw));
   }
 }
 

@@ -115,11 +115,14 @@ if (!function_exists('ias_back_on_plan_status')) {
 
 /** The reason a draft stops when its listing changed and only a person may rewrite it. */
 if (!function_exists('ias_stale_hold')) {
-  function ias_stale_hold(bool $edited, bool $in_oneup = false): string {
-    if ($in_oneup) return 'The listing changed after a person edited this post in OneUp — press Edit it here again, check the words against the listing and save them (or skip it).';
+  function ias_stale_hold(bool $edited, bool $in_oneup = false, array $what = [], bool $approved = false): string {
+    // What changed, when the fingerprints can say (0.23.0): "The listing's open houses and description changed".
+    $changed = $what ? 'The listing\'s ' . (count($what) > 1 ? implode(', ', array_slice($what, 0, -1)) . ' and ' . end($what) : $what[0]) . ' changed' : 'The listing changed';
+    if ($in_oneup) return $changed . ' after a person edited this post in OneUp — press Edit it here again, check the words against the listing and save them (or skip it).';
+    if ($approved) return $changed . ' after this post was approved — check it against the listing, then approve it again (or press Rewrite).';
     return $edited
-      ? 'The listing changed after a person edited this post — check the words against the listing, then save them (or press Rewrite).'
-      : 'The listing changed after this draft was written — check it against the listing, or press Rewrite.';
+      ? $changed . ' after a person edited this post — check the words against the listing, then save them (or press Rewrite).'
+      : $changed . ' after this draft was written — check it against the listing, or press Rewrite.';
   }
 }
 

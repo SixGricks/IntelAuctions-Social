@@ -863,6 +863,7 @@ if (!function_exists('ias_oneup_verify')) {
     }
     // 6. YouTube: an upload address (the file goes there; nothing is uploaded now) and the channel's playlists.
     if ($yt) {
+      delete_option('ias_youtube_storage'); // Verify learns OneUp's storage bucket afresh from this answer (0.24.1)
       $up = ias_youtube_upload_address();
       if ($step('Get an upload address (uploadmedia)', !isset($up['error']), isset($up['error']) ? (string) $up['error'] : 'OneUp handed over an address for a file — each video goes to one of these.')) {
         [$ok, $words] = ias_youtube_upload_test($up);

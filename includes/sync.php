@@ -133,6 +133,17 @@ if (!function_exists('ias_sync')) {
       return array_values(array_filter(array_map(function ($id) use ($facts) { return $facts[(int) $id] ?? null; }, $ids)));
     };
 
+    // A new fingerprint scheme (0.23.0): every live post is re-stamped once, as it stands, so the update
+    // never reads as every listing having changed at once.
+    if ((int) get_option('ias_facts_sig_v', 1) < IAS_FACTS_SIG_V) {
+      foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed'], 'order' => 'id', 'limit' => 2000]) as $row) {
+        if (empty($row['content']['text']) || $row['facts_hash'] === '') continue;
+        [$h, $fl] = ias_facts_stamp($row, $facts_of($row['listing_ids']), $row['flags']);
+        ias_post_update((int) $row['id'], ['facts_hash' => $h, 'flags' => $fl]);
+      }
+      update_option('ias_facts_sig_v', IAS_FACTS_SIG_V, false);
+    }
+
     // Approved but not yet out: the yes was for these facts about these listings. If a
     // listing left the post (unpublished, Cancel posts, a date moved) or a fact behind it
     // changed (a corrected price), the approval is withdrawn before anything else.
@@ -141,9 +152,11 @@ if (!function_exists('ias_sync')) {
       if (!$row || $row['status'] !== 'approved') continue;
       $flags_meta = ['meta' => $c['meta'], 'needs' => $c['needs']];
       $lost = array_values(array_diff(array_map('intval', $row['listing_ids']), array_map('intval', $c['listing_ids'])));
-      $hash = ias_facts_hash(['type' => $c['type'], 'flags' => array_merge($row['flags'], $flags_meta)], $facts_of($row['listing_ids']));
+      $as_now = ['type' => $c['type'], 'flags' => array_merge($row['flags'], $flags_meta)];
+      $hash = ias_facts_hash($as_now, $facts_of($row['listing_ids']));
       if (!$lost && ($row['facts_hash'] === '' || $hash === $row['facts_hash'])) continue;
-      ias_approval_withdraw($row, $c, $lost ? 'A listing in it is no longer part of it' : 'The listing changed');
+      $what = $lost ? [] : ias_facts_changed((array) ($row['flags']['facts_sig'] ?? []), ias_facts_sig($as_now, $facts_of($row['listing_ids'])));
+      ias_approval_withdraw($row, $c, $lost ? 'A listing in it is no longer part of it' : 'The listing changed', $what);
       $sum['updated']++;
     }
 
@@ -229,14 +242,17 @@ if (!function_exists('ias_sync')) {
       // The listing changed under a draft. One nobody touched is rewritten on the next run; one a
       // person edited, or one already stopped for a person, stops (again) for that person.
       if (!empty($row['content']['text']) && $row['facts_hash'] !== '' && empty($row['flags']['stale']) && in_array($status, ['planned', 'held', 'waiting'], true)) {
-        $hash = ias_facts_hash(['type' => $c['type'], 'flags' => $flags], $facts_of($fields['listing_ids']));
+        $as_now = ['type' => $c['type'], 'flags' => $flags];
+        $hash = ias_facts_hash($as_now, $facts_of($fields['listing_ids']));
         if ($hash !== $row['facts_hash']) {
           $flags['stale'] = true;
+          $flags['stale_what'] = ias_facts_changed((array) ($row['flags']['facts_sig'] ?? []), ias_facts_sig($as_now, $facts_of($fields['listing_ids'])));
           if ($row['status'] === 'waiting' && function_exists('ias_approval_void')) ias_approval_void((int) $row['id']); // old links must not approve old facts
           $edited = !empty($row['flags']['edited_by']);
+          $kept = !empty($row['flags']['released_by']); // a person kept these words as written: their decision holds too
           $in_oneup = !empty($row['locked']); // a person changed it in OneUp: only they can fix it, there
-          if ($edited || $in_oneup || $status === 'held') {
-            $why = ias_stale_hold($edited, $in_oneup);
+          if ($edited || $kept || $in_oneup || $status === 'held') {
+            $why = ias_stale_hold($edited || $kept, $in_oneup, $flags['stale_what']);
             $flags['holds'] = array_values(array_unique(array_merge([$why], (array) ($flags['holds'] ?? []))));
             unset($flags['released_by']);
             $status = 'held';
@@ -291,11 +307,13 @@ if (!function_exists('ias_sync')) {
  * back). The old links stop working.
  */
 if (!function_exists('ias_approval_withdraw')) {
-  function ias_approval_withdraw(array $row, array $c, string $what): void {
-    $flags = array_merge($row['flags'], ['meta' => $c['meta'], 'needs' => $c['needs'], 'stale' => true]);
-    $edited = !empty($row['flags']['edited_by']);
+  function ias_approval_withdraw(array $row, array $c, string $what, array $changed = []): void {
+    $flags = array_merge($row['flags'], ['meta' => $c['meta'], 'needs' => $c['needs'], 'stale' => true, 'stale_what' => $changed]);
+    // A person said yes to these words (0.23.0): when a fact behind them changed, the post stops for that person,
+    // saying what changed — never rewritten under them. Only a listing leaving the post sends it back to be rewritten.
+    $edited = !empty($row['flags']['edited_by']) || $what === 'The listing changed';
     if ($edited) {
-      $why = ias_stale_hold(true);
+      $why = ias_stale_hold(true, false, $changed, empty($row['flags']['edited_by']));
       $flags['holds'] = array_values(array_unique(array_merge([$why], (array) ($flags['holds'] ?? []))));
       unset($flags['released_by']);
     }

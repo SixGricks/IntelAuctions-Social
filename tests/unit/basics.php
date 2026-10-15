@@ -28,3 +28,24 @@ t_ok($s['types']['listing'] === true && $s['types']['results'] === false, 'saved
 t_eq(2, $s['daily_cap'], 'saved cap wins');
 t_ok(!isset($s['gone_key']), 'a key the code no longer knows is ignored');
 update_option('ias_settings', []);
+
+// The facts fingerprint (0.23.0): plain values per field, per type — so a change can be named and new wording is never a change.
+require_once IAS_PATH . 'includes/content.php';
+$tz = new DateTimeZone('America/New_York');
+$fx = ['id' => 7, 'title' => 'Hershey Farm', 'address' => '12 Hershey Road, Narvon, PA', 'town' => 'Narvon', 'county' => 'Lancaster', 'state' => 'PA',
+  'date' => new DateTimeImmutable('2026-11-28 10:00', $tz), 'has_time' => true, 'bidding' => 'in_person', 'starting_bid_raw' => '$300,000', 'size_raw' => '85 acres',
+  'open_houses' => [['start' => new DateTimeImmutable('2026-11-14 13:00', $tz), 'hours' => 2.0]], 'sellers' => 'John Hershey', 'lead' => ['name' => 'Jacob', 'phone' => '717-555-0101'],
+  'office_phone' => '717-917-5844', 'kind' => 'real_estate', 'division' => 'farm_home', 'parcels' => [], 'excerpt' => "A   productive farm.\n", 'price' => ''];
+$lp = ['type' => 'listing', 'flags' => ['meta' => ['sale_day' => '2026-11-28']]];
+$sig = ias_facts_sig($lp, [$fx]);
+t_eq($sig, ias_facts_sig($lp, [$fx + ['excerpt' => 'A productive farm.']]), 'whitespace in the description is no change');
+t_eq(['open houses'], ias_facts_changed($sig, ias_facts_sig($lp, [array_merge($fx, ['open_houses' => []])])), 'an open house taken off: named as the open houses');
+t_eq(['auction date and time', 'description'], ias_facts_changed($sig, ias_facts_sig($lp, [array_merge($fx, ['date' => new DateTimeImmutable('2026-11-29 10:00', $tz), 'excerpt' => 'New words.'])])), 'two changes named, in order');
+t_eq($sig, ias_facts_sig($lp, [array_merge($fx, ['photos' => [1, 2, 3], 'video_link' => 'https://youtu.be/x', 'video_file_url' => 'https://f'])]), 'photos and videos are not facts the words are written from');
+$rp = ['type' => 'results', 'flags' => ['meta' => ['sale_day' => '2026-11-28']]];
+$rsig = ias_facts_sig($rp, [$fx]);
+t_eq($rsig, ias_facts_sig($rp, [array_merge($fx, ['sellers' => 'Someone Else', 'open_houses' => [], 'lead' => null, 'starting_bid_raw' => ''])]), 'a Results post is not written from the sellers, the open houses, the lead or the starting bid');
+t_eq(['sale price'], ias_facts_changed($rsig, ias_facts_sig($rp, [array_merge($fx, ['price' => '$412,000'])])), '…but its sale price is');
+t_eq($sig, ias_facts_sig($lp, [array_merge($fx, ['price' => '$412,000'])]), 'a Listing post is not written from the sale price');
+t_eq([], ias_facts_changed([], $sig), 'an old fingerprint with no fields: nothing can be named');
+t_eq(md5((string) wp_json_encode($sig)), ias_facts_hash($lp, [$fx]), 'the hash is the fingerprint\'s');

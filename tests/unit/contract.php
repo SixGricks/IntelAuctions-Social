@@ -15,7 +15,8 @@ $optional = ['ia_acf_field_team_email', 'ia_announced_thumb_id', 'ia_business_ph
   'ia_ai_api_key', 'ia_ai_token_cap', 'ia_ai_tokens_month', // whether Claude can be asked at all (ias_ai_blocker)
   'ia_ai_key_settings_url', // where the toolkit sets the key (4.67.0)
   'ia_video_save', 'ia_video_close_task', // the YouTube link onto the listing, the Next Step card closed (4.69.0; YouTube waits for it)
-  'ia_business_street', 'ia_business_city', 'ia_business_region', 'ia_business_postal']; // the office's address in a YouTube description
+  'ia_business_street', 'ia_business_city', 'ia_business_region', 'ia_business_postal', // the office's address in a YouTube description
+  'ia_table']; // the event log's table, for the log's full CSV export (older toolkits: their 500-row reader)
 
 $listed = ias_required_toolkit_functions();
 $calls = [];
