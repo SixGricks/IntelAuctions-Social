@@ -405,7 +405,24 @@ if (!function_exists('ias_youtube_upload_address')) {
     $up = (string) $find($r['data'], 'upload_url');
     $path = (string) $find($r['data'], 'file_path');
     if (!preg_match('#^https://#', $up) || !preg_match('#^https://#', $path)) return ['error' => 'OneUp did not hand over an upload address (its plan may not include uploads — the Basic plan does not).'];
+    // Only OneUp's own storage (0.24.1): the file, and the server's PUT and HEAD, never go to a host a tampered answer names.
+    foreach ([$up, $path] as $u) {
+      if (!ias_youtube_host_ok($u)) return ['error' => 'OneUp handed over an address on an unexpected host (' . (string) parse_url($u, PHP_URL_HOST) . ') — refused. If OneUp moved its storage, allow the host with the ias_youtube_upload_hosts filter.'];
+    }
     return ['upload_url' => $up, 'file_path' => $path];
+  }
+}
+
+/** Is this address on OneUp's storage? Its own domains, DigitalOcean Spaces (the live account's storage, Oct 14, 2026) and S3 (OneUp's docs); more through the filter. Pure. */
+if (!function_exists('ias_youtube_host_ok')) {
+  function ias_youtube_host_ok(string $url): bool {
+    $host = strtolower((string) parse_url($url, PHP_URL_HOST)); // parse_url: pure, so the unit tests can run it
+    if ($host === '') return false;
+    foreach ((array) apply_filters('ias_youtube_upload_hosts', ['oneupapp.io', 'digitaloceanspaces.com', 'amazonaws.com']) as $ok) { // DigitalOcean today, S3 in OneUp's docs
+      $ok = strtolower(trim((string) $ok));
+      if ($ok !== '' && ($host === $ok || substr($host, -strlen('.' . $ok)) === '.' . $ok)) return true;
+    }
+    return false;
   }
 }
 

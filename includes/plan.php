@@ -352,17 +352,33 @@ if (!function_exists('ias_push_lock')) {
     $name = 'ias_push_lock';
     $now = time();
     wp_cache_delete($name, 'options');
-    if ($wpdb->query($wpdb->prepare("INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $name, (string) $now))) return true;
+    if ($wpdb->query($wpdb->prepare("INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $name, (string) $now))) { $GLOBALS['ias_push_lock_held'] = true; return true; }
     $held = (string) $wpdb->get_var($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name));
     if ((int) $held > $now - 600) return false;
-    return (bool) $wpdb->query($wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", (string) $now, $name, $held));
+    $taken = (bool) $wpdb->query($wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", (string) $now, $name, $held));
+    if ($taken) $GLOBALS['ias_push_lock_held'] = true;
+    return $taken;
   }
 }
 if (!function_exists('ias_push_unlock')) {
   function ias_push_unlock(): void {
     global $wpdb;
+    unset($GLOBALS['ias_push_lock_held']);
     $wpdb->delete($wpdb->options, ['option_name' => 'ias_push_lock']);
     wp_cache_delete('ias_push_lock', 'options');
+  }
+}
+/**
+ * While this process holds the push lock, every OneUp call restamps it
+ * (0.24.1): a read-back slowed by OneUp's timeouts can outlast the ten
+ * minutes, and a second caller would otherwise take the lock mid-run and
+ * send a post a second time.
+ */
+if (!function_exists('ias_push_lock_touch')) {
+  function ias_push_lock_touch(): void {
+    if (empty($GLOBALS['ias_push_lock_held'])) return;
+    global $wpdb;
+    $wpdb->update($wpdb->options, ['option_value' => (string) time()], ['option_name' => 'ias_push_lock']);
   }
 }
 

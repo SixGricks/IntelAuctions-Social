@@ -1,0 +1,95 @@
+<?php
+/**
+ * 0.24.1 — the security review's fixes: a push run restamps its lock with
+ * every OneUp call (a slow read-back is never taken for a crashed run); an
+ * attempt from a moment ago that is not on OneUp's list yet is never sent a
+ * second time; the Approve page wants its box ticked; a refused approval
+ * link is logged once a day, not once a press.
+ */
+require_once dirname(__DIR__) . '/fixtures/wp-fixtures.php';
+global $wpdb;
+
+ias_t_reset();
+ias_t_clock('2026-11-02 05:30'); // Monday
+$T = ias_t_terms();
+ias_t_claude();
+ias_t_oneup();
+ias_settings_update(['generate_per_run' => 30, 'oneup_category_id' => '42', 'oneup_account_id' => 'fb_123', 'approvers' => 'dj@intelauctions.com']);
+$S =& $GLOBALS['ias_t_oneup'];
+$GLOBALS['ias_t_mail'] = [];
+add_filter('pre_wp_mail', function ($null, $atts) { $GLOBALS['ias_t_mail'][] = $atts; return true; }, 10, 2);
+$lead = ias_t_team('Jacob Stoltzfus', '717-555-0101');
+$gal = [];
+for ($i = 1; $i <= 4; $i++) $gal[] = ias_t_photo('Guard Road ' . $i);
+$a = ias_t_listing(['title' => '12 Guard Road', 'address' => '12 Guard Road, Narvon, PA 17555, USA', 'town' => 'Narvon', 'county' => 'Lancaster',
+  'stage' => 'upcoming', 'sale' => '2026-11-28 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$300,000', 'lead' => $lead, 'gallery' => $gal]);
+$writes = function (int $from) {
+  return array_values(array_filter(ias_t_oneup_calls($from), function ($c) { return in_array($c['path'], ['scheduletextpost', 'scheduleimagepost', 'schedulevideopost', 'deletescheduledpost'], true); }));
+};
+$lock = function () use ($wpdb) { return $wpdb->get_var("SELECT option_value FROM {$wpdb->options} WHERE option_name = 'ias_push_lock'"); };
+
+ias_settings_update(['master' => true]);
+ias_oneup_verify('admin');
+ias_settings_update(['types' => ['listing' => true]]);
+ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();
+$p = ias_post_by_slot('listing:' . $a);
+t_eq('live', ias_post_sent($p)['mode'], 'the Listing post is on OneUp');
+
+// ---- 1. The lock is restamped by every OneUp call while held ----
+t_ok(ias_push_lock(), 'the push lock is taken');
+$wpdb->update($wpdb->options, ['option_value' => (string) (time() - 900)], ['option_name' => 'ias_push_lock']);
+ias_oneup_call('scheduled');
+t_ok((int) $lock() >= time() - 5, 'a OneUp call inside the run restamps the lock (' . (time() - (int) $lock()) . 's old), so a second caller never takes it mid-run');
+ias_push_unlock();
+t_eq(null, $lock(), '…released');
+ias_oneup_call('scheduled');
+t_eq(null, $lock(), 'a call outside a run creates no lock');
+
+// ---- 2. An attempt from a moment ago, not on the list yet: never a second copy ----
+$sent = array_values(array_filter(ias_t_oneup_calls(0, 'scheduletextpost'), function ($c) { return strpos((string) ($c['params']['content'] ?? ''), 'Guard Road') !== false; }));
+t_ok((bool) $sent, 'the fake OneUp took the post');
+$req = end($sent)['params'];
+$p = ias_post_get((int) $p['id']);
+$flags = $p['flags'];
+$flags['sending'] = ['hash' => ias_post_sent($p)['hash'], 'when' => (string) $req['scheduled_date_time'], 'text' => (string) $req['content'], 'at' => ias_now_sql()];
+unset($flags['oneup']);
+ias_post_update((int) $p['id'], ['flags' => $flags, 'oneup_post_id' => '']);
+$S['scheduled'] = []; // OneUp's list does not show it yet
+$n = count($S['calls']);
+ias_push_run();
+t_eq([], $writes($n), 'sent a moment ago and not listed yet: not sent again');
+$p = ias_post_get((int) $p['id']);
+t_ok(!empty($p['flags']['sending']), '…the attempt is kept, to be looked for again');
+$log = ias_log_recent('push_failed', 1);
+t_ok($log && strpos((string) ($log[0]['meta']['summary'] ?? ''), 'a moment ago') !== false, '…and the log says why (' . ($log[0]['meta']['summary'] ?? '') . ')');
+ias_t_clock('2026-11-02 05:45'); // fifteen minutes on, still nothing on the list: the answer really was lost
+$n = count($S['calls']);
+ias_push_run();
+t_ok(count($writes($n)) >= 1, 'after a quarter of an hour with no sign of it, the post is sent again');
+
+// ---- 3. The Approve page: the box, then the button ----
+$sold = ias_t_listing(['title' => '22 Mill Road', 'address' => '22 Mill Road, Paradise, PA 17562, USA', 'town' => 'Paradise', 'county' => 'Lancaster',
+  'sale' => '2026-10-31 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$200,000', 'price' => '425000',
+  'featured' => ias_t_photo('Mill Road front', [120, 90, 60])]);
+ia_stage_set($sold, 'past');
+$GLOBALS['ias_t_mail'] = [];
+ias_job_run();
+$pid = 0; $tok = '';
+foreach ($GLOBALS['ias_t_mail'] as $m) {
+  if (preg_match('/action=ias_approve(?:&#038;|&amp;|&)p=(\d+)(?:&#038;|&amp;|&)t=([a-f0-9]+)/', (string) $m['message'], $x)) { $pid = (int) $x[1]; $tok = $x[2]; break; }
+}
+t_ok($pid > 0 && $tok !== '', 'a Results post went out for approval');
+$page = ias_approval_response($pid, $tok, false);
+t_ok(strpos($page['body'], 'name="ias_read"') !== false && strpos($page['body'], 'I have read this post') !== false, 'the page carries a box to tick');
+$page = ias_approval_response($pid, $tok, false, true);
+t_ok($page['reason'] === 'ask' && strpos($page['body'], 'Tick <strong>I have read this post</strong> first') !== false, 'Approve pressed without the box: asked again, nothing approved');
+t_eq('waiting', ias_post_get($pid)['status'], '…the post still waits');
+$page = ias_approval_response($pid, $tok, true);
+t_eq('approved', $page['reason'], 'box ticked, Approve pressed: approved');
+
+// ---- 4. A spent link pressed over and over: one log line a day ----
+$before = count(ias_log_recent('approved', 500));
+for ($i = 0; $i < 5; $i++) ias_approval_response($pid, $tok, true);
+t_eq($before + 1, count(ias_log_recent('approved', 500)), 'five presses of a used link: one refusal logged');
+$page = ias_approval_response($pid, $tok, true);
+t_eq('decided', $page['reason'], '…and each press is still told it was decided');

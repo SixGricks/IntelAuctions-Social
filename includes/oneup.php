@@ -247,6 +247,7 @@ if (!function_exists('ias_oneup_call')) {
   function ias_oneup_call(string $endpoint, array $params = []): array {
     $eps = ias_oneup_endpoints();
     if (!isset($eps[$endpoint])) return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'Unknown OneUp call: ' . $endpoint, 'id' => ''];
+    if (function_exists('ias_push_lock_touch')) ias_push_lock_touch(); // a run in progress is never taken for a crashed one
     $key = ias_oneup_key();
     if ($key === '') return ['ok' => false, 'code' => 0, 'data' => null, 'error' => 'No OneUp key: add it under Settings → OneUp (or INTEL_ONEUP_API_KEY in wp-config.php).', 'id' => ''];
     $method = (string) $eps[$endpoint][0];

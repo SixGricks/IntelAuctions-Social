@@ -259,7 +259,7 @@ if (!function_exists('ias_approval_page')) {
  * button was pressed (a POST); a GET only shows the post.
  */
 if (!function_exists('ias_approval_response')) {
-  function ias_approval_response(int $post_id, string $token, bool $yes): array {
+  function ias_approval_response(int $post_id, string $token, bool $yes, bool $nudge = false): array {
     $token = (string) preg_replace('/[^a-f0-9]/', '', strtolower($token));
     $check = ias_approval_check($post_id, $token);
     $edit = '<a class="btn btn2" href="' . esc_url(ias_edit_url($post_id)) . '">Open it in WordPress</a>';
@@ -277,8 +277,11 @@ if (!function_exists('ias_approval_response')) {
           ? 'It was approved by ' . esc_html((string) $p['approved_by']) . ' on ' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $p['approved_at']))) . ' — the first yes wins. Nothing else to do.'
           : 'This post is no longer waiting for approval (it is ' . esc_html((string) (ias_statuses()[$p['status'] ?? '']['label'] ?? ($p['status'] ?? ''))) . '). Nothing was changed.'],
       ][$check['reason']] ?? ['This link does not work', 'Nothing was approved.'];
-      // Only a real approver's link is worth a log line; unknown and altered links are anyone's (and could flood the shared log).
-      if (!in_array($check['reason'], ['bad', 'no_post'], true)) {
+      // Only a real approver's link is worth a log line; unknown and altered links are anyone's (and could flood the shared log) —
+      // and one line a day per link (0.24.1): a spent link pressed over and over is not a thousand entries pushing the history out.
+      $once = 'ias_appr_refused_' . substr(hash('sha256', $token), 0, 24);
+      if (!in_array($check['reason'], ['bad', 'no_post'], true) && !get_transient($once)) {
+        set_transient($once, 1, DAY_IN_SECONDS);
         ias_log('approved', (int) $p['listing_id'], ['post' => $post_id, 'summary' => 'Approval link refused: ' . $check['reason'], 'refused' => $check['reason']], (string) ($check['email'] ?? 'link'));
       }
       return ['title' => $msg[0], 'body' => '<p>' . $msg[1] . '</p><p>' . ($check['reason'] === 'no_post' ? '' : $edit) . '</p>', 'status' => $check['reason'] === 'bad' ? 403 : 200, 'reason' => $check['reason']];
@@ -290,7 +293,8 @@ if (!function_exists('ias_approval_response')) {
       return ['title' => $r['ok'] ? 'Approved — thank you' : 'Not approved', 'body' => '<p>' . esc_html($r['message']) . '</p><p>' . $edit . '</p>', 'status' => 200, 'reason' => $r['ok'] ? 'approved' : 'refused'];
     }
 
-    // Show it, and ask for the click (a scanner that follows links approves nothing).
+    // Show it, and ask for the click (a scanner that follows links approves nothing) — and for a box to tick first
+    // (0.24.1): a mail filter that opens pages and presses their buttons does not tick boxes.
     $c = $p['content'];
     $img = (string) ($c['media']['images'][0]['url'] ?? '');
     $body = '<p>' . esc_html(ias_post_type((string) $p['type'])['label'] . ': ' . ias_post_subject($p)) . '</p>'
@@ -298,6 +302,8 @@ if (!function_exists('ias_approval_response')) {
       . '<div class="post">' . esc_html((string) $c['text']) . '</div>'
       . (!empty($c['first_comment']) ? '<p class="muted"><strong>First comment:</strong> ' . esc_html((string) $c['first_comment']) . '</p>' : '')
       . '<form method="post" action="' . esc_url(ias_approve_url($post_id, $token)) . '" style="margin-top:18px">'
+      . '<p><label><input type="checkbox" name="ias_read" value="1" required> I have read this post</label></p>'
+      . ($nudge ? '<p class="muted" style="color:#b32d2e">Tick <strong>I have read this post</strong> first, then press Approve. Nothing was approved.</p>' : '')
       . '<input type="hidden" name="ias_yes" value="1"><button type="submit">Approve this post</button> ' . $edit . '</form>'
       . '<p class="muted">Approving as ' . esc_html((string) $check['email']) . '. It goes on the plan at the next free time, at least an hour from now.</p>';
     return ['title' => 'Approve this post?', 'body' => $body, 'status' => 200, 'reason' => 'ask'];
@@ -308,8 +314,9 @@ if (!function_exists('ias_approval_handle')) {
   function ias_approval_handle(): void {
     $post_id = isset($_REQUEST['p']) ? (int) $_REQUEST['p'] : 0;
     $token   = isset($_REQUEST['t']) ? (string) wp_unslash($_REQUEST['t']) : '';
-    $yes     = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !empty($_POST['ias_yes']);
-    $r = ias_approval_response($post_id, $token, $yes);
+    $pressed = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !empty($_POST['ias_yes']);
+    $yes     = $pressed && !empty($_POST['ias_read']);
+    $r = ias_approval_response($post_id, $token, $yes, $pressed && !$yes);
     ias_approval_page($r['title'], $r['body'], (int) $r['status']);
     exit;
   }
