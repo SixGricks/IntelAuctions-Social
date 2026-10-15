@@ -1,5 +1,24 @@
 # Intel Auctions Social changelog
 
+## 0.24.0 (2026-10-15) — Social on the WordPress Dashboard
+DJ, Oct 15, 2026: "I would like a few wordpress dashboards on /wp-admin showing
+things like the top of 'Recently announced' and some important social media
+metrics." The toolkit's 4.71.0 puts three auction boxes on /wp-admin; this adds
+**Social — this week** beside them (`includes/admin-dashboard.php`).
+- Whether posting is on (or paused, or off), and this week's posts by where
+  they stand: out, scheduled ahead, waiting for approval, needing a decision,
+  failed — each a link to the calendar.
+- The last 30 days on Facebook, added up from the numbers already read from
+  OneUp's analytics (0.17.0): views, reactions, comments, shares, clicks and
+  the engagement rate, with how many of the posts have numbers yet; and the
+  visits those posts brought to the site when Google Analytics can be read.
+- The next three posts going out, with their time and status.
+- Read-only: it calls nothing — not OneUp, not Claude, not Google. Hidden with
+  Screen Options like any box; the `ias_dashboard_show` filter (false) removes
+  it. With a toolkit before 4.71.0 it carries its own few styles.
+- Tests: `tests/unit/dashboard.php` (the week and the numbers, pure) and
+  `tests/wp/08c-dashboard.php` (the box as rendered).
+
 ## 0.23.0 (2026-10-15) — posts stop flipping to "the listing changed"
 DJ, Oct 15, 2026: "I keep having posts that i personally rewrite and approve or
 just save and then a few minutes later they go from green to blue with the note:
