@@ -662,7 +662,7 @@ if (!function_exists('ias_readback_run')) {
         }
       }
       // A person's scheduled post that is gone (and did not go out) leaves the plan.
-      foreach (ias_posts_query(['status' => 'human', 'limit' => 500]) as $h) {
+      foreach (ias_posts_query(['status' => 'human', 'limit' => 500, 'recent' => true]) as $h) {
         $oid = (string) $h['oneup_post_id'];
         if ($oid === '' || (string) $h['scheduled_at'] <= $now || isset($seen[$oid]) || isset($seen_pub[$oid])) continue;
         global $wpdb;
@@ -672,7 +672,7 @@ if (!function_exists('ias_readback_run')) {
 
     // Gone out by our clock a day ago and still not confirmed: tell a person once.
     $day_ago = ias_now()->modify('-24 hours')->format('Y-m-d H:i:s');
-    foreach ($full ? ias_posts_query(['status' => 'published', 'limit' => 500]) : [] as $p) {
+    foreach ($full ? ias_posts_query(['status' => 'published', 'limit' => 500, 'recent' => true]) : [] as $p) {
       if (empty($p['flags']['unconfirmed']) || !empty($p['flags']['unconfirmed_noted']) || (string) $p['published_at'] > $day_ago) continue;
       $flags = $p['flags'];
       $flags['unconfirmed_noted'] = $now;
@@ -922,7 +922,7 @@ if (!function_exists('ias_corrections_check')) {
   function ias_corrections_check(): int {
     $n = 0;
     $since = ias_now()->modify('-60 days')->format('Y-m-d H:i:s');
-    foreach (ias_posts_query(['status' => 'published', 'limit' => 500]) as $p) {
+    foreach (ias_posts_query(['status' => 'published', 'limit' => 500, 'recent' => true]) as $p) {
       if ($p['type'] === 'human' || !empty($p['flags']['dry_run']) || empty($p['flags']['oneup']['facts'])) continue;
       if ((string) $p['published_at'] < $since) continue;
       $text = ias_correction_text($p);
@@ -942,7 +942,7 @@ if (!function_exists('ias_corrections_check')) {
 /** Published posts with a correction waiting for a person. */
 if (!function_exists('ias_corrections_waiting')) {
   function ias_corrections_waiting(): array {
-    return array_values(array_filter(ias_posts_query(['status' => 'published', 'limit' => 500]), function ($p) {
+    return array_values(array_filter(ias_posts_query(['status' => 'published', 'limit' => 500, 'recent' => true]), function ($p) {
       return !empty($p['flags']['correction']['text']) && empty($p['flags']['correction']['done']);
     }));
   }

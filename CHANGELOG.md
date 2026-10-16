@@ -32,8 +32,8 @@ keep approval links valid across reminders.
   "auction day is here" count as counting days; a countdown, tomorrow, today
   or open-house reminder template is date-bound whatever its words
   (`ias_templates_dated()`).
-- *Old posts never crowd out new ones:* the plan, push, read-back and Google
-  loops read finished posts from the last 60 days only (`recent` in
+- *Old posts never crowd out new ones:* the plan, push, read-back, Google,
+  corrections and daily-stats loops read finished posts from the last 60 days only (`recent` in
   `ias_posts_query()`, filter `ias_posts_recent_days`), so they never lose the
   newest posts once the table holds more than 2,000.
 - *A new post at an exact time* keeps its first comment's holds.
