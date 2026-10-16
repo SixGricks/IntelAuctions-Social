@@ -99,7 +99,8 @@ if (!function_exists('ias_gbp_switched_off')) {
     if (!ias_setting('master', false)) $out[] = 'the master switch is off';
     if (ias_setting('paused', false)) $out[] = 'posting is paused';
     if (!ias_channel_settings('gbp')['on']) $out[] = 'Google posts are off';
-    if (!ias_type_on((string) $p['type'])) $out[] = ias_post_type((string) $p['type'])['short'] . ' posts are off';
+    if (!ias_post_type_on($p)) $out[] = ias_post_type((string) $p['type'])['short'] . ' posts are off';
+    if (($p['type'] ?? '') === 'manual' && !in_array('gbp', ias_post_networks($p), true)) $out[] = 'Google is not ticked for it';
     return $out;
   }
 }
@@ -114,9 +115,10 @@ if (!function_exists('ias_gbp_type_on')) {
 /** Is this post ready to go to Google (apart from the switches)? '' = yes, else why not. */
 if (!function_exists('ias_gbp_ready')) {
   function ias_gbp_ready(array $p): string {
-    $why = ias_push_ready($p);
+    $why = ias_push_ready($p, 'gbp');
     if ($why !== '') return $why;
-    if (!in_array((string) $p['type'], ias_channel_settings('gbp')['types'], true)) return ias_post_type((string) $p['type'])['label'] . ' posts do not go to Google';
+    if ($p['type'] === 'manual') { if (!in_array('gbp', ias_post_networks($p), true)) return 'Google is not ticked for it'; } // a person's own post: their tick, not the type's
+    elseif (!in_array((string) $p['type'], ias_channel_settings('gbp')['types'], true)) return ias_post_type((string) $p['type'])['label'] . ' posts do not go to Google';
     $off = (string) ($p['flags']['gbp_off'] ?? '');
     if ($off !== '') return $off === 'failed' ? 'Google could not take it' : 'a person took it off Google';
     return '';
@@ -335,7 +337,7 @@ if (!function_exists('ias_gbp_readback')) {
 
     $ours = [];
     $noid = [];
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'failed', 'skipped', 'cancelled', 'dropped'], 'limit' => 2000]) as $p) {
+    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'failed', 'skipped', 'cancelled', 'dropped'], 'limit' => 2000, 'recent' => true]) as $p) {
       if ($p['type'] === 'human') continue;
       $g = (array) ($p['flags']['gbp'] ?? []);
       if (!empty($g['id'])) $ours[(string) $g['id']] = $p;
@@ -489,7 +491,7 @@ if (!function_exists('ias_gbp_run')) {
     ];
     $statuses = ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'dropped', 'skipped', 'cancelled'];
     $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
-      : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
+      : ias_posts_query(['status' => $statuses, 'limit' => 2000, 'recent' => true]);
     foreach ($posts as $p) {
       if (function_exists('ias_push_out_of_time') && ias_push_out_of_time()) break;
       ias_gbp_one($p, $c, $out);

@@ -198,6 +198,10 @@ function ias_t_claude(): void {
       }
       if (stripos($said, 'alt only') !== false && $pics_now) $answer = ['reply' => 'Better alt text on the lead.', 'text' => null, 'pictures' => null, 'alt' => [$pics_now[0] => 'The farmhouse from the lane, with the bank barn behind it.'], 'rule' => null];
       $text = $answer === null ? 'Plain words, no JSON at all.' : json_encode($answer);
+    } elseif (strpos((string) ($body['system'] ?? ''), 'for a person on the team to check and post') !== false) { // Draft it for me (0.25.0)
+      $GLOBALS['ias_t_claude_manual'][] = $content;
+      $facts = strpos($content, "FACTS:\n") !== false ? json_decode(substr($content, strpos($content, "FACTS:\n") + 7), true) : null;
+      $text = json_encode(['text' => is_array($facts) ? ($facts['street'] ?? $facts['property'] ?? 'It') . ' sells ' . ($facts['auction_date'] ?? '[VERIFY: the date]') . '. Come see it first, take ' . $n . '.' : 'Thank you to everyone who came out Saturday, take ' . $n . '.']);
     } elseif (is_string($content) && strpos($content, 'THE HOUSE RULES NOW:') !== false) { // Brand voice: Suggest updates
       $text = json_encode(['rules' => ['Never use the word nestled.', 'Lead with the place.', 'Call it perfect for families.'], 'why' => 'They keep cutting the gloss.']);
     } elseif (is_array($content)) { // photo grading
@@ -285,7 +289,10 @@ function ias_t_oneup(): void {
     // DigitalOcean bucket, which answers every browser 403); `put_file_fail` failed sends from this website.
     'storage' => 's3', 'put_file_fail' => 0, 'put_file_die' => 0];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
-  add_filter('pre_http_request', function ($pre, $args, $url) {
+  // One fake OneUp per process: every test file calls this, and a second responder would answer each call again
+  // (a delete twice: the second "not found"), so the last file's responder is taken off first.
+  if (!empty($GLOBALS['ias_t_oneup_fn'])) remove_filter('pre_http_request', $GLOBALS['ias_t_oneup_fn'], 10);
+  $GLOBALS['ias_t_oneup_fn'] = function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
     $S =& $GLOBALS['ias_t_oneup'];
     $parts = wp_parse_url((string) $url);
@@ -414,7 +421,8 @@ function ias_t_oneup(): void {
       case 'getfailedposts':    return $page($S['failed'], 'date_time');
     }
     return $json(404, ['error' => true, 'message' => 'Unknown endpoint ' . $path]);
-  }, 10, 3);
+  };
+  add_filter('pre_http_request', $GLOBALS['ias_t_oneup_fn'], 10, 3);
 }
 
 /** The fake OneUp's calls since $from (index), optionally only to $path. */

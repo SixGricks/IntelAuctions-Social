@@ -179,6 +179,46 @@ it, and the spec stays verbatim, so they are recorded here:
   type is in-person** unless the listing's words say phone bid. **Results posts
   never name the sellers** ("Sellers tend not to want associated with how much
   they made on properties"): not in the prompt, held if named.
+- **A person's own post, and every post written for its own day** (Oct 15,
+  2026: "create a post from in the social calendar manually and choose what
+  platforms it goes to… make sure the social algorithm considers that post"
+  and "If the auction is in 2 days it can say so in the post. If the open
+  house already passed it should not mention them"). New post (`manual.php`,
+  type `manual`): all five networks tickable, Facebook and Google live,
+  Instagram/X/LinkedIn **kept, never sent** until each has its own Verify and
+  record; the person's words or a Claude draft they check (`social.manual`,
+  cached an hour), the same checks; pinned and **always fixed in the
+  scheduler** so the plan counts it; standing for a listing's own post turns
+  that post off (Delete brings it back). Never rewritten, never sent for
+  approval, never cancelled by the sync; no type switch (`ias_post_type_on()`
+  — the ticks are its switch, the master switch/Pause/Verify still stop it).
+  Every prompt is written **as of the post's day** (`ias_post_written_at()`):
+  open houses over by then are not in the facts, days within the week are
+  counted from it; `flags.written_for` records it, and when the day moves
+  under words that count days or name a past open house (`ias_timing_check()`,
+  after every plan and move), Claude's unapproved draft is rewritten. The templates from DJ's
+  list (`ias_templates_more()`) are used only when the post has the facts
+  they need, and never sign with a division's name.
+- **A person's yes keeps its time** (Oct 15, 2026: "When a post has been
+  reviewed and approved the plugin should not move it and trigger a review
+  again"). Approved, edited or kept as written, a post is **fixed in the
+  scheduler** at its time while that is more than an hour ahead; the plan never
+  moves it and nothing automatic sends it back for review (the day check only
+  warns, on the person's own move). Only a post whose time passed unsent is
+  placed again, still approved; so is one handed back with Let the plan choose
+  (`flags.plan_chooses`) or a never-sent Lane B post inside the veto window.
+  Otherwise never let the plan re-place such a post.
+- **The Oct 15 audit, DJ's answers (Oct 16, 2026).** Lane B posts get a
+  **daily email of the ones nobody has read** (`ias_unread_*` in
+  `approval.php`; reading = opening the post's page, `flags.seen`, or any
+  person's action on it) — not approve-first. **Approval links stay valid for
+  their 4 days across reminders** (`ias_approval_check()` is not bound to the
+  newest round): yesterday's email must still work after this morning's
+  reminder; content changes already void every link.
+- **The Sold picture takes turns** (Oct 15, 2026: "2 other 'Sold' templates…
+  so they are not all identical"): `ias_sold_layouts()` — photo, panel,
+  stamp (one sale) — least used lately, never the last one's, kept through a
+  rewrite.
 
 It is a **sister plugin of the Intel Auctions Toolkit** (`SixGricks/IntelAuction`)
 and, unlike the Event Screen, **depends on it**: every listing fact, the Claude

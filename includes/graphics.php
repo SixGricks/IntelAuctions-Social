@@ -2,10 +2,17 @@
 /**
  * Intel Auctions Social — the pictures the plugin draws itself (GD).
  *
- *   Results graphic  — the featured photo, a dark gradient up from the bottom,
+ *   Results graphic  — three layouts that take turns (0.26.0, DJ: "Create 2
+ *                      other 'Sold' templates for images to switch between
+ *                      them so they are not all identical"): *photo* — the
+ *                      featured photo, a dark gradient up from the bottom,
  *                      "SOLD" and the sale price in white in the brand font,
- *                      the street and the date. Two or three same-day sales
- *                      share one picture, side by side. 1080×1080.
+ *                      the street and the date; *panel* — the photo above a
+ *                      navy panel carrying "SOLD AT AUCTION", the price and the
+ *                      place; *stamp* — the photo dimmed behind a framed navy
+ *                      badge, "SOLD" over the price. Two or three same-day
+ *                      sales share one picture, side by side (photo or panel;
+ *                      a stamp is for one sale). 1080×1080.
  *   Roundup collage  — "New this week": the new listings' brochure covers on
  *                      Intel navy; a listing with no cover yet gets a branded
  *                      card (street, town, date) in its place. 1080×1080.
@@ -184,17 +191,43 @@ if (!function_exists('ias_gd_photo_or_navy')) {
   }
 }
 
+/** The Results graphic's layouts, in turn order: key => label. */
+if (!function_exists('ias_sold_layouts')) {
+  function ias_sold_layouts(): array {
+    return ['photo' => 'Photo and price', 'panel' => 'Navy panel', 'stamp' => 'Sold badge'];
+  }
+}
+
+/** A layout that can show $n sales: a stamp is drawn for one sale only (two or three get the panel). Pure. */
+if (!function_exists('ias_sold_layout_for')) {
+  function ias_sold_layout_for(string $layout, int $n): string {
+    if (!isset(ias_sold_layouts()[$layout])) $layout = 'photo';
+    return $layout === 'stamp' && $n > 1 ? 'panel' : $layout;
+  }
+}
+
+/** Text centred on $cx. */
+if (!function_exists('ias_gd_text_center')) {
+  function ias_gd_text_center($im, string $text, string $font, float $size, int $cx, int $baseline, array $rgb, float $opacity = 1.0): void {
+    ias_gd_text($im, $text, $font, $size, (int) round($cx - ias_gd_text_width($text, $font, $size) / 2), $baseline, $rgb, $opacity);
+  }
+}
+
 /**
  * The Results graphic. $items: one to three sales, each
  * ['photo' => attachment id, 'price' => '$425,000', 'street' => …, 'place' => 'Narvon, PA'],
- * $sold_on 'November 18, 2026'. Returns ['path','url','alt'] or null without GD.
+ * $sold_on 'November 18, 2026', $layout one of ias_sold_layouts(). Returns ['path','url','alt','layout']
+ * or null without GD.
  */
 if (!function_exists('ias_graphic_results')) {
-  function ias_graphic_results(array $items, string $sold_on, string $name): ?array {
+  function ias_graphic_results(array $items, string $sold_on, string $name, string $layout = 'photo'): ?array {
     if (!ias_gd_ready() || !$items) return null;
     if (function_exists('wp_raise_memory_limit')) wp_raise_memory_limit('image');
     $items = array_slice(array_values($items), 0, 3);
     $n = count($items);
+    $layout = ias_sold_layout_for($layout, $n);
+    if ($layout === 'panel') return ias_graphic_results_panel($items, $sold_on, $name);
+    if ($layout === 'stamp') return ias_graphic_results_stamp($items[0], $sold_on, $name);
     $W = 1080; $H = 1080;
     $im = imagecreatetruecolor($W, $H);
     $bold = ias_font_path('bold');
@@ -247,10 +280,87 @@ if (!function_exists('ias_graphic_results')) {
     }
 
     [$path, $url] = ias_gd_save($im, $name);
-    $alt = $n === 1
-      ? 'Sold for ' . $items[0]['price'] . ': ' . $items[0]['street'] . ($items[0]['place'] ? ', ' . $items[0]['place'] : '') . ', ' . $sold_on
+    return ['path' => $path, 'url' => $url, 'alt' => ias_sold_alt($items, $sold_on), 'layout' => 'photo'];
+  }
+}
+
+/** The Results graphic's alt text: the same words whatever the layout. Pure. */
+if (!function_exists('ias_sold_alt')) {
+  function ias_sold_alt(array $items, string $sold_on): string {
+    return count($items) === 1
+      ? 'Sold for ' . $items[0]['price'] . ': ' . $items[0]['street'] . (!empty($items[0]['place']) ? ', ' . $items[0]['place'] : '') . ($sold_on !== '' ? ', ' . $sold_on : '')
       : 'Sold ' . $sold_on . ': ' . implode('; ', array_map(function ($it) { return $it['street'] . ' for ' . $it['price']; }, $items));
-    return ['path' => $path, 'url' => $url, 'alt' => $alt];
+  }
+}
+
+/** Results, *panel*: the photo(s) above a navy panel — "SOLD AT AUCTION", the price, the street and the place. */
+if (!function_exists('ias_graphic_results_panel')) {
+  function ias_graphic_results_panel(array $items, string $sold_on, string $name): array {
+    $n = count($items);
+    $W = 1080; $H = 1080; $top = 690;
+    $im = imagecreatetruecolor($W, $H);
+    $bold = ias_font_path('bold');
+    $med  = ias_font_path('medium');
+    $strip = (int) floor($W / $n);
+    foreach ($items as $i => $it) {
+      $x = $i * $strip;
+      ias_gd_photo_or_navy($im, (int) $it['photo'], $x, 0, $i === $n - 1 ? $W - $x : $strip, $top);
+    }
+    imagefilledrectangle($im, 0, $top, $W, $H, imagecolorallocate($im, IAS_NAVY[0], IAS_NAVY[1], IAS_NAVY[2]));
+    imagefilledrectangle($im, 0, $top, $W, $top + 9, imagecolorallocate($im, IAS_SLATE[0], IAS_SLATE[1], IAS_SLATE[2]));
+    if ($n > 1) {
+      $line = imagecolorallocatealpha($im, 255, 255, 255, 60);
+      for ($i = 1; $i < $n; $i++) imagefilledrectangle($im, $i * $strip - 1, 0, $i * $strip, $H, $line);
+    }
+    $margin = $n === 1 ? 64 : 34;
+    $psize = $n === 1 ? 116 : ($n === 2 ? 84 : 58);
+    foreach ($items as $i => $it) $psize = min($psize, ias_gd_fit((string) $it['price'], $bold, $psize, ($i === $n - 1 ? $W - $i * $strip : $strip) - 2 * $margin, 28));
+    foreach ($items as $i => $it) {
+      $x = $i * $strip + $margin;
+      $width = ($i === $n - 1 ? $W - $i * $strip : $strip) - 2 * $margin;
+      ias_gd_text($im, $n === 1 ? 'SOLD AT AUCTION' : 'SOLD', $bold, $n === 1 ? 28 : 22, $x, $top + ($n === 1 ? 66 : 72), IAS_MIST);
+      ias_gd_text($im, (string) $it['price'], $bold, $psize, $x, $top + ($n === 1 ? 222 : 175), [255, 255, 255]);
+      $ssize = $n === 1 ? 36 : 25;
+      ias_gd_text($im, ias_gd_ellipsize((string) $it['street'], $med, $ssize, $width), $med, $ssize, $x, $top + ($n === 1 ? 290 : 240), [255, 255, 255]);
+      $place = (string) ($it['place'] ?? '');
+      $line2 = $n === 1 ? trim($place . ($sold_on !== '' ? ($place !== '' ? '  ·  ' : '') . $sold_on : '')) : $place;
+      if ($line2 !== '') ias_gd_text($im, ias_gd_ellipsize($line2, $med, $n === 1 ? 27 : 21, $width), $med, $n === 1 ? 27 : 21, $x, $top + ($n === 1 ? 342 : 285), IAS_MIST, 0.95);
+    }
+    ias_gd_mark($im, $n === 1 ? 64 : 34, 48, 20);
+    if ($n > 1 && $sold_on !== '') ias_gd_text($im, ias_gd_ellipsize('Sold ' . $sold_on, $med, 21, $W - 68), $med, 21, 34, $H - 30, IAS_MIST, 0.95);
+    [$path, $url] = ias_gd_save($im, $name);
+    return ['path' => $path, 'url' => $url, 'alt' => ias_sold_alt($items, $sold_on), 'layout' => 'panel'];
+  }
+}
+
+/** Results, *stamp* (one sale): the photo dimmed behind a framed navy badge — "SOLD" over the price — with the street below. */
+if (!function_exists('ias_graphic_results_stamp')) {
+  function ias_graphic_results_stamp(array $it, string $sold_on, string $name): array {
+    $W = 1080; $H = 1080;
+    $im = imagecreatetruecolor($W, $H);
+    $bold = ias_font_path('bold');
+    $med  = ias_font_path('medium');
+    ias_gd_photo_or_navy($im, (int) $it['photo'], 0, 0, $W, $H);
+    imagefilledrectangle($im, 0, 0, $W, $H, imagecolorallocatealpha($im, IAS_DEEP[0], IAS_DEEP[1], IAS_DEEP[2], 72)); // the photo dimmed, still there
+    ias_gd_gradient($im, 0, $W, (int) ($H * 0.62), $H, IAS_DEEP, 0.85);
+    // The badge: a navy box in a white frame, centred a little above the middle.
+    [$bx0, $by0, $bx1, $by1] = [170, 250, 910, 690];
+    $white = imagecolorallocate($im, 255, 255, 255);
+    imagefilledrectangle($im, $bx0 - 8, $by0 - 8, $bx1 + 8, $by1 + 8, $white);
+    imagefilledrectangle($im, $bx0, $by0, $bx1, $by1, imagecolorallocatealpha($im, IAS_NAVY[0], IAS_NAVY[1], IAS_NAVY[2], 6));
+    $cx = (int) ($W / 2);
+    ias_gd_text_center($im, 'SOLD', $bold, 132, $cx, $by0 + 175, [255, 255, 255]);
+    imagefilledrectangle($im, $cx - 150, $by0 + 214, $cx + 150, $by0 + 218, imagecolorallocate($im, IAS_SLATE[0], IAS_SLATE[1], IAS_SLATE[2]));
+    $psize = ias_gd_fit((string) $it['price'], $bold, 104, $bx1 - $bx0 - 80, 36);
+    ias_gd_text_center($im, (string) $it['price'], $bold, $psize, $cx, $by0 + 345, IAS_MIST);
+    ias_gd_text_center($im, 'AT AUCTION', $med, 26, $cx, $by0 + 405, [255, 255, 255], 0.9);
+    ias_gd_text_center($im, ias_gd_ellipsize((string) $it['street'], $med, 40, $W - 160), $med, 40, $cx, 880, [255, 255, 255]);
+    $place = (string) ($it['place'] ?? '');
+    $foot = trim($place . ($sold_on !== '' ? ($place !== '' ? '  ·  ' : '') . 'Sold ' . $sold_on : ''));
+    if ($foot !== '') ias_gd_text_center($im, ias_gd_ellipsize($foot, $med, 27, $W - 160), $med, 27, $cx, 935, IAS_MIST, 0.95);
+    ias_gd_mark($im, 64, 48, 20);
+    [$path, $url] = ias_gd_save($im, $name);
+    return ['path' => $path, 'url' => $url, 'alt' => ias_sold_alt([$it], $sold_on), 'layout' => 'stamp'];
   }
 }
 

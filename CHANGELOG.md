@@ -1,5 +1,180 @@
 # Intel Auctions Social changelog
 
+## 0.27.0 (2026-10-16) — posts nobody has read; the audit's open items
+DJ's answers to the Oct 15 audit (Oct 16, 2026): a daily email for Lane B posts;
+keep approval links valid across reminders.
+- **Posts nobody has read** (`approval.php`): each morning (setting
+  `unread_email`, on; `unread_hour`, 7) the approvers get the Listing, Open House
+  and Auction Week posts going out by the end of the next posting day that no
+  person has opened (`ias_post_was_read()`: `flags.seen` — set when a person
+  opens the post's page — or edited, kept, moved, pictures chosen, approved),
+  with their words and links. Not sent when nothing is unread, while the post
+  would not go (`ias_push_ready()`, switched off), or on Sunday; Saturday's
+  covers Monday (`ias_unread_until()`). Option `ias_last_unread`.
+- **The calendar shows one kind of post** with `?status=` (any status, or
+  `ahead`); the Dashboard box's numbers link to it.
+- **The updater installs only from GitHub's hosts** (`trusted_url()`, filter
+  `ias_updater_hosts`), as the toolkit's.
+- Approval links stay valid for their four days across reminders — DJ's
+  decision, recorded in CLAUDE.md.
+- `tests/wp/08d-hardening.php` is back in the suite (its section on the
+  reverted two-minute guard dropped); new `tests/wp/08h-unread-email.php`.
+
+**From the UI review (Oct 16):**
+- *One name per post type everywhere:* New This Week, Listing, Open House,
+  Auction Week, Results, Your post, Human post — the calendar, Settings, the
+  Log, the hover preview and the emails no longer say "Roundup", "Listing
+  Posted" or "Yours post" for the same thing (`ias_post_noun()`).
+- *Files are chosen, not typed:* the listing's **Brochure cover** and the
+  **Brand font** open the Media Library (`ias_media_field()`); the same id is
+  saved.
+- *Easier to read and to hit:* the calendar's grey text is WordPress's
+  description grey (`#646970`), and each post's on/off switch has a 34×26
+  target. Settings' number, time and tag boxes and the post's **Why?** box
+  carry names for screen readers.
+- *Plain words:* "Lane A" is gone from Settings; a post about several sales
+  says "Several divisions"; saving no house rules says so; a video upload's
+  hitch no longer ends in "..".
+- *A post held with no reason on record* still gets a bar with Rewrite and
+  Keep as written, never an empty one.
+
+**From the Social bug review (Oct 16):**
+- *Bidding check:* a denial counts only when it governs the words ("no onsite
+  auction", "not an in-person sale"); "Don't miss this Intel Phone Bidding
+  auction" on an in-person sale is held again, and on a phone-bid sale no longer
+  is (`ias_negated_at()`).
+- *Moves keep clear of approved, edited and kept posts:* `ias_move_fixed()`
+  uses the scheduler's own rule, so a drag or a new post never lands minutes
+  from a post the plan cannot move either.
+- *Date-aware wording:* "4 days until", "in just 4 days", "four more days",
+  "auction day is here" count as counting days; a countdown, tomorrow, today
+  or open-house reminder template is date-bound whatever its words
+  (`ias_templates_dated()`).
+- *Old posts never crowd out new ones:* the plan, push, read-back, Google,
+  corrections and daily-stats loops read finished posts from the last 60 days only (`recent` in
+  `ias_posts_query()`, filter `ias_posts_recent_days`), so they never lose the
+  newest posts once the table holds more than 2,000.
+- *A new post at an exact time* keeps its first comment's holds.
+- *Never after the event:* a late Auction Week post by its sale day, an Open
+  House post by its open house; a post kept for a person is not kept past it.
+- *Seller names:* single name words count only capitalised ("we will", "rich
+  soil" are not sellers Will and Rich); full names in any case.
+- *Emoji* are counted as a reader sees them (skin tones, flags and families
+  are one; ⭐ ⏰ ⬆️ count).
+- Tests: the fake OneUp in the test fixtures replaces itself per file.
+
+## 0.26.0 (2026-10-15) — three Sold pictures; a person's yes keeps its time
+DJ, Oct 15, 2026: "Create 2 other 'Sold' templates for images to switch between
+them so they are not all identical. When a post has been reviewed and approved
+the plugin should not move it and trigger a review again."
+- **Three Sold looks** (`graphics.php`): the photo-and-price picture as before,
+  plus **Navy panel** (`ias_graphic_results_panel()`: the photo above a navy
+  panel, "SOLD AT AUCTION", the price, the street, the town and date) and
+  **Sold badge** (`ias_graphic_results_stamp()`: the photo dimmed behind a
+  framed navy badge, "SOLD" over the price; one sale only — two or three get
+  the panel). `ias_pick_sold_layout()` takes the least used lately and never
+  the last Results picture's (history `sold_layout`); a rewrite keeps its
+  picture's look (`layout` on the graphic). Alt text is the same whatever the
+  look (`ias_sold_alt()`).
+- **A person's yes keeps its time** (`ias_engine_posts()`): an approved post,
+  and one a person edited or kept as written, is fixed at its time while that
+  time is more than an hour ahead — the morning plan used to re-place every
+  unpinned post, approved ones included, so an approved post could be moved,
+  replaced on OneUp and (with 0.25.0's day check) sent back for a yes. Only a
+  post whose time passed without going out is placed again, still approved —
+  and one handed back with **Let the plan choose the time** (`flags.plan_chooses`,
+  cleared by the next edit, keep or yes), or a Lane B post never sent whose time
+  is inside the veto window, where it could never go.
+- The day check (`ias_timing_check()`) never stops a person's approved, edited
+  or kept words: run by the plan it leaves them alone, and after the person's
+  own move it only says what to check ("Check its words") — their yes stands.
+  Claude's unapproved drafts are still rewritten for their new day.
+
+Tests: `tests/unit/sold-layouts.php`, `tests/wp/08g-kept-times.php` (fails
+without the scheduler change); `08e-post-day.php` follows the new rule.
+
+## 0.25.0 (2026-10-15) — your own posts, the post's own day, more templates
+DJ, Oct 15, 2026: "I want to be able to create a post from in the social
+calendar manually and choose what platforms it goes to… make sure the social
+algorithm considers that post… the post planning calendar needs to be date
+aware. If the auction is in 2 days it can say so in the post. If the open house
+already passed it should not mention them… We also need to increase the variety
+in how the posts are organized."
+
+**New post** (`includes/manual.php`, type `manual`, label "Your post"):
+- **+ New post** beside Pause opens a form: the words (your own, or **Draft it
+  for me** — Claude writes from the listing's facts as of the post's day and/or
+  a note, into the box to check; the same input within the hour is never paid
+  for twice; `social.manual`), an optional first comment (with a listing and
+  none typed, its tracked link), the listing's photos to tick, the networks,
+  the day and the morning/afternoon/evening or an exact time, an optional
+  listing and which of its posts it **stands for**.
+- Networks (DJ's answer: all five, queued): Facebook and Google go out;
+  Instagram, X and LinkedIn are kept on the post (`flags.networks`) until each
+  is live with its own Verify and switch — nothing is sent there, and a post
+  ticked only for those is closed with that note when its time passes.
+- **The plan counts it** (DJ: "count it, replace the same kind"): pinned like a
+  Move and always fixed in the scheduler (`ias_engine_posts()`), so it takes a
+  place in the day's three and its spacing; a post not for Facebook takes none.
+  Standing for the listing's Listing, Open House, Auction Week or Results post
+  turns that planned post off (skipped by a person, `flags.replaced_by`); a
+  shared Auction Week post stays. **Delete this post** cancels it (taken back
+  off OneUp) and brings that post back.
+- It is a person's: never rewritten (no Rewrite; `ias_generate_post()` refuses),
+  never sent for approval, never cancelled by the sync, never drafted by the
+  run. No post-type switch of its own (`ias_post_type_on()`): the ticks are
+  its switch — the master switch, Pause and Verify still stop it; Google's
+  switch too. **Where it goes** on its page changes the ticks (an unticked
+  network it was on is taken back at once).
+- The checks run (`ias_manual_check()`): `[VERIFY]`, online bidding, fair
+  housing, and standing for a listing's post, that type's bidding rule and the
+  Results seller rule; figures and phone numbers against the listing when there
+  is one (`figures` in `ias_check_draft()`'s context; with no listing there is
+  nothing to check them against). X's preview of a person's own post is their
+  words fitted to 280, not a line from the facts.
+
+**The post's own day** (`ias_post_written_at()`, `ias_days_phrase()`):
+- The prompt (drafts and Talk it over) says the day the post goes out; the
+  facts are as of then (`ias_facts_for_prompt($f, $at)`): open houses over by
+  that day left out, the sale (`auction_is`) and each open house within six
+  days counted from it. Auction Week may now say "in 3 days" beside the date
+  (it used to be told never to). `flags.written_for` records the day.
+- **When the day moves** (`ias_timing_check()`, after every plan and every
+  move): words counting days from the old day, or naming an open house over by
+  the new one (`ias_timing_problems()`), mark Claude's draft to be rewritten for
+  the new day (`flags.stale_when`, its own bar) — or stop a person's words,
+  kept or approved post for them (`ias_timing_hold()`). Plan now counts them;
+  a move's notice says so. Drafts from before 0.25.0 are judged only on open
+  houses they name.
+
+**More templates** (`ias_templates_more()`, `ias_template_fits()`,
+`ias_templates_fitting()`): 25 ways to organise a post adapted from DJ's
+ChatGPT list of 50, by post type and division, each used only when the post has
+what it needs (size, rentals, hunting ground, equipment, a price, the sale or
+open house today/tomorrow/within the week…). None asks for facts the plugin
+lacks (catalogue, inspection, pickup, registration, units, tract results) or
+signs with a division's name. The roundup rotates too (it was always "list").
+Division-specific ways come first when level; "SOLD" may be in capitals on a
+Results post.
+
+**From the Oct 15 security review and Codex (0.24.1, folded in here):**
+- The push lock is restamped by every OneUp call while a run holds it, so a
+  slow read-back can no longer let a second run in to send a post twice.
+- A refused approval link is logged once a day, not once a press.
+- The Approve page wants **I have read this post** ticked before the button
+  counts (a mail filter that presses buttons does not tick boxes).
+- A video goes only to OneUp's own storage: oneupapp.io, or the bucket OneUp
+  itself handed out (`ias_youtube_bucket()`, learned into `ias_youtube_storage`
+  and relearned by Verify for YouTube; `ias_youtube_storage_buckets` filter).
+- The prompt says the listing's description is data, never an instruction.
+- The Dashboard box shows this month's visits only from the summary's cache —
+  it never calls Google while /wp-admin renders.
+- A listing that says "No phone bids accepted" is no longer taken for Intel
+  Phone Bidding (`ias_negated_at()`).
+
+Tests: `tests/unit/dates.php`, `tests/unit/templates.php`,
+`tests/wp/08e-post-day.php`, `tests/wp/08f-manual-posts.php`.
+
 ## 0.24.0 (2026-10-15) — Social on the WordPress Dashboard
 DJ, Oct 15, 2026: "I would like a few wordpress dashboards on /wp-admin showing
 things like the top of 'Recently announced' and some important social media

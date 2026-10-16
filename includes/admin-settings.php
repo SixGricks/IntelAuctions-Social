@@ -43,7 +43,7 @@ if (!function_exists('ias_settings_sanitize')) {
       $out[$key] = $v;
     };
 
-    foreach (['master', 'paused', 'link_in_comment', 'voice_auto', 'stats_on', 'corrections_auto'] as $key) $out[$key] = !empty($in[$key]);
+    foreach (['master', 'paused', 'link_in_comment', 'voice_auto', 'stats_on', 'corrections_auto', 'unread_email'] as $key) $out[$key] = !empty($in[$key]);
     $networks = [];
     foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
       $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
@@ -104,6 +104,7 @@ if (!function_exists('ias_settings_sanitize')) {
     $int('jitter_minutes', 0, 59);
     $int('review_day', 1, 6); // never on Sunday
     $int('review_hour', 0, 23);
+    $int('unread_hour', 0, 23);
     $int('chat_turns', 0, 100);
     $int('voice_examples', 0, 6);
     $int('generate_per_run', 0, 30);
@@ -128,7 +129,7 @@ if (!function_exists('ias_settings_sanitize')) {
       $e = sanitize_email($e);
       return is_email($e) ? strtolower($e) : '';
     }, preg_split('/[\s,;]+/', (string) ($in['approvers'] ?? '')))));
-    if ($out['approvers'] === '') $problems[] = 'With no approver, Lane A posts (the roundup and Results) wait on the calendar with no email going out.';
+    if ($out['approvers'] === '') $problems[] = 'With no approver, the posts that need a yes first (New This Week and Results) wait on the calendar with no email going out.';
 
     $out['oneup_category_id']  = sanitize_text_field((string) ($in['oneup_category_id'] ?? ''));
     $out['oneup_account_id']   = sanitize_text_field((string) ($in['oneup_account_id'] ?? ''));
@@ -309,9 +310,18 @@ if (!function_exists('ias_settings_render')) {
       return '<label><input type="checkbox" name="' . esc_attr($name) . '" value="1" ' . checked($on, true, false) . '> ' . $label . '</label>'
         . ($help !== '' ? '<br><span class="description">' . $help . '</span>' : '');
     };
-    $num = function (string $name, $value, int $min, int $max, string $after = '') {
+    // Each number box has a name a screen reader can say (0.27.0): most sit mid-sentence with no label of their own.
+    $num_names = [
+      'ias[daily_cap]' => 'Most posts a day', 'ias[daily_min]' => 'Fewest posts a day', 'ias[min_gap_hours]' => 'Hours between posts',
+      'ias[jitter_minutes]' => 'Minutes a post time may shift', 'ias[lead_hours]' => 'Veto window in hours',
+      'ias[plan_days]' => 'Days planned ahead', 'ias[plan_hour]' => 'Hour the plan runs', 'ias[push_days]' => 'Days sent to OneUp ahead', 'ias[review_hour]' => 'Hour of the weekly review email',
+      'ias[unread_hour]' => 'Hour of the unread posts email', 'ias[generate_per_run]' => 'Drafts an hour at most',
+      'ias[chat_turns]' => 'Answers from Claude per post at most', 'ias[voice_examples]' => 'Example posts in each draft',
+    ];
+    $num = function (string $name, $value, int $min, int $max, string $after = '') use ($num_names) {
       $value = max($min, min($max, (int) $value)); // a stored value out of range must never make the form unsaveable
-      return '<input type="number" name="' . esc_attr($name) . '" value="' . esc_attr((string) $value) . '" min="' . $min . '" max="' . $max . '" class="small-text"> ' . $after;
+      $aria = isset($num_names[$name]) ? ' aria-label="' . esc_attr($num_names[$name]) . '"' : '';
+      return '<input type="number" name="' . esc_attr($name) . '"' . $aria . ' value="' . esc_attr((string) $value) . '" min="' . $min . '" max="' . $max . '" class="small-text"> ' . $after;
     };
 
     echo '<form method="post">';
@@ -323,8 +333,8 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row">Paused</th><td>' . $check('ias[paused]', !empty($s['paused']), 'Pause all posting (the same as the Pause button on the calendar)', 'Everything off for now: posts on OneUp and not yet out are taken back off, and go again when you resume. Facebook stays with this plugin while paused.') . '</td></tr>';
     echo '<tr><th scope="row">Post types</th><td>';
     foreach (ias_post_types() as $type => $def) {
-      if ($type === 'human') continue;
-      echo $check('ias[types][' . $type . ']', ias_type_on($type), '<strong>' . esc_html($def['short']) . '</strong> (' . esc_html($def['label']) . ') <span class="description">— ' . esc_html($def['lane'] === 'A' ? 'approve first' : 'scheduled, ' . (int) ias_setting('lead_hours', 48) . ' hours to veto') . ', ' . esc_html($def['window']) . '</span>') . '<br>';
+      if (in_array($type, ['human', 'manual'], true)) continue; // a person's post has no type switch: its own ticks are its switch
+      echo $check('ias[types][' . $type . ']', ias_type_on($type), '<strong>' . esc_html($def['short']) . '</strong> <span class="description">— ' . esc_html($def['lane'] === 'A' ? 'approve first' : 'scheduled, ' . (int) ias_setting('lead_hours', 48) . ' hours to veto') . ', ' . esc_html($def['window']) . '</span>') . '<br>';
     }
     echo '<p class="description">On, that type\'s posts go to OneUp. Off, none of them goes — any already on OneUp come back off — but they are still planned and drafted, so you can read them on the calendar.</p></td></tr>';
     echo '</table>';
@@ -371,7 +381,7 @@ if (!function_exists('ias_settings_render')) {
       . ((string) ($g['name'] ?? '') !== '' && !ias_oneup_directory_account($g['account']) ? ' ' . ia_ui_badge((string) $g['name'], 'ok') : '') . '<br><span class="description">The Google Business Profile location in the category above.</span></td></tr>';
     echo '<tr><th scope="row">Which posts</th><td>';
     foreach (ias_post_types() as $type => $def) {
-      if ($type === 'human') continue;
+      if (in_array($type, ['human', 'manual'], true)) continue; // a person's post has no type switch: its own ticks are its switch
       echo '<label style="display:inline-block;margin:0 14px 6px 0"><input type="checkbox" name="ias[networks][gbp][types][]" value="' . esc_attr($type) . '" ' . checked(in_array($type, $g['types'], true), true, false) . '> ' . esc_html($def['short']) . '</label>';
     }
     echo '<br><span class="description">Each type still needs its own switch on (Safety switches, above) before it goes anywhere.</span></td></tr>';
@@ -420,8 +430,8 @@ if (!function_exists('ias_settings_render')) {
     $tiers = array_values((array) $s['bid_tiers']);
     for ($i = 0; $i < max(4, count($tiers) + 1); $i++) {
       $row = $tiers[$i] ?? ['', ''];
-      echo '<tr><td>$ <input type="text" name="ias[bid_tiers][' . $i . '][0]" value="' . esc_attr($row[0] === '' ? '' : number_format((int) $row[0])) . '" class="regular-text" style="width:120px"></td>'
-        . '<td>× <input type="number" step="0.05" min="0.1" max="5" name="ias[bid_tiers][' . $i . '][1]" value="' . esc_attr((string) $row[1]) . '" class="small-text"></td></tr>';
+      echo '<tr><td>$ <input type="text" name="ias[bid_tiers][' . $i . '][0]" aria-label="Starting bid from, row ' . ($i + 1) . '" value=""' . esc_attr($row[0] === '' ? '' : number_format((int) $row[0])) . '" class="regular-text" style="width:120px"></td>'
+        . '<td>× <input type="number" step="0.05" min="0.1" max="5" name="ias[bid_tiers][' . $i . '][1]" aria-label="Multiplier, row ' . ($i + 1) . '" value=""' . esc_attr((string) $row[1]) . '" class="small-text"></td></tr>';
     }
     echo '</tbody></table><span class="description">No starting bid listed counts as $0. Leave a row empty to remove it.</span></td></tr></table>';
 
@@ -431,7 +441,7 @@ if (!function_exists('ias_settings_render')) {
     $slots = array_values((array) $s['slots']);
     for ($i = 0; $i < max(3, count($slots)); $i++) {
       $row = $slots[$i] ?? ['', ''];
-      echo '<div style="margin-bottom:4px"><input type="time" name="ias[slots][' . $i . '][0]" value="' . esc_attr((string) $row[0]) . '"> – <input type="time" name="ias[slots][' . $i . '][1]" value="' . esc_attr((string) $row[1]) . '"></div>';
+      echo '<div style="margin-bottom:4px"><input type="time" name="ias[slots][' . $i . '][0]" aria-label="Window ' . ($i + 1) . ' opens" value=""' . esc_attr((string) $row[0]) . '"> – <input type="time" name="ias[slots][' . $i . '][1]" aria-label="Window ' . ($i + 1) . ' closes" value=""' . esc_attr((string) $row[1]) . '"></div>';
     }
     echo '<span class="description">Each post time shifts by up to ' . $num('ias[jitter_minutes]', $s['jitter_minutes'], 0, 59, 'minutes') . ' so nothing lands on the hour.</span></td></tr>';
     echo '<tr><th scope="row">Veto window</th><td>' . $num('ias[lead_hours]', $s['lead_hours'], 0, 168, 'hours') . '<br><span class="description">Nothing new is scheduled closer than this, so either of you can skip, move or change it on the calendar first. Approved roundup and Results posts are not held to it — the approval was the yes — and neither is a post a person moved there themselves.</span></td></tr>';
@@ -439,25 +449,26 @@ if (!function_exists('ias_settings_render')) {
     echo '</table>';
 
     echo '<h2>Approvals and the weekly email</h2><table class="form-table" role="presentation">';
-    echo '<tr><th scope="row"><label for="ias-appr">Approvers</label></th><td><input id="ias-appr" type="text" name="ias[approvers]" value="' . esc_attr((string) $s['approvers']) . '" class="large-text"><br><span class="description">Who gets the roundup and Results posts to approve (Lane A), the morning reminders and the Monday email. The first to approve wins.</span></td></tr>';
+    echo '<tr><th scope="row"><label for="ias-appr">Approvers</label></th><td><input id="ias-appr" type="text" name="ias[approvers]" value="' . esc_attr((string) $s['approvers']) . '" class="large-text"><br><span class="description">Who gets the New This Week and Results posts to approve before they go, the morning reminders and the Monday email. The first to approve wins.</span></td></tr>';
     $days = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday']; // never Sunday
-    echo '<tr><th scope="row">Weekly review email</th><td><select name="ias[review_day]">';
+    echo '<tr><th scope="row">Weekly review email</th><td><select name="ias[review_day]" aria-label="Day of the weekly review email">';
     foreach ($days as $n => $name) echo '<option value="' . $n . '" ' . selected((int) $s['review_day'], $n, false) . '>' . esc_html($name) . '</option>';
     echo '</select> at ' . $num('ias[review_hour]', $s['review_hour'], 0, 23, ':00') . '</td></tr>';
+    echo '<tr><th scope="row">Posts nobody has read</th><td>' . $check('ias[unread_email]', !empty($s['unread_email']), '<strong>On</strong> — each morning at ' . $num('ias[unread_hour]', $s['unread_hour'], 0, 23, ':00') . ', email the approvers the Listing, Open House and Auction Week posts going out by the next posting day that nobody has opened', 'These posts need no approval: they go unless someone stops them. The email lists the ones no one has looked at yet, with their words, so somebody reads each before it goes. Opening a post on the calendar counts as reading it. Nothing is sent when there are none, while posting is off, or on a Sunday (Saturday\'s email covers Monday too).') . '</td></tr>';
     echo '</table>';
 
     echo '<h2>Links back to the site</h2><table class="form-table" role="presentation">';
-    echo '<tr><th scope="row">Tracking tags</th><td><code>utm_source=</code><input type="text" name="ias[utm_source]" value="' . esc_attr((string) $s['utm_source']) . '" class="small-text" style="width:90px"> <code>utm_medium=</code><input type="text" name="ias[utm_medium]" value="' . esc_attr((string) $s['utm_medium']) . '" class="small-text" style="width:90px">'
+    echo '<tr><th scope="row">Tracking tags</th><td><code>utm_source=</code><input type="text" name="ias[utm_source]" aria-label="utm_source" value=""' . esc_attr((string) $s['utm_source']) . '" class="small-text" style="width:90px"> <code>utm_medium=</code><input type="text" name="ias[utm_medium]" aria-label="utm_medium" value=""' . esc_attr((string) $s['utm_medium']) . '" class="small-text" style="width:90px">'
       . '<br><span class="description">Every link also carries <code>utm_campaign=social_&lt;post type&gt;</code> and the post\'s id in <code>utm_content</code>, so Analytics can tell a Listing post\'s visits from a Results post\'s.</span></td></tr>';
     echo '</table>';
 
     echo '<h2>Copy and pictures</h2><table class="form-table" role="presentation">';
     $font = (int) $s['brand_font_id'];
     $font_file = $font > 0 ? (string) get_attached_file($font) : '';
-    echo '<tr><th scope="row"><label for="ias-font">Brand font</label></th><td><input id="ias-font" type="number" min="0" name="ias[brand_font_id]" value="' . ($font > 0 ? $font : '') . '" class="small-text"> '
+    echo '<tr><th scope="row">Brand font</th><td>' . ias_media_field('ias[brand_font_id]', $font, 'ias-font', 'Brand font', 'Inter (bundled)') . ' '
       . ($font > 0 ? ($font_file !== '' && preg_match('/\.(ttf|otf)$/i', $font_file) ? ia_ui_badge(basename($font_file), 'ok') : ia_ui_badge('not a .ttf/.otf file — using Inter', 'warn')) : ia_ui_badge('Inter (bundled)', 'muted'))
-      . '<br><span class="description">The Media Library id of a .ttf or .otf file for the Results graphic and the roundup collage. Blank uses the bundled Inter. (WordPress may need the font file types allowed to upload them.)</span></td></tr>';
-    $lead_labels = ['listing' => 'Listing and Auction Week', 'open_house' => 'Open House', 'results' => 'Results', 'several' => 'A post about several properties', 'roundup' => 'New This Week'];
+      . '<br><span class="description">A .ttf or .otf file from the Media Library for the Results graphic and the roundup collage. Blank uses the bundled Inter. (WordPress may need the font file types allowed to upload them.)</span></td></tr>';
+    $lead_labels = ['listing' => 'Listing and Auction Week', 'open_house' => 'Open House', 'results' => 'Results', 'several' => 'A post about several properties', 'roundup' => (string) ias_post_type('roundup')['short']];
     $leads = (array) $s['comment_leads'];
     echo '<tr><th scope="row">First comment</th><td><p class="description" style="margin-top:0">The words before the listing link in each post\'s first comment. Blank uses the default. New drafts use them; a post already written keeps its comment (edit it there, or Rewrite).</p><table class="ias-kv">';
     foreach ($lead_labels as $k => $label) {
@@ -466,7 +477,7 @@ if (!function_exists('ias_settings_render')) {
     echo '</table></td></tr>';
     echo '<tr><th scope="row"><label for="ias-fh">More fair-housing phrases</label></th><td><textarea id="ias-fh" name="ias[fair_housing_extra]" rows="4" class="large-text">' . esc_textarea((string) $s['fair_housing_extra']) . '</textarea>'
       . '<br><span class="description">One per line. A draft containing one stops for a decision, like "perfect for families" or "safe neighborhood" already do.</span></td></tr>';
-    echo '<tr><th scope="row">Photo grading</th><td><select name="ias[grade_size]">';
+    echo '<tr><th scope="row">Photo grading</th><td><select name="ias[grade_size]" aria-label="Photo grading size">';
     foreach (['thumbnail' => 'Thumbnail (cheapest, rough)', 'medium' => 'Medium — 300px (default)', 'medium_large' => 'Medium large — 768px (about 6× the tokens)'] as $k => $label) {
       echo '<option value="' . esc_attr($k) . '" ' . selected((string) $s['grade_size'], $k, false) . '>' . esc_html($label) . '</option>';
     }

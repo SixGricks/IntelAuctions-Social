@@ -283,7 +283,7 @@ if (!function_exists('ias_sync')) {
 
     // Posts no longer called for.
     foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved'], 'limit' => 2000]) as $row) {
-      if ($row['type'] === 'human' || isset($cands[$row['slot_key']])) continue;
+      if (in_array($row['type'], ['human', 'manual'], true) || isset($cands[$row['slot_key']])) continue; // a person's own post is never the plan's to cancel
       $gone = false; $held = '';
       foreach ((array) $row['listing_ids'] as $id) {
         $p = get_post((int) $id);
@@ -348,6 +348,65 @@ if (!function_exists('ias_post_cancel')) {
   }
 }
 
+/* ---------------- The post's own day (0.25.0) ---------------- */
+
+/**
+ * Does this post's text still fit the day it now goes out (ias_timing_problems())? When its day moved under
+ * words that count the days, or past an open house it mentions: Claude's draft is marked to be rewritten for
+ * the new day on the next hourly run (and goes nowhere until then); words a person wrote, kept or said yes to
+ * stop for that person instead — never rewritten under them. Returns why ('' when it fits or was already marked).
+ *
+ * A post a person approved, edited or kept as written is never sent back for review by this (0.26.0, DJ: "When a
+ * post has been reviewed and approved the plugin should not move it and trigger a review again"): the plan no
+ * longer moves it, so only that person can, and then ($by_person) they are told what to check — nothing changes.
+ */
+if (!function_exists('ias_timing_check')) {
+  function ias_timing_check(array $p, bool $by_person = false): string {
+    if ($p['type'] === 'human' || !in_array($p['status'], ['planned', 'held', 'waiting', 'approved'], true)) return '';
+    $flags = (array) $p['flags'];
+    $text = (string) ($p['content']['text'] ?? '');
+    if ($text === '' || !empty($flags['stale']) || !empty($p['locked'])) return '';
+    $at = ias_post_when($p);
+    if (!$at || $at < ias_now()) return '';
+    $written = (string) ($flags['written_for'] ?? '');
+    if ($written === '' && !preg_match('/open[\s-]*house/i', $text)) return ''; // written before 0.25.0, and no open house to be over
+    $problems = ias_timing_problems($text, $written, $at, preg_match('/open[\s-]*house/i', $text) ? ias_post_facts($p) : [], (string) ($p['content']['template'] ?? ''));
+    if (!$problems) return '';
+    $why = $at->format('D M j') . ', and ' . implode('; and ', $problems);
+    if (($flags['timing_why'] ?? '') === $why) return '';
+    $id = (int) $p['id'];
+    $edited = !empty($flags['edited_by']) || !empty($flags['released_by']);
+    if ($edited || $p['status'] === 'approved') return $by_person ? 'Check: this post now goes out on ' . $why . '.' : ''; // a person's yes holds
+    $flags['timing_why'] = $why;
+    $fields = [];
+    if ($p['status'] === 'held') { // already stopped for a person: the new reason joins the others
+      $hold = ias_timing_hold($why, true);
+      $flags['holds'] = array_values(array_unique(array_merge([$hold], (array) ($flags['holds'] ?? []))));
+      $fields = ['note' => 'Needs a decision: ' . $hold];
+      $trail = 'Needs a decision: ' . $hold;
+    } else {
+      $flags['stale'] = true;
+      $flags['stale_when'] = 'this post now goes out on ' . $why;
+      $trail = 'Its day moved: ' . $why . ' — rewritten for the new day on the next hourly run';
+    }
+    if ($p['status'] === 'waiting' && function_exists('ias_approval_void')) ias_approval_void($id); // not answered yet: the links were for words on another day
+    ias_post_update($id, ['flags' => $flags] + $fields);
+    ias_post_trail($id, $trail);
+    ias_log($p['status'] === 'held' ? 'held' : 'planned', (int) $p['listing_id'], ['post' => $id, 'type' => $p['type'], 'summary' => $trail]);
+    return $trail;
+  }
+}
+
+/** ias_timing_check() over every post still ahead (after the plan has placed them), or over $ids. Returns how many it marked. */
+if (!function_exists('ias_timing_run')) {
+  function ias_timing_run(array $ids = []): int {
+    $n = 0;
+    $rows = $ids ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $ids)))) : ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved'], 'limit' => 2000]);
+    foreach ($rows as $p) if (ias_timing_check($p) !== '') $n++; // the plan's own moves: a person's yes is never sent back for review
+    return $n;
+  }
+}
+
 /* ---------------- Drafts ---------------- */
 
 /** Posts that need a draft written now, most urgent first. */
@@ -356,7 +415,7 @@ if (!function_exists('ias_drafts_due')) {
     $horizon = ias_now()->setTime(0, 0)->modify('+' . (int) ias_setting('plan_days', 30) . ' days')->format('Y-m-d');
     $due = [];
     foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting'], 'limit' => 2000]) as $p) {
-      if ($p['type'] === 'human' || !empty($p['flags']['needs'])) continue;
+      if (in_array($p['type'], ['human', 'manual'], true) || !empty($p['flags']['needs'])) continue; // a person's own post: their words, never the run's
       if (!empty($p['flags']['gen_error_at']) && (int) $p['flags']['gen_error_at'] > time() - 6 * HOUR_IN_SECONDS) continue;
       $ideal = (string) ($p['window_ideal'] ?? '');
       if ($ideal === '' || $ideal > $horizon) continue;

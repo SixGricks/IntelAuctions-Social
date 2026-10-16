@@ -58,6 +58,10 @@ if (!function_exists('ias_calendar_render')) {
       ias_calendar_render_post($post_id);
       return;
     }
+    if (!empty($_GET['new']) && function_exists('ias_manual_render_form')) { // New post (manual.php, 0.25.0)
+      ias_manual_render_form();
+      return;
+    }
 
     $paused = (bool) ias_setting('paused', false);
     $button = '<form method="post" style="display:inline">' . wp_nonce_field('ias_calendar', '_wpnonce', true, false)
@@ -89,6 +93,12 @@ if (!function_exists('ias_calendar_render')) {
     $from  = $today->modify('-' . ((int) $today->format('N') - 1) . ' days');
     $to    = $last->modify('+' . (7 - (int) $last->format('N')) . ' days');
     $shown = ias_posts_query(['from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d')]);
+    // Only one kind of post (0.27.0: the Dashboard box's numbers link here): ?status=held, waiting, failed, published, ahead.
+    [$only, $only_label] = ias_calendar_status_filter();
+    if ($only) {
+      $shown = array_values(array_filter($shown, function ($p) use ($only) { return in_array(ias_post_shown_status($p), $only, true); }));
+      echo '<div class="notice notice-info inline"><p>Showing only posts that are <strong>' . esc_html($only_label) . '</strong> (' . count($shown) . '). <a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR)) . '">Show every post</a></p></div>';
+    }
     $posts = [];
     $by_day = [];
     foreach ($shown as $p) {
@@ -115,6 +125,29 @@ if (!function_exists('ias_calendar_render')) {
     do_action('ias_calendar_after_grid', $posts, $today, $last);
 
     echo '</div>';
+  }
+}
+
+/** The calendar's ?status= filter: [shown statuses, words], or [[], ''] for every post. */
+if (!function_exists('ias_calendar_status_filter')) {
+  function ias_calendar_status_filter(): array {
+    return ias_calendar_status_filter_parse(isset($_GET['status']) ? sanitize_key(wp_unslash((string) $_GET['status'])) : '');
+  }
+}
+
+/** The statuses a ?status= value stands for (for tests and links). */
+if (!function_exists('ias_calendar_status_filter_for')) {
+  function ias_calendar_status_filter_for(string $want): array {
+    return ias_calendar_status_filter_parse($want)[0];
+  }
+}
+
+if (!function_exists('ias_calendar_status_filter_parse')) {
+  function ias_calendar_status_filter_parse(string $want): array {
+    if ($want === 'ahead') return [['planned', 'approved', 'pushed'], 'scheduled ahead'];
+    $all = ias_statuses();
+    if ($want === '' || !isset($all[$want])) return [[], ''];
+    return [[$want], strtolower((string) $all[$want]['label'])];
   }
 }
 
@@ -283,6 +316,7 @@ if (!function_exists('ias_calendar_render_post')) {
       echo '<div class="notice notice-error"><p>No such post.</p></div></div>';
       return;
     }
+    $p = ias_post_mark_seen($p); // a person opened it: the morning's unread-posts email leaves it out (0.27.0)
     $def = ias_post_type((string) $p['type']);
     // One line under the title: its state, when it goes out, where, and the listing.
     $bits = [ias_status_badge(ias_post_shown_status($p))];
@@ -292,7 +326,7 @@ if (!function_exists('ias_calendar_render_post')) {
     foreach (array_slice((array) $p['listing_ids'], 0, 3) as $lid) {
       $bits[] = '<a href="' . esc_url((string) get_edit_post_link((int) $lid, '')) . '" title="Edit the listing">' . esc_html(html_entity_decode(get_the_title((int) $lid), ENT_QUOTES, 'UTF-8')) . '</a>';
     }
-    ia_ui_header($def['short'] . ' post · ' . ias_post_subject($p), implode(' · ', $bits), $back);
+    ia_ui_header(ias_post_noun((string) $p['type']) . ' · ' . ias_post_subject($p), implode(' · ', $bits), $back);
     ias_header_end();
     echo ias_switches_strip(true);
     if (function_exists('ias_pulse_pill')) echo ias_pulse_pill(); // when OneUp was last heard from (instant.php)

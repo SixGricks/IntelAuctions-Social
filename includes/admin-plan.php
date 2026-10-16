@@ -19,6 +19,7 @@ add_action('ias_calendar_action', function (string $action): void {
   $push = ias_push_run();
   $bits = [(int) ($plan['placed'] ?? 0) . ' placed'];
   foreach (['moved', 'dropped', 'reinstated', 'late'] as $k) if (!empty($plan[$k])) $bits[] = (int) $plan[$k] . ' ' . ($k === 'reinstated' ? 'back on the plan' : $k);
+  if (!empty($plan['redated'])) $bits[] = (int) $plan['redated'] . ' whose words no longer fit their new day (rewritten, or stopped for you)';
   if ($push['pushed']) $bits[] = $push['pushed'] . ' scheduled on OneUp';
   if ($push['deleted']) $bits[] = $push['deleted'] . ' taken back';
   if ($push['failed']) $bits[] = $push['failed'] . ' OneUp calls failed (see the log)';
@@ -28,7 +29,7 @@ add_action('ias_calendar_action', function (string $action): void {
 
 add_action('ias_calendar_before_grid', function (): void {
   // Off means off: posts still on OneUp that a switch turned off come back off — say so while they do.
-  $left = array_filter(ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000]), function ($p) {
+  $left = array_filter(ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'dropped', 'skipped', 'cancelled'], 'limit' => 2000, 'recent' => true]), function ($p) {
     return $p['type'] !== 'human' && empty($p['locked']) && ias_post_sent($p)['mode'] === 'live' && (ias_push_switched_off($p) || ias_push_ready($p) !== '');
   });
   if ($left) {

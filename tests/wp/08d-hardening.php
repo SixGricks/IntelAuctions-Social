@@ -1,10 +1,11 @@
 <?php
 /**
  * 0.24.1 — the security review's fixes: a push run restamps its lock with
- * every OneUp call (a slow read-back is never taken for a crashed run); an
- * attempt from a moment ago that is not on OneUp's list yet is never sent a
- * second time; the Approve page wants its box ticked; a refused approval
- * link is logged once a day, not once a press.
+ * every OneUp call (a slow read-back is never taken for a crashed run); the
+ * Approve page wants its box ticked; a refused approval link is logged once a
+ * day, not once a press. (A guard against re-sending an attempt from a moment
+ * ago was tried and taken out again: the lock's heartbeat closes that path,
+ * and 08-oneup-safety.php asserts the re-send.)
  */
 require_once dirname(__DIR__) . '/fixtures/wp-fixtures.php';
 global $wpdb;
@@ -45,29 +46,7 @@ t_eq(null, $lock(), '…released');
 ias_oneup_call('scheduled');
 t_eq(null, $lock(), 'a call outside a run creates no lock');
 
-// ---- 2. An attempt from a moment ago, not on the list yet: never a second copy ----
-$sent = array_values(array_filter(ias_t_oneup_calls(0, 'scheduletextpost'), function ($c) { return strpos((string) ($c['params']['content'] ?? ''), 'Guard Road') !== false; }));
-t_ok((bool) $sent, 'the fake OneUp took the post');
-$req = end($sent)['params'];
-$p = ias_post_get((int) $p['id']);
-$flags = $p['flags'];
-$flags['sending'] = ['hash' => ias_post_sent($p)['hash'], 'when' => (string) $req['scheduled_date_time'], 'text' => (string) $req['content'], 'at' => ias_now_sql()];
-unset($flags['oneup']);
-ias_post_update((int) $p['id'], ['flags' => $flags, 'oneup_post_id' => '']);
-$S['scheduled'] = []; // OneUp's list does not show it yet
-$n = count($S['calls']);
-ias_push_run();
-t_eq([], $writes($n), 'sent a moment ago and not listed yet: not sent again');
-$p = ias_post_get((int) $p['id']);
-t_ok(!empty($p['flags']['sending']), '…the attempt is kept, to be looked for again');
-$log = ias_log_recent('push_failed', 1);
-t_ok($log && strpos((string) ($log[0]['meta']['summary'] ?? ''), 'a moment ago') !== false, '…and the log says why (' . ($log[0]['meta']['summary'] ?? '') . ')');
-ias_t_clock('2026-11-02 05:45'); // fifteen minutes on, still nothing on the list: the answer really was lost
-$n = count($S['calls']);
-ias_push_run();
-t_ok(count($writes($n)) >= 1, 'after a quarter of an hour with no sign of it, the post is sent again');
-
-// ---- 3. The Approve page: the box, then the button ----
+// ---- 2. The Approve page: the box, then the button ----
 $sold = ias_t_listing(['title' => '22 Mill Road', 'address' => '22 Mill Road, Paradise, PA 17562, USA', 'town' => 'Paradise', 'county' => 'Lancaster',
   'sale' => '2026-10-31 10:00', 'terms' => [$T['farm'], $T['in_person']], 'auction_type' => 'Live', 'bid' => '$200,000', 'price' => '425000',
   'featured' => ias_t_photo('Mill Road front', [120, 90, 60])]);
@@ -87,7 +66,7 @@ t_eq('waiting', ias_post_get($pid)['status'], '…the post still waits');
 $page = ias_approval_response($pid, $tok, true);
 t_eq('approved', $page['reason'], 'box ticked, Approve pressed: approved');
 
-// ---- 4. A spent link pressed over and over: one log line a day ----
+// ---- 3. A spent link pressed over and over: one log line a day ----
 $before = count(ias_log_recent('approved', 500));
 for ($i = 0; $i < 5; $i++) ias_approval_response($pid, $tok, true);
 t_eq($before + 1, count(ias_log_recent('approved', 500)), 'five presses of a used link: one refusal logged');

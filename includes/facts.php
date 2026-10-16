@@ -341,7 +341,12 @@ if (!function_exists('ias_listing_text')) {
  * what is known, with times written out the way a post would say them.
  */
 if (!function_exists('ias_facts_for_prompt')) {
-  function ias_facts_for_prompt(array $f): array {
+  function ias_facts_for_prompt(array $f, ?DateTimeInterface $at = null, bool $count_days = true): array {
+    // $at (0.25.0): the moment the post goes out — only the open houses still ahead then, and with $count_days
+    // the sale and each open house within the week counted from that day ("tomorrow", "in 3 days").
+    $ohs = (array) $f['open_houses'];
+    if ($at) $ohs = array_values(array_filter($ohs, function ($oh) use ($at) { return ($oh['start'] ?? null) instanceof DateTimeInterface && $oh['start'] >= $at; }));
+    $near = function ($when) use ($at, $count_days) { return $at && $count_days && $when instanceof DateTimeInterface ? ias_days_phrase($at, $when) : ''; };
     $out = [
       'property'   => $f['title'],
       'address'    => $f['address'],
@@ -351,13 +356,15 @@ if (!function_exists('ias_facts_for_prompt')) {
       'state'      => $f['state'],
       'auction_date' => $f['date'] ? $f['date']->format('l, F j, Y') : '',
       'auction_time' => $f['date'] && !empty($f['has_time']) ? $f['date']->format('g:i a') : '', // unknown, not "12:00 am"
+      'auction_is' => $near($f['date']),
       'bidding'    => $f['bidding'] === 'phone' ? 'Intel Phone Bidding — buyers bid by phone with Intel (the post must say so, once)'
                     : ($f['bidding'] === 'in_person' ? 'In-person auction on site — the usual kind, so the post need not say how bidding works' : ''),
       'starting_bid' => $f['starting_bid_raw'],
       'size'       => $f['size_raw'],
-      'open_houses' => array_map(function ($oh) {
-        return ia_open_house_format($oh, 'range', 'l, F j,') . ' (' . ia_open_house_hours_label((float) $oh['hours']) . ')';
-      }, $f['open_houses']),
+      'open_houses' => array_map(function ($oh) use ($near) {
+        $n = $near($oh['start'] ?? null);
+        return ia_open_house_format($oh, 'range', 'l, F j,') . ' (' . ia_open_house_hours_label((float) $oh['hours']) . ')' . ($n !== '' ? ' — ' . $n : '');
+      }, $ohs),
       'sellers'    => $f['sellers'],
       'lead_name'  => $f['lead']['name'] ?? '',
       'lead_phone' => $f['lead']['phone'] ?? '',

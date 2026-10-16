@@ -95,3 +95,17 @@ t_eq(['Smith Family Trust', 'Smith'], ias_seller_names_in('Thanks to the Smith F
 t_eq([], ias_seller_names_in('Thanks to the family that trusted us.', 'Smith Family Trust'), 'ordinary words that appear in a seller\'s name are not a seller');
 t_eq([], ias_check_draft("Sold for \$412,000 — thanks to John and Mary.", array_merge($res, ['type' => 'listing', 'money' => [412000.0]]))['holds'], 'a Listing post may name the sellers');
 t_eq([], ias_seller_names_in('Thanks to everyone.', ''), 'no sellers on the listing: nothing to find');
+
+// 0.27.0 (bug review SB-1): a denial must govern the words, not just stand earlier in the clause.
+foreach (["You won't want to miss this Intel Phone Bidding auction on Saturday.", "No buyer's premium at this Intel Phone Bidding auction.", "Don't miss this Intel Phone Bidding auction."] as $t) {
+  t_ok(ias_bidding_mentions($t)['phone'], 'still says phone bidding: "' . $t . '"');
+}
+foreach (["No in-person or online bidding." => 'in_person', "This is not an in-person sale." => 'in_person', "It won't be phone bidding this time." => 'phone', "Phone bidding is not available." => 'phone', "There is no onsite auction." => 'in_person'] as $t => $k) {
+  t_ok(!ias_bidding_mentions($t)[$k], 'denied, so not said: "' . $t . '"');
+}
+
+// 0.27.0 (bug review SB-8, SB-9).
+t_eq([], ias_seller_names_in('We will see you there. We hope the rich soil sells.', 'Will and Hope Martin; Richard Rich'), 'ordinary words are not seller names ("will", "hope", "rich")');
+t_eq(['Martin'], ias_seller_names_in('Will you be there? The Martin farm sold.', 'Will and Hope Martin'), '…a common word opening a sentence is not either; the surname still is');
+t_ok(in_array('Hope Martin', ias_seller_names_in('Thanks to Will and Hope Martin.', 'Will and Hope Martin'), true), 'a full name is found in any case');
+t_eq(7, ias_emoji_count('👍🏽 🇺🇸 👨‍👩‍👧‍👦 ⭐ ⏰ ⬆️ 🏡'), 'emoji counted as a reader sees them: skin tone, flag and family are one each; ⭐ ⏰ ⬆️ count');

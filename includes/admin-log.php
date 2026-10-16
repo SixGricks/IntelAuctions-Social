@@ -50,7 +50,7 @@ if (!function_exists('ias_log_render')) {
       echo '<td><span title="' . esc_attr($short) . '">' . esc_html($kinds[$short] ?? ($short === 'dryrun' ? 'Dry run (before 0.12.0)' : $short)) . '</span></td>';
       $type = (string) ($meta['type'] ?? '');
       echo '<td>' . ($listing > 0 ? '<a href="' . esc_url((string) get_edit_post_link($listing, '')) . '">' . esc_html(html_entity_decode(get_the_title($listing), ENT_QUOTES, 'UTF-8') ?: '#' . $listing) . '</a>' : '—')
-        . ($post > 0 ? '<br><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $post])) . '">' . esc_html($type !== '' ? ias_post_type($type)['short'] . ' post' : 'the post') . '</a>' : '') . '</td>';
+        . ($post > 0 ? '<br><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => $post])) . '">' . esc_html($type !== '' ? ias_post_noun($type) : 'the post') . '</a>' : '') . '</td>';
       echo '<td>' . ias_log_meta_html($row) . '</td>';
       echo '<td>' . esc_html(ias_actor_name((string) $row['actor'])) . '</td>';
       echo '</tr>';

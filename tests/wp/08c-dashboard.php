@@ -62,3 +62,11 @@ $calls = 0;
 add_filter('pre_http_request', function ($pre) use (&$calls) { $calls++; return $pre; }, 5);
 $render();
 t_eq(0, $calls, 'the box makes no request of its own (OneUp, Claude, Google)');
+
+// 0.27.0: each number opens the calendar showing only those posts.
+$html = $render();
+t_ok(strpos($html, 'status=held') !== false && strpos($html, 'status=waiting') !== false && strpos($html, 'status=published') !== false, 'each number links to the calendar filtered to its posts');
+wp_set_current_user(1);
+$_GET = ['page' => IAS_PAGE_CALENDAR, 'status' => 'held']; ob_start(); ias_calendar_render(); $cal = (string) ob_get_clean(); $_GET = [];
+t_ok(strpos($cal, 'Showing only posts that are <strong>needs a decision</strong>') !== false && strpos($cal, 'Show every post') !== false, 'the calendar says what it is showing, with a way back');
+t_eq(['held'], ias_calendar_status_filter_for('held'), 'a status filters to itself');

@@ -52,3 +52,13 @@ t_ok(empty($e['open_house:1:20261112']['blocked']), 'once the Listing post is sk
 $rows[0] = $row(['slot_key' => 'listing:1']);
 $plan = ias_schedule(array_values($by_key(ias_engine_posts($rows, $now, 2880))), $cfg);
 t_ok(($plan['at']['listing:1'] ?? 'z') < ($plan['at']['open_house:1:20261112'] ?? ''), 'with photos, the Listing post comes first and the Open House post after it');
+
+// 0.27.0 (bug review SB-6, SB-7): never after the event, even late; a person's yes is not kept past it either.
+$e = $by_key(ias_engine_posts([$row(['slot_key' => 'auction_week:x', 'type' => 'auction_week', 'flags' => ['meta' => ['sale_day' => '2026-11-14']]])], $now, 2880));
+t_eq('2026-11-14', $e['auction_week:x']['hard_end'], 'an Auction Week post never goes after its sale day');
+$e = $by_key(ias_engine_posts([$row(['slot_key' => 'open_house:x', 'type' => 'open_house', 'flags' => ['meta' => ['oh_day' => '2026-11-08', 'sale_day' => '2026-11-14']]])], $now, 2880));
+t_eq('2026-11-08', $e['open_house:x']['hard_end'], 'an Open House post never after its open house');
+$e = $by_key(ias_engine_posts([$row(['slot_key' => 'listing:9', 'scheduled_at' => '2026-11-20 19:10:00', 'flags' => ['edited_by' => 'dj', 'meta' => ['sale_day' => '2026-11-14']]])], $now, 2880));
+t_eq(null, $e['listing:9']['fixed_at'], 'an edited Listing post whose time is now after its sale is not kept there: the plan places it again');
+$e = $by_key(ias_engine_posts([$row(['slot_key' => 'listing:9', 'scheduled_at' => '2026-11-10 19:10:00', 'flags' => ['edited_by' => 'dj', 'meta' => ['sale_day' => '2026-11-14']]])], $now, 2880));
+t_eq('2026-11-10 19:10', $e['listing:9']['fixed_at'], '…one before it keeps its time');

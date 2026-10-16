@@ -189,7 +189,8 @@ if (!function_exists('ias_channel_text')) {
     $body = (string) preg_replace('/\n\n(#\S+\s*)+$/u', '', $text);
     $body = trim((string) preg_replace('~\n\nDetails: https?://\S+$~', '', $body));
     if ($ch === 'x') {
-      $line = ias_x_line((string) $post['type'], $facts_list ?? ias_post_facts($post));
+      // A person's own post (0.25.0) keeps their words, fitted; every other post's line comes from the facts, never Claude's prose.
+      $line = ($post['type'] ?? '') === 'manual' ? ias_fit_text($body, 280) : ias_x_line((string) $post['type'], $facts_list ?? ias_post_facts($post));
       $tail = $link !== '' ? ' ' . $link : '';
       $hash = $tags ? ' ' . implode(' ', $tags) : '';
       $out = $line . $tail . $hash;

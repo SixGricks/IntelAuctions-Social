@@ -99,28 +99,29 @@ if (!function_exists('ias_admin_styles')) {
       .ias-switch.off{color:#50575e}
       .ias-switch.alert{border-color:#d63638;background:#fcf0f1}
       .ias-cal{display:grid;grid-template-columns:repeat(6,minmax(0,1fr)) minmax(0,.55fr);gap:6px;max-width:1880px}
-      .ias-cal-head{font-weight:600;font-size:12px;color:#50575e;padding:2px 4px}.ias-cal-head.sun{color:#8c8f94}
+      .ias-cal-head{font-weight:600;font-size:12px;color:#50575e;padding:2px 4px}.ias-cal-head.sun{color:#646970}
       .ias-cal-gap{display:none}
       .ias-day{background:#fff;border:1px solid #dcdcde;border-radius:6px;min-height:84px;padding:6px;font-size:12px;overflow:hidden}
-      .ias-day.sun{background:#f6f7f7;color:#8c8f94}
+      .ias-day.sun{background:#f6f7f7;color:#646970}
       .ias-day.today{border-color:#2271b1;box-shadow:0 0 0 1px #2271b1}
       .ias-day.floor{background:repeating-linear-gradient(45deg,#fff,#fff 8px,#f6f7f7 8px,#f6f7f7 16px)}
-      .ias-day.past{background:#f6f7f7;color:#8c8f94}.ias-day.past .ias-chip{opacity:.8}
-      .ias-day.beyond{background:transparent;border-style:dashed;color:#8c8f94}
+      .ias-day.past{background:#f6f7f7;color:#646970}.ias-day.past .ias-chip{opacity:.8}
+      .ias-day.beyond{background:transparent;border-style:dashed;color:#646970}
       .ias-day-date{font-weight:600;display:flex;justify-content:space-between;gap:4px;margin-bottom:4px}
-      .ias-day-date .n{font-weight:400;color:#8c8f94;cursor:help}
+      .ias-day-date .n{font-weight:400;color:#646970;cursor:help}
       .ias-today{display:none}
       .ias-chip{display:block;border-left:3px solid #2271b1;background:#f0f6fc;border-radius:3px;padding:3px 5px;margin:0 0 4px;text-decoration:none;color:#1d2327;line-height:1.3}
       .ias-chip:hover{filter:brightness(.96)}
       .ias-chip .t{font-weight:600}
       .ias-chip .tm{white-space:nowrap}
-      .ias-chip.untimed{border-left-style:dashed}.ias-chip.untimed .tm{color:#8c8f94;font-style:italic}
+      .ias-chip.untimed{border-left-style:dashed}.ias-chip.untimed .tm{color:#646970;font-style:italic}
       .ias-chip .s{display:block;color:inherit;opacity:.85;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       ' . ias_status_chip_css() . '
       .ias-chip.drag{cursor:grab}.ias-chip.is-dragging{opacity:.45}
       .ias-chip-row{position:relative}.ias-chip.has-onoff{padding-right:34px}
       .ias-onoff-form{position:absolute;top:5px;right:5px;margin:0;line-height:0}
       .ias-onoff{display:block;position:relative;width:26px;height:14px;padding:0;border:0;border-radius:8px;background:#a7aaad;cursor:pointer}
+      .ias-onoff::before{content:"";position:absolute;inset:-6px -4px}/* a 34×26 target around the 26×14 switch */
       .ias-onoff.is-on{background:#00a32a}.ias-onoff:hover{filter:brightness(.92)}.ias-onoff:focus-visible{outline:2px solid #2271b1;outline-offset:2px}
       .ias-onoff .knob{position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}
       .ias-onoff.is-on .knob{left:14px}
@@ -129,11 +130,11 @@ if (!function_exists('ias_admin_styles')) {
       .ias-pv-img{position:relative;background:#f0f0f1}.ias-pv-img img{display:block;width:100%;height:170px;object-fit:cover}
       .ias-pv-more{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px}
       .ias-pv-text{padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:12;overflow:hidden}
-      .ias-pv-text.empty{color:#8c8f94;font-style:italic}
+      .ias-pv-text.empty{color:#646970;font-style:italic}
       .ias-pv-comment{margin:0 12px;padding:8px 0 10px;border-top:1px solid #f0f0f1;color:#50575e;font-size:12px;overflow-wrap:anywhere}
       .ias-pv-stats{margin:0 12px;padding:8px 0 10px;border-top:1px solid #f0f0f1;color:#1d2327;font-size:12px;font-weight:600}
-      .ias-pv-hint{padding:6px 12px;background:#f6f7f7;color:#8c8f94;font-size:11px}
-      body.ias-dragging .ias-day[data-drop="1"]{outline:1px dashed #8c8f94;outline-offset:-3px}
+      .ias-pv-hint{padding:6px 12px;background:#f6f7f7;color:#646970;font-size:11px}
+      body.ias-dragging .ias-day[data-drop="1"]{outline:1px dashed #646970;outline-offset:-3px}
       .ias-day.ias-drop-ok,.ias-day.ias-drop-target{outline:2px solid #2271b1 !important;outline-offset:-2px;background:#f0f6fc}
       .ias-drop-pop{position:absolute;z-index:100000;background:#fff;border:1px solid #c3c4c7;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 14px;max-width:min(92vw,460px)}
       .ias-drop-pop .ias-drop-q{margin:0 0 8px}.ias-drop-pop .description{margin:6px 0 0}
@@ -278,7 +279,7 @@ if (!function_exists('ias_admin_styles')) {
         .ias-day{min-height:0}.ias-day:not(.has):not(.today),.ias-day.past{display:none}.ias-day.floor{background:#fff}
         .ias-today{display:inline}.ias-day-date{font-size:13px}.ias-chip{padding:6px 8px;font-size:13px}.ias-chip .s{font-size:12px}
         .ias-chip.has-onoff{padding-right:52px}.ias-onoff-form{top:50%;right:8px;transform:translateY(-50%)}.ias-onoff{width:36px;height:20px;border-radius:11px}.ias-onoff .knob{width:16px;height:16px}.ias-onoff.is-on .knob{left:18px}
-        .ias-cal-gap{display:block;color:#8c8f94;font-size:12px;padding:2px 8px;border-left:2px dotted #c3c4c7;margin-left:8px}}
+        .ias-cal-gap{display:block;color:#646970;font-size:12px;padding:2px 8px;border-left:2px dotted #c3c4c7;margin-left:8px}}
       @media (max-width:600px){.ias-pics{grid-template-columns:repeat(3,minmax(0,1fr))}}
     </style>';
   }
@@ -301,7 +302,7 @@ if (!function_exists('ias_switches_strip')) {
     $out .= $chip('Master switch', !empty($s['master']) ? 'On' : 'Off — nothing posts', !empty($s['master']) ? 'on' : 'off');
     if (!empty($s['paused'])) $out .= $chip('Paused', 'Nothing posts until resumed', 'alert');
     foreach (ias_post_types() as $type => $def) {
-      if ($type === 'human') continue;
+      if (in_array($type, ['human', 'manual'], true)) continue; // a person's post has no type switch: its own ticks are its switch
       $on = ias_type_on($type);
       $out .= $chip($def['short'], $on ? 'On' : 'Off', $on ? 'on' : 'off');
     }
@@ -314,11 +315,11 @@ if (!function_exists('ias_switches_strip')) {
     }
     $out .= '</div>';
     if ($compact) {
-      $on = array_values(array_filter(array_keys(ias_post_types()), function ($t) { return $t !== 'human' && ias_type_on($t); }));
+      $on = array_values(array_filter(array_keys(ias_post_types()), function ($t) { return !in_array($t, ['human', 'manual'], true) && ias_type_on($t); }));
       $setup = function_exists('ias_oneup_blockers') ? ias_oneup_blockers(true) : [];
       if (empty($s['master'])) $line = ['off', 'Off: nothing goes to Facebook — the master switch is off.'];
       elseif (!empty($s['paused'])) $line = ['alert', 'Paused: nothing goes out until you resume.'];
-      elseif (!$on) $line = ['off', 'Off: no post type is switched on, so nothing goes to Facebook.'];
+      elseif (!$on) $line = ['off', 'Off: no post type is switched on, so the plan sends nothing to Facebook — only posts you write yourself (New post) go.'];
       elseif ($setup) $line = ['alert', 'Not posting yet: ' . $setup[0] . '.'];
       else $line = ['on', 'On: ' . implode(', ', array_map(function ($t) { return ias_post_type($t)['short']; }, $on)) . ' posts go to Facebook.'];
       $more = '';
@@ -335,3 +336,66 @@ if (!function_exists('ias_switches_strip')) {
     return $out;
   }
 }
+
+/**
+ * A Media Library file chosen with a button, never typed as an id number (0.27.0,
+ * from the UI review; DJ, Oct 13: ids are chosen, not typed). The form still posts
+ * the attachment id under `$name`, so what is saved does not change.
+ */
+if (!function_exists('ias_media_field')) {
+  function ias_media_field(string $name, int $value, string $id, string $label, string $empty_text, string $library = ''): string {
+    $shown = $empty_text;
+    $thumb = '';
+    if ($value > 0 && get_post($value)) {
+      $file = (string) get_attached_file($value);
+      $shown = $file !== '' ? basename($file) : get_the_title($value);
+      $src = wp_get_attachment_image_src($value, 'thumbnail');
+      if ($src) $thumb = (string) $src[0];
+    }
+    return '<span class="ias-media-field" data-empty="' . esc_attr($empty_text) . '">'
+      . '<input type="hidden" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . ($value > 0 ? $value : '') . '">'
+      . '<img class="ias-media-thumb" src="' . esc_url($thumb) . '" alt="" style="max-width:60px;max-height:60px;vertical-align:middle;margin-right:6px;border:1px solid #dcdcde;' . ($thumb === '' ? 'display:none;' : '') . '">'
+      . '<span class="ias-media-name" style="margin-right:6px">' . esc_html($shown) . '</span>'
+      . '<button type="button" class="button ias-media-pick" data-title="' . esc_attr($label) . '" data-library="' . esc_attr($library) . '">Choose file…</button> '
+      . '<button type="button" class="button-link ias-media-clear"' . ($value > 0 ? '' : ' hidden') . '>Remove</button>'
+      . '</span>';
+  }
+}
+
+add_action('admin_enqueue_scripts', function ($hook): void {
+  if (!current_user_can('manage_options')) return;
+  $settings = ($_GET['page'] ?? '') === IAS_PAGE_SETTINGS;
+  $listing = in_array($hook, ['post.php', 'post-new.php'], true) && function_exists('ia_schema_post_type')
+    && (string) (get_current_screen()->post_type ?? '') === ia_schema_post_type();
+  if (!$settings && !$listing) return;
+  wp_enqueue_media();
+  wp_register_script('ias-media-field', false, ['jquery', 'media-views'], IAS_VERSION, true);
+  wp_enqueue_script('ias-media-field');
+  wp_add_inline_script('ias-media-field', <<<'JS'
+jQuery(function ($) {
+  $(document).on('click', '.ias-media-pick', function (e) {
+    e.preventDefault();
+    var box = $(this).closest('.ias-media-field'), lib = $(this).data('library');
+    var frame = wp.media({ title: $(this).data('title'), multiple: false, library: lib ? { type: String(lib).split(',') } : {} });
+    frame.on('select', function () {
+      var a = frame.state().get('selection').first().toJSON();
+      box.find('input[type=hidden]').val(a.id).trigger('change');
+      box.find('.ias-media-name').text(a.filename || a.title || ('#' + a.id));
+      var t = a.sizes && a.sizes.thumbnail ? a.sizes.thumbnail.url : (a.type === 'image' ? a.url : (a.icon || ''));
+      box.find('.ias-media-thumb').attr('src', t).toggle(!!t);
+      box.find('.ias-media-clear').prop('hidden', false);
+    });
+    frame.open();
+  });
+  $(document).on('click', '.ias-media-clear', function (e) {
+    e.preventDefault();
+    var box = $(this).closest('.ias-media-field');
+    box.find('input[type=hidden]').val('').trigger('change');
+    box.find('.ias-media-name').text(box.data('empty'));
+    box.find('.ias-media-thumb').attr('src', '').hide();
+    $(this).prop('hidden', true);
+  });
+});
+JS
+  );
+});

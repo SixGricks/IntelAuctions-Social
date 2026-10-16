@@ -123,7 +123,7 @@ if (!function_exists('ias_dashboard_widget')) {
       ['failed', 'failed', $w['failed'], $w['failed'] ? 'bad' : ''],
     ];
     foreach ($boxes as [$key, $words, $n, $tone]) {
-      echo '<a class="ia-wd-num-box' . ($tone !== '' && $n > 0 ? ' is-' . $tone : '') . '" href="' . $cal() . '"><strong>' . (int) $n . '</strong><span>' . esc_html($words) . '</span></a>';
+      echo '<a class="ia-wd-num-box' . ($tone !== '' && $n > 0 ? ' is-' . $tone : '') . '" href="' . $cal(['status' => $key === 'out' ? 'published' : $key]) . '"><strong>' . (int) $n . '</strong><span>' . esc_html($words) . '</span></a>';
     }
     echo '</div>';
 

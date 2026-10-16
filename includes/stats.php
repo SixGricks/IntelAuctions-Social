@@ -129,7 +129,7 @@ if (!function_exists('ias_stats_run')) {
     $end = $now->modify('-1 day')->format('Y-m-d');
     // Ours that could be on that list: gone out from a day before the window to now.
     $ours = [];
-    foreach (ias_posts_query(['status' => 'published', 'limit' => 1000]) as $p) {
+    foreach (ias_posts_query(['status' => 'published', 'limit' => 1000, 'recent' => true]) as $p) {
       if ($p['type'] === 'human' || !empty($p['flags']['dry_run']) || ias_post_sent($p)['mode'] !== 'live') continue;
       $at = (string) ($p['published_at'] ?: ($p['flags']['oneup']['when'] ?? ''));
       if ($at === '' || substr($at, 0, 10) < $now->modify('-32 days')->format('Y-m-d')) continue;

@@ -65,12 +65,10 @@ add_action('ias_listing_panel', function ($post) {
     . '</select></label></p>';
   echo '<p style="margin:4px 0"><label>Parcels <span class="description">(multi-parcel sales, one per line: name | size | starting bid)</span><br>'
     . '<textarea name="ias_parcels" rows="3" style="width:100%" placeholder="Parcel 1 | 45 acres | $250,000">' . esc_textarea((string) get_post_meta($id, '_ias_parcels', true)) . '</textarea></label></p>';
-  echo '<p style="margin:4px 0"><label>Brochure cover <span class="description">(image or PDF id from the Media Library' . ($field_cover ? '; the brochure field has #' . (int) $field_cover[0] : '') . ')</span><br>'
-    . '<input type="number" min="0" name="ias_brochure_cover" value="' . ($cover > 0 ? $cover : '') . '" style="width:100%" placeholder="' . ($field_cover ? (int) $field_cover[0] : 'none — a branded card stands in') . '"></label></p>';
-  if ($cover > 0) {
-    $thumb = wp_get_attachment_image_src($cover, 'thumbnail');
-    if ($thumb) echo '<img src="' . esc_url((string) $thumb[0]) . '" alt="" style="max-width:80px;border:1px solid #dcdcde">';
-  }
+  $field_file = $field_cover ? basename((string) get_attached_file((int) $field_cover[0])) : '';
+  $fallback = $field_cover ? 'the brochure field\'s file' . ($field_file !== '' ? ' (' . $field_file . ')' : '') : 'none — a branded card stands in';
+  echo '<p style="margin:4px 0"><strong>Brochure cover</strong> <span class="description">(an image or PDF; blank uses ' . esc_html($fallback) . ')</span><br>'
+    . ias_media_field('ias_brochure_cover', $cover, 'ias-brochure-cover', 'Brochure cover', 'Not chosen', 'image,application/pdf') . '</p>';
 }, 10, 1);
 
 if (!function_exists('ias_listing_panel_save')) {
