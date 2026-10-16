@@ -24,7 +24,7 @@ foreach (['posts', 'history', 'chat', 'voice'] as $name) {
 // Options: settings, schema stamp, run state (ias_push_lock: the push run's lock, written straight to the table).
 foreach ([
   'ias_settings', 'ias_db_version', 'ias_installed_at', 'ias_live_since',
-  'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review',
+  'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_unread',
   'ias_push_mode', // before 0.12.0: dry run or live (the dry run is gone; kept here so an old site's copy goes too)
   'ias_dry_run_retired', // when 0.12.0 retired the dry run, and what it switched off (the note under the switches until Settings is saved)
   'ias_readback_last', 'ias_stats_last', 'ias_comments_no_plan', 'ias_plan_hold', 'ias_push_queue', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',

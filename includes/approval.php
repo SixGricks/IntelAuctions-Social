@@ -427,6 +427,120 @@ add_filter('ias_job_run', function (array $result): array {
   return $result;
 }, 20);
 
+/* ---------------- Posts nobody has read (0.27.0) ---------------- */
+
+/*
+ * DJ, Oct 16, 2026 (the audit's open item on Lane B posts — "daily email"): Listing, Open House and Auction Week
+ * posts go unless someone stops them, and the words come from listing text anyone with an editor's login can
+ * change. Each morning the approvers get the ones going out by the next posting day that no person has opened —
+ * so each is read before it goes. Opening it on the calendar, editing, keeping, moving or picking its pictures
+ * counts as reading it.
+ */
+
+/** Record that a person opened this post (once; later views change nothing). Returns the post as it is now. */
+if (!function_exists('ias_post_mark_seen')) {
+  function ias_post_mark_seen(array $p): array {
+    if (!empty($p['flags']['seen']) || !current_user_can('manage_options') || (int) ($p['id'] ?? 0) <= 0) return $p;
+    $flags = (array) $p['flags'];
+    $flags['seen'] = ['by' => ias_actor(), 'at' => ias_now_sql()];
+    ias_post_update((int) $p['id'], ['flags' => $flags]);
+    $p['flags'] = $flags;
+    return $p;
+  }
+}
+
+/** Has a person looked at this post — opened it, or edited, kept, moved it or chosen its pictures? Pure. */
+if (!function_exists('ias_post_was_read')) {
+  function ias_post_was_read(array $p): bool {
+    $f = (array) ($p['flags'] ?? []);
+    foreach (['seen', 'edited_by', 'released_by', 'pinned_by', 'media_by', 'created_by'] as $k) if (!empty($f[$k])) return true;
+    return !empty($p['approved_by']);
+  }
+}
+
+/** Until when the morning's email looks ahead: the end of the next posting day (Saturday's covers Monday — no email on Sunday). Pure. */
+if (!function_exists('ias_unread_until')) {
+  function ias_unread_until(DateTimeImmutable $now): string {
+    $next = $now->modify('+1 day');
+    if ($next->format('N') === '7') $next = $next->modify('+1 day');
+    return $next->format('Y-m-d') . ' 23:59:59';
+  }
+}
+
+/** The Lane B posts going out by the end of the next posting day that nobody has read — and that would really go. */
+if (!function_exists('ias_unread_posts')) {
+  function ias_unread_posts(): array {
+    $now = ias_now();
+    $from = $now->format('Y-m-d H:i:s');
+    $until = ias_unread_until($now);
+    $out = [];
+    foreach (ias_posts_query(['status' => ['planned', 'approved'], 'from' => $now->format('Y-m-d'), 'to' => substr($until, 0, 10), 'limit' => 200]) as $p) {
+      if ($p['lane'] !== 'B' || ias_post_was_read($p)) continue;
+      $at = (string) ($p['scheduled_at'] ?? '');
+      if ($at === '' || $at < $from || $at > $until) continue;
+      if (ias_push_ready($p) !== '' || ias_push_switched_off($p)) continue; // it would not go out: nothing to read in a hurry
+      $out[] = $p;
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $a['scheduled_at'], (string) $b['scheduled_at']); });
+    return $out;
+  }
+}
+
+/** Is the morning's unread-posts email due? (Its hour, once a day, never on Sunday, while it is switched on.) */
+if (!function_exists('ias_unread_due')) {
+  function ias_unread_due(): bool {
+    if (!ias_setting('unread_email', true) || ias_is_sunday() || !ias_approvers()) return false;
+    $now = ias_now();
+    if ((int) $now->format('G') < (int) ias_setting('unread_hour', 7)) return false;
+    return get_option('ias_last_unread', '') !== $now->format('Y-m-d');
+  }
+}
+
+/** The email: [subject, html], or null when there is nothing unread. */
+if (!function_exists('ias_unread_email')) {
+  function ias_unread_email(array $posts): ?array {
+    if (!$posts) return null;
+    $navy = '#233a66';
+    $html = '<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:640px;color:#1d2327">'
+      . '<h2 style="color:' . $navy . ';margin:0 0 6px">' . count($posts) . ' post' . (count($posts) === 1 ? '' : 's') . ' going out soon that nobody has read</h2>'
+      . '<p style="margin:0 0 16px;color:#50575e">These go to Facebook unless someone stops them. Read each one; open it to skip, move or change it — opening it takes it off tomorrow\'s list.</p>';
+    foreach ($posts as $p) {
+      $text = (string) ($p['content']['text'] ?? '');
+      $short = mb_strlen($text) > 600 ? rtrim(mb_substr($text, 0, 600)) . '…' : $text;
+      $html .= '<div style="border:1px solid #dcdcde;border-left:4px solid ' . $navy . ';border-radius:4px;padding:12px 14px;margin:0 0 12px">'
+        . '<p style="margin:0 0 6px;font-size:13px;color:#50575e"><strong style="color:#1d2327">' . esc_html(date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at']))) . '</strong> · ' . esc_html(ias_post_type((string) $p['type'])['label'] . ' — ' . ias_post_subject($p)) . '</p>'
+        . '<p style="margin:0 0 8px;white-space:pre-wrap;font-size:14px">' . esc_html($short) . '</p>'
+        . '<p style="margin:0"><a href="' . esc_url(ias_admin_url(IAS_PAGE_CALENDAR, ['post' => (int) $p['id']])) . '" style="color:' . $navy . ';font-weight:600">Open it on the Social Calendar</a></p></div>';
+    }
+    $html .= '<p style="font-size:12px;color:#646970">Sent each morning (never on Sunday) to ' . esc_html(implode(', ', ias_approvers())) . ' by Intel Auctions Social. Turn it off under Social Calendar → Settings → Posts nobody has read.</p></div>';
+    $first = date_i18n('D', strtotime((string) $posts[0]['scheduled_at']));
+    return ['Read before they go: ' . count($posts) . ' Facebook post' . (count($posts) === 1 ? '' : 's') . ' from ' . $first, $html];
+  }
+}
+
+/** Send it (when there is anything to read); records the day either way. Returns how many emails went. */
+if (!function_exists('ias_unread_send')) {
+  function ias_unread_send(): int {
+    update_option('ias_last_unread', ias_now()->format('Y-m-d'), false);
+    $posts = ias_unread_posts();
+    $mail = ias_unread_email($posts);
+    if (!$mail) return 0;
+    [$subject, $html] = $mail;
+    $sent = 0;
+    foreach (ias_approvers() as $email) if (wp_mail($email, $subject, $html, ['Content-Type: text/html; charset=UTF-8'])) $sent++;
+    ias_log('review', 0, ['summary' => 'Unread posts email to ' . implode(', ', ias_approvers()) . ': ' . $subject, 'sent' => $sent, 'posts' => array_map(function ($p) { return (int) $p['id']; }, $posts)]);
+    return $sent;
+  }
+}
+
+add_filter('ias_job_run', function (array $result): array {
+  if (ias_unread_due()) {
+    $n = ias_unread_send();
+    if ($n) $result['parts'][] = 'unread-posts email sent to ' . $n;
+  }
+  return $result;
+}, 30); // after the plan and the pushes: the times it lists are today's
+
 /** The post's words changed: every outstanding link for it stops working (the new version gets its own email). */
 if (!function_exists('ias_approval_void')) {
   function ias_approval_void(int $post_id): void {

@@ -289,7 +289,10 @@ function ias_t_oneup(): void {
     // DigitalOcean bucket, which answers every browser 403); `put_file_fail` failed sends from this website.
     'storage' => 's3', 'put_file_fail' => 0, 'put_file_die' => 0];
   add_filter('ias_oneup_key', function () { return 'test-oneup-key'; });
-  add_filter('pre_http_request', function ($pre, $args, $url) {
+  // One fake OneUp per process: every test file calls this, and a second responder would answer each call again
+  // (a delete twice: the second "not found"), so the last file's responder is taken off first.
+  if (!empty($GLOBALS['ias_t_oneup_fn'])) remove_filter('pre_http_request', $GLOBALS['ias_t_oneup_fn'], 10);
+  $GLOBALS['ias_t_oneup_fn'] = function ($pre, $args, $url) {
     if (strpos((string) $url, 'oneupapp.io/api/') === false) return $pre;
     $S =& $GLOBALS['ias_t_oneup'];
     $parts = wp_parse_url((string) $url);
@@ -418,7 +421,8 @@ function ias_t_oneup(): void {
       case 'getfailedposts':    return $page($S['failed'], 'date_time');
     }
     return $json(404, ['error' => true, 'message' => 'Unknown endpoint ' . $path]);
-  }, 10, 3);
+  };
+  add_filter('pre_http_request', $GLOBALS['ias_t_oneup_fn'], 10, 3);
 }
 
 /** The fake OneUp's calls since $from (index), optionally only to $path. */

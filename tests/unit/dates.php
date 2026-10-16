@@ -64,3 +64,10 @@ t_eq([], ias_timing_problems('Open house the morning of the sale, October 18.', 
 
 t_ok(strpos(ias_timing_hold('Wed Oct 21, and its words count the days', true), 'save them') !== false, 'a person\'s words: check and save');
 t_ok(strpos(ias_timing_hold('Wed Oct 21, and its words count the days', false, true), 'approve it again') !== false, 'a yes on Claude\'s words: check and approve again');
+
+// 0.27.0 (bug review SB-3): the countdown wording the templates ask for is caught too, and a dated template counts whatever it says.
+foreach (['Only 4 days until auction day.', 'In just 4 days it sells.', 'Four more days until the sale.', '4 days from today.', 'Auction day is here for 7 Mill Road.'] as $w) {
+  t_eq(1, count(ias_timing_problems($w, '2026-10-20 09:00', $at, [])), 'counts days: "' . $w . '"');
+}
+t_eq(1, count(ias_timing_problems('The sale is Thursday, October 22.', '2026-10-20 09:00', $at, [], 'a_countdown')), 'a countdown template moved to another day is a problem, whatever its words');
+t_eq([], ias_timing_problems('The sale is Thursday, October 22.', '2026-10-20 09:00', $at, [], 'place'), '…an undated template with no counting words is not');

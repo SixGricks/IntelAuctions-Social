@@ -778,8 +778,8 @@ if (!function_exists('ias_days_words_re')) {
   function ias_days_words_re(): string {
     $day = '(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)';
     $num = '(?:\d+|a|one|two|three|four|five|six|seven|eight|nine|ten|a\s+few|few)';
-    return '/\b(?:tomorrow|tonight|this\s+(?:coming\s+)?(?:' . $day . '|weekend|week)|next\s+(?:' . $day . '|weekend|week)|in\s+' . $num . '\s+(?:days?|weeks?)|'
-      . $num . '\s+days?\s+(?:away|left|to\s+go|out|from\s+now)|just\s+days|days\s+away|a\s+week\s+from|'
+    return '/\b(?:tomorrow|tonight|this\s+(?:coming\s+)?(?:' . $day . '|weekend|week)|next\s+(?:' . $day . '|weekend|week)|in\s+(?:just\s+|only\s+)?' . $num . '\s+(?:more\s+)?(?:days?|weeks?)|'
+      . $num . '\s+(?:more\s+)?days?\s+(?:away|left|to\s+go|out|from\s+now|from\s+today|until|till|til|before)|just\s+days|days\s+away|a\s+week\s+from|auction\s+day\s+is\s+here|'
       . 'today[\'’]s\s+(?:auction|sale|open\s+house)|(?:auction|sale|open\s+house|bidding)\s+(?:is\s+|starts\s+|begins\s+|opens\s+|kicks\s+off\s+|happens\s+)?today|today\s+at\s+\d)\b/iu';
   }
 }
@@ -790,12 +790,12 @@ if (!function_exists('ias_days_words_re')) {
  * (and was not over when the words were written). [] when nothing. Pure.
  */
 if (!function_exists('ias_timing_problems')) {
-  function ias_timing_problems(string $text, string $written_for, DateTimeImmutable $at, array $facts_list): array {
+  function ias_timing_problems(string $text, string $written_for, DateTimeImmutable $at, array $facts_list, string $template = ''): array {
     $out = [];
     $tz = ia_wp_tz();
     $was = null;
     if ($written_for !== '') { try { $was = new DateTimeImmutable($written_for, $tz); } catch (\Exception $e) { $was = null; } }
-    if ($was && $was->format('Y-m-d') !== $at->setTimezone($tz)->format('Y-m-d') && preg_match(ias_days_words_re(), $text)) {
+    if ($was && $was->format('Y-m-d') !== $at->setTimezone($tz)->format('Y-m-d') && (preg_match(ias_days_words_re(), $text) || in_array($template, ias_templates_dated(), true))) {
       $out[] = 'its words count the days from ' . $was->format('D M j') . ', the day they were written for';
     }
     if (preg_match('/open[\s-]*house/i', $text)) {
@@ -814,6 +814,13 @@ if (!function_exists('ias_timing_problems')) {
       }
     }
     return array_values(array_unique($out));
+  }
+}
+
+/** The templates written for one day only (a countdown, "tomorrow", "auction day is here"): any new day is a problem for them, whatever the wording (0.27.0, the bug review's SB-3). */
+if (!function_exists('ias_templates_dated')) {
+  function ias_templates_dated(): array {
+    return ['a_countdown', 'a_tomorrow', 'a_today', 'o_soon'];
   }
 }
 

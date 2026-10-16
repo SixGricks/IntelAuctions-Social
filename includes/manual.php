@@ -258,6 +258,7 @@ if (!function_exists('ias_manual_create')) {
       $when = $f['day'] . ' ' . $f['time'];
       $why = preg_match('/^\d\d:\d\d$/', $f['time']) ? ias_move_problem($when) : 'choose a time of day or an exact time.';
       if ($why !== '') { $undo(); return $no('Not created: ' . $why); }
+      $flags = (array) ($p['flags'] ?? $flags); // as saved, with the first comment's holds (the bug review's SB-5)
       $flags['pinned'] = $when;
       $flags['pinned_by'] = $actor;
       ias_post_update($id, ['scheduled_at' => $when . ':00', 'flags' => $flags]);

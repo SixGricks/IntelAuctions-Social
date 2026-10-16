@@ -90,6 +90,10 @@ if (!function_exists('ias_move_fixed')) {
       $pin = (string) ($o['flags']['pinned'] ?? '');
       $fixed = in_array($o['status'], ['published', 'human'], true) || !empty($o['locked']) || ($pin !== '' && substr($pin, 0, 10) === $day)
         || (ias_post_sent($o)['mode'] === 'live' && $at < $floor);
+      if (!$fixed) { // whatever else the plan itself will not move (0.27.0, the bug review's SB-2): a person's own post, an approved, edited or kept one
+        $eng = ias_engine_posts([$o], ias_now(), 60 * (int) ias_setting('lead_hours', 48));
+        $fixed = $eng && !empty($eng[0]['fixed_at']);
+      }
       if ($fixed) $out[] = [ias_hm_to_min(substr($at, 11, 5)), ias_post_type((string) $o['type'])['short'] . ' · ' . ias_post_subject($o)];
     }
     return $out;
@@ -199,7 +203,7 @@ if (!function_exists('ias_plan_run_follow')) {
     $statuses = array_merge(ias_live_statuses(), ['dropped']);
     $snap = function () use ($statuses, $id) {
       $rows = [];
-      foreach (ias_posts_query(['status' => $statuses, 'limit' => 2000]) as $o) if ((int) $o['id'] !== $id) $rows[(int) $o['id']] = $o;
+      foreach (ias_posts_query(['status' => $statuses, 'limit' => 2000, 'recent' => true]) as $o) if ((int) $o['id'] !== $id) $rows[(int) $o['id']] = $o;
       return $rows;
     };
     $before = $snap();

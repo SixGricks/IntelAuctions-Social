@@ -43,6 +43,8 @@ if (!function_exists('ias_settings_defaults')) {
       'approvers'   => 'dj@intelauctions.com, jacob@intelauctions.com',
       'review_day'  => 1,       // Monday (ISO 1–7)
       'review_hour' => 7,
+      'unread_email' => true,   // 0.27.0: each morning, the Lane B posts going out by the next posting day that nobody has opened
+      'unread_hour'  => 7,
 
       // More networks (DJ, Oct 13, 2026). Google Business Profile is sent (0.9.0): `on` posts it, once
       // Verify for Google has passed; YouTube takes the property videos (0.22.0). Instagram, X and LinkedIn

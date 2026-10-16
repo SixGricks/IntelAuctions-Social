@@ -208,6 +208,13 @@ it, and the spec stays verbatim, so they are recorded here:
   placed again, still approved; so is one handed back with Let the plan choose
   (`flags.plan_chooses`) or a never-sent Lane B post inside the veto window.
   Otherwise never let the plan re-place such a post.
+- **The Oct 15 audit, DJ's answers (Oct 16, 2026).** Lane B posts get a
+  **daily email of the ones nobody has read** (`ias_unread_*` in
+  `approval.php`; reading = opening the post's page, `flags.seen`, or any
+  person's action on it) — not approve-first. **Approval links stay valid for
+  their 4 days across reminders** (`ias_approval_check()` is not bound to the
+  newest round): yesterday's email must still work after this morning's
+  reminder; content changes already void every link.
 - **The Sold picture takes turns** (Oct 15, 2026: "2 other 'Sold' templates…
   so they are not all identical"): `ias_sold_layouts()` — photo, panel,
   stamp (one sale) — least used lately, never the last one's, kept through a

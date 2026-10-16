@@ -475,6 +475,13 @@ if (!function_exists('ias_engine_posts')) {
       $at = !empty($r['scheduled_at']) ? substr((string) $r['scheduled_at'], 0, 16) : '';
       $live = (array) ($r['flags']['oneup'] ?? []);
       $sent = $status === 'pushed' || !empty($live['hash']) || !empty($live['id']);
+      $meta = (array) ($r['flags']['meta'] ?? []);
+      $sale = (string) ($meta['sale_day'] ?? '');
+      // Never after the event, even late (0.27.0, the bug review's SB-6): a Listing post by the day before its sale,
+      // an Auction Week post by its sale day, an Open House post by its open house.
+      $hard = ($r['type'] === 'listing' && $sale !== '') ? ias_day_add($sale, -1)
+        : (($r['type'] === 'auction_week' && $sale !== '') ? $sale
+        : (($r['type'] === 'open_house' && (string) ($meta['oh_day'] ?? '') !== '') ? (string) $meta['oh_day'] : null));
       $fixed = '';
       $pin = (string) ($r['flags']['pinned'] ?? ''); // a person moved it there (Move on its page): it stays, while that time is ahead
       if ($r['type'] === 'manual') { // a person's own post (0.25.0): it stays where they put it, and counts — when it is on the page at all
@@ -489,12 +496,10 @@ if (!function_exists('ias_engine_posts')) {
       // it stays while that time is still more than an hour ahead; only a post whose time is gone is placed again.
       // Not where it could never go (a Lane B post never sent, inside the veto window), nor once a person handed its time back (`plan_chooses`).
       elseif (($status === 'approved' || !empty($r['flags']['edited_by']) || !empty($r['flags']['released_by'])) && empty($r['flags']['plan_chooses'])
-        && $at !== '' && $at > $kept_floor && ($r['lane'] === 'A' || $at >= $floor || !empty($live['hash']) || !empty($live['id']) || !empty($r['flags']['was_on_oneup']))) $fixed = $at;
+        && $at !== '' && $at > $kept_floor && ($hard === null || substr($at, 0, 10) <= $hard) /* never kept past its event (SB-7) */ && ($r['lane'] === 'A' || $at >= $floor || !empty($live['hash']) || !empty($live['id']) || !empty($r['flags']['was_on_oneup']))) $fixed = $at;
       elseif ($sent && $at !== '' && $at < $floor) $fixed = $at; // sent and inside the veto window: it stays
       if ($fixed === '' && in_array($status, ['published', 'human'], true)) continue;
       if ($fixed !== '' && substr($fixed, 0, 10) < $today) continue; // already behind us
-      $meta = (array) ($r['flags']['meta'] ?? []);
-      $sale = (string) ($meta['sale_day'] ?? '');
       $in[$r['slot_key']] = [
         'key'        => (string) $r['slot_key'],
         'id'         => (int) ($r['id'] ?? 0),
@@ -509,7 +514,7 @@ if (!function_exists('ias_engine_posts')) {
         'start'      => $r['window_start'] ?: null,
         'ideal'      => $r['window_ideal'] ?: null,
         'end'        => $r['window_end'] ?: null,
-        'hard_end'   => ($r['type'] === 'listing' && $sale !== '') ? ias_day_add($sale, -1) : null,
+        'hard_end'   => $hard,
         'fixed_at'   => $fixed !== '' ? $fixed : null,
         'current_at' => $fixed === '' && $at !== '' ? $at : null,
         'pushed'     => $sent,

@@ -516,7 +516,7 @@ if (!function_exists('ias_readback_run')) {
     // lost, by their text and time (so neither is ever taken for a person's post).
     $ours = [];
     $noid = [];
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'failed', 'skipped', 'cancelled', 'dropped'], 'limit' => 2000]) as $p) {
+    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'failed', 'skipped', 'cancelled', 'dropped'], 'limit' => 2000, 'recent' => true]) as $p) {
       if ($p['type'] === 'human') continue;
       $sent = ias_post_sent($p);
       if ($sent['mode'] === 'live' && $sent['id'] !== '') $ours[$sent['id']] = $p;

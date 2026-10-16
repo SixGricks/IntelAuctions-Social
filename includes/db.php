@@ -256,8 +256,18 @@ if (!function_exists('ias_post_update')) {
  * Posts matching $args, as decoded rows:
  *   status (string|array), type (string|array), listing (int: the listing alone
  *   or inside a merged post), from / to (Y-m-d: scheduled_at, or the window's
- *   ideal day when unscheduled, inside the range), order ('scheduled'|'id'), limit.
+ *   ideal day when unscheduled, inside the range), order ('scheduled'|'id'), limit,
+ *   recent (true: a post that is finished — published, failed, skipped, cancelled, dropped, human — only when its
+ *   day is within ias_posts_recent_days(); still-live posts always. 0.27.0, the bug review's SB-4: post rows are
+ *   kept for good, and a loop reading "the first 2,000" by date would otherwise lose the newest once the old ones
+ *   pass 2,000).
  */
+if (!function_exists('ias_posts_recent_days')) {
+  function ias_posts_recent_days(): int {
+    return max(14, (int) apply_filters('ias_posts_recent_days', 60));
+  }
+}
+
 if (!function_exists('ias_posts_query')) {
   function ias_posts_query(array $args = []): array {
     if (!ias_db_ready()) return [];
@@ -284,6 +294,10 @@ if (!function_exists('ias_posts_query')) {
     if (!empty($args['to'])) {
       $where[] = 'COALESCE(DATE(scheduled_at), window_ideal) <= %s';
       $vals[] = (string) $args['to'];
+    }
+    if (!empty($args['recent'])) {
+      $where[] = "(status IN ('planned','held','waiting','approved','pushed') OR COALESCE(DATE(scheduled_at), window_ideal) >= %s)";
+      $vals[] = ias_now()->modify('-' . ias_posts_recent_days() . ' days')->format('Y-m-d');
     }
     $order = ($args['order'] ?? 'scheduled') === 'id'
       ? 'id DESC'

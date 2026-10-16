@@ -43,7 +43,7 @@ if (!function_exists('ias_settings_sanitize')) {
       $out[$key] = $v;
     };
 
-    foreach (['master', 'paused', 'link_in_comment', 'voice_auto', 'stats_on', 'corrections_auto'] as $key) $out[$key] = !empty($in[$key]);
+    foreach (['master', 'paused', 'link_in_comment', 'voice_auto', 'stats_on', 'corrections_auto', 'unread_email'] as $key) $out[$key] = !empty($in[$key]);
     $networks = [];
     foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
       $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
@@ -104,6 +104,7 @@ if (!function_exists('ias_settings_sanitize')) {
     $int('jitter_minutes', 0, 59);
     $int('review_day', 1, 6); // never on Sunday
     $int('review_hour', 0, 23);
+    $int('unread_hour', 0, 23);
     $int('chat_turns', 0, 100);
     $int('voice_examples', 0, 6);
     $int('generate_per_run', 0, 30);
@@ -444,6 +445,7 @@ if (!function_exists('ias_settings_render')) {
     echo '<tr><th scope="row">Weekly review email</th><td><select name="ias[review_day]">';
     foreach ($days as $n => $name) echo '<option value="' . $n . '" ' . selected((int) $s['review_day'], $n, false) . '>' . esc_html($name) . '</option>';
     echo '</select> at ' . $num('ias[review_hour]', $s['review_hour'], 0, 23, ':00') . '</td></tr>';
+    echo '<tr><th scope="row">Posts nobody has read</th><td>' . $check('ias[unread_email]', !empty($s['unread_email']), '<strong>On</strong> — each morning at ' . $num('ias[unread_hour]', $s['unread_hour'], 0, 23, ':00') . ', email the approvers the Listing, Open House and Auction Week posts going out by the next posting day that nobody has opened', 'These posts need no approval: they go unless someone stops them. The email lists the ones no one has looked at yet, with their words, so somebody reads each before it goes. Opening a post on the calendar counts as reading it. Nothing is sent when there are none, while posting is off, or on a Sunday (Saturday\'s email covers Monday too).') . '</td></tr>';
     echo '</table>';
 
     echo '<h2>Links back to the site</h2><table class="form-table" role="presentation">';

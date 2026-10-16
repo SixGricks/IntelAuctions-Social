@@ -61,7 +61,10 @@ if (!function_exists('ias_negated_at')) {
     $before = substr($text, max(0, $at - 60), min(60, $at));
     $parts = preg_split('/[.!?;:\n•]|—/u', $before);
     $clause = (string) end($parts);
-    if (preg_match('/\b(?:no|not|never|without|nor|none)\b|n[\'’]t\b/i', $clause)) return true;
+    // The denial must govern the words themselves — "no onsite auction", "not an in-person sale", "no in-person or
+    // online bidding", "won't be phone bidding" — never just stand somewhere earlier in the clause: "Don't miss this
+    // Intel Phone Bidding auction" says phone bidding (0.27.0, the bug review's SB-1).
+    if (preg_match('/\b(?:no|not|never|without|nor|none|(?:is|are|was|won|wo)n[\'’]t(?:\s+be)?|not\s+be|never\s+be)\s+(?:(?:an?|the|any|other|more|longer|real)\s+){0,2}(?:[\w-]+\s+(?:or|and|nor)\s+(?:[\w-]+\s+)?)?$/iu', $clause)) return true;
     $after = (string) (preg_split('/[.!?;:\n•]|—/u', substr($text, $at + $len, 40))[0] ?? '');
     return (bool) preg_match('/^\s*(?:(?:is|are|was|will\s+be|won[\'’]t\s+be)\s+not\b|(?:isn|aren|wasn|won)[\'’]t\b|(?:is|are)\s+(?:not\s+)?(?:unavailable|not\s+offered|not\s+an\s+option))/i', $after);
   }
@@ -105,7 +108,26 @@ if (!function_exists('ias_digits10')) {
 /** Emoji (pictographs) in $text. */
 if (!function_exists('ias_emoji_count')) {
   function ias_emoji_count(string $text): int {
-    return (int) preg_match_all('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{1F000}-\x{1F2FF}]/u', $text);
+    // One per emoji as a reader sees it (0.27.0, the bug review's SB-9): a skin tone, a flag's two letters or a family
+    // joined with ZWJ is one; ⭐ ⏰ ⬆️ count. By code point, not \X: older PCRE builds lump neighbouring emoji together.
+    $cps = preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    $n = 0; $joined = false; $flag_half = false;
+    foreach ($cps as $ch) {
+      $c = mb_ord($ch, 'UTF-8');
+      if ($c === 0x200D) { $joined = true; continue; }                       // ZWJ: the next one belongs to this emoji
+      if ($c === 0xFE0F || ($c >= 0x1F3FB && $c <= 0x1F3FF)) continue;       // variation selector, skin tone
+      $is_emoji = ($c >= 0x1F300 && $c <= 0x1FAFF) || ($c >= 0x2600 && $c <= 0x27BF) || ($c >= 0x1F000 && $c <= 0x1F2FF)
+        || ($c >= 0x2B00 && $c <= 0x2BFF) || ($c >= 0x2300 && $c <= 0x23FF);
+      if ($c >= 0x1F1E6 && $c <= 0x1F1FF) { // a flag is two regional letters
+        if ($flag_half) { $flag_half = false; continue; }
+        $flag_half = true; $n++; $joined = false; continue;
+      }
+      $flag_half = false;
+      if (!$is_emoji) { $joined = false; continue; }
+      if ($joined) { $joined = false; continue; }
+      $n++;
+    }
+    return $n;
   }
 }
 
@@ -138,12 +160,21 @@ if (!function_exists('ias_seller_names_in')) {
     $found = [];
     foreach (preg_split('/\s*(?:,|;|&|\/|\band\b|\n)\s*/iu', $sellers, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $one) {
       $one = trim($one);
-      if (mb_strlen($one) >= 4 && preg_match('/(?<![\p{L}])' . preg_quote($one, '/') . '(?![\p{L}])/iu', $text)) $found[$one] = true;
+      if (mb_strlen($one) >= 4 && preg_match('/\s/u', $one) && preg_match('/(?<![\p{L}])' . preg_quote($one, '/') . '(?![\p{L}])/iu', $text)) $found[$one] = true; // a full name; one word alone is checked below
     }
     foreach (preg_split('/[^\p{L}\']+/u', $sellers, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $word) {
       $low = mb_strtolower($word);
       if (mb_strlen($word) < 4 || in_array($low, $common, true) || in_array($low, $place_words, true)) continue;
-      if (preg_match('/(?<![\p{L}])' . preg_quote($word, '/') . '(?![\p{L}])/iu', $text)) $found[$word] = true;
+      // A single name word counts as written — capitalised — so "we will", "we hope" or "rich soil" never read as
+      // sellers called Will, Hope or Rich (0.27.0, the bug review's SB-8). The full name above still matches any case.
+      $cap = mb_strtoupper(mb_substr($word, 0, 1)) . mb_substr($word, 1);
+      if (preg_match('/(?<![\p{L}])' . preg_quote($cap, '/') . '(?![\p{L}])/u', $text, $mm, PREG_OFFSET_CAPTURE)) {
+        $at = (int) $mm[0][1];
+        $before = rtrim(substr($text, 0, $at));
+        $sentence_start = $before === '' || preg_match('/[.!?\n:]$/u', $before);
+        // At the start of a sentence a capital means nothing: "Will you be there?" — count it only if it is not a common word there.
+        if (!$sentence_start || !in_array($low, ['will', 'hope', 'rich', 'grace', 'faith', 'joy', 'mark', 'bill', 'sue', 'ray', 'art', 'dawn', 'may', 'june', 'april', 'august', 'rose', 'lily', 'iris', 'glen', 'dale', 'hunter', 'miller', 'baker', 'fisher', 'carpenter', 'young', 'long', 'brown', 'green', 'white', 'black', 'king'], true)) $found[$word] = true;
+      }
     }
     return array_keys($found);
   }

@@ -81,11 +81,18 @@ class IAS_Updater {
       foreach ($release->assets as $asset) {
         if (!empty($asset->browser_download_url) && !empty($asset->name)
           && (string) $asset->name === 'intel-auctions-social.zip') {
-          return $asset->browser_download_url;
+          return $this->trusted_url((string) $asset->browser_download_url);
         }
       }
     }
-    return $release->zipball_url ?? '';
+    return $this->trusted_url((string) ($release->zipball_url ?? ''));
+  }
+
+  /** A package address on GitHub's own hosts, else nothing: a tampered release record cannot point the installer elsewhere (0.27.0, as the toolkit's 4.72.0). */
+  private function trusted_url(string $url): string {
+    $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+    $ok = (array) apply_filters('ias_updater_hosts', ['github.com', 'api.github.com', 'codeload.github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
+    return strpos($url, 'https://') === 0 && in_array($host, $ok, true) ? $url : '';
   }
 
   /**

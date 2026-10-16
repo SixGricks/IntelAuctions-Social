@@ -337,7 +337,7 @@ if (!function_exists('ias_gbp_readback')) {
 
     $ours = [];
     $noid = [];
-    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'failed', 'skipped', 'cancelled', 'dropped'], 'limit' => 2000]) as $p) {
+    foreach (ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'failed', 'skipped', 'cancelled', 'dropped'], 'limit' => 2000, 'recent' => true]) as $p) {
       if ($p['type'] === 'human') continue;
       $g = (array) ($p['flags']['gbp'] ?? []);
       if (!empty($g['id'])) $ours[(string) $g['id']] = $p;
@@ -491,7 +491,7 @@ if (!function_exists('ias_gbp_run')) {
     ];
     $statuses = ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'dropped', 'skipped', 'cancelled'];
     $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
-      : ias_posts_query(['status' => $statuses, 'limit' => 2000]);
+      : ias_posts_query(['status' => $statuses, 'limit' => 2000, 'recent' => true]);
     foreach ($posts as $p) {
       if (function_exists('ias_push_out_of_time') && ias_push_out_of_time()) break;
       ias_gbp_one($p, $c, $out);

@@ -370,7 +370,7 @@ if (!function_exists('ias_timing_check')) {
     if (!$at || $at < ias_now()) return '';
     $written = (string) ($flags['written_for'] ?? '');
     if ($written === '' && !preg_match('/open[\s-]*house/i', $text)) return ''; // written before 0.25.0, and no open house to be over
-    $problems = ias_timing_problems($text, $written, $at, preg_match('/open[\s-]*house/i', $text) ? ias_post_facts($p) : []);
+    $problems = ias_timing_problems($text, $written, $at, preg_match('/open[\s-]*house/i', $text) ? ias_post_facts($p) : [], (string) ($p['content']['template'] ?? ''));
     if (!$problems) return '';
     $why = $at->format('D M j') . ', and ' . implode('; and ', $problems);
     if (($flags['timing_why'] ?? '') === $why) return '';

@@ -1,5 +1,50 @@
 # Intel Auctions Social changelog
 
+## 0.27.0 (2026-10-16) — posts nobody has read; the audit's open items
+DJ's answers to the Oct 15 audit (Oct 16, 2026): a daily email for Lane B posts;
+keep approval links valid across reminders.
+- **Posts nobody has read** (`approval.php`): each morning (setting
+  `unread_email`, on; `unread_hour`, 7) the approvers get the Listing, Open House
+  and Auction Week posts going out by the end of the next posting day that no
+  person has opened (`ias_post_was_read()`: `flags.seen` — set when a person
+  opens the post's page — or edited, kept, moved, pictures chosen, approved),
+  with their words and links. Not sent when nothing is unread, while the post
+  would not go (`ias_push_ready()`, switched off), or on Sunday; Saturday's
+  covers Monday (`ias_unread_until()`). Option `ias_last_unread`.
+- **The calendar shows one kind of post** with `?status=` (any status, or
+  `ahead`); the Dashboard box's numbers link to it.
+- **The updater installs only from GitHub's hosts** (`trusted_url()`, filter
+  `ias_updater_hosts`), as the toolkit's.
+- Approval links stay valid for their four days across reminders — DJ's
+  decision, recorded in CLAUDE.md.
+- `tests/wp/08d-hardening.php` is back in the suite (its section on the
+  reverted two-minute guard dropped); new `tests/wp/08h-unread-email.php`.
+
+**From the Social bug review (Oct 16):**
+- *Bidding check:* a denial counts only when it governs the words ("no onsite
+  auction", "not an in-person sale"); "Don't miss this Intel Phone Bidding
+  auction" on an in-person sale is held again, and on a phone-bid sale no longer
+  is (`ias_negated_at()`).
+- *Moves keep clear of approved, edited and kept posts:* `ias_move_fixed()`
+  uses the scheduler's own rule, so a drag or a new post never lands minutes
+  from a post the plan cannot move either.
+- *Date-aware wording:* "4 days until", "in just 4 days", "four more days",
+  "auction day is here" count as counting days; a countdown, tomorrow, today
+  or open-house reminder template is date-bound whatever its words
+  (`ias_templates_dated()`).
+- *Old posts never crowd out new ones:* the plan, push, read-back and Google
+  loops read finished posts from the last 60 days only (`recent` in
+  `ias_posts_query()`, filter `ias_posts_recent_days`), so they never lose the
+  newest posts once the table holds more than 2,000.
+- *A new post at an exact time* keeps its first comment's holds.
+- *Never after the event:* a late Auction Week post by its sale day, an Open
+  House post by its open house; a post kept for a person is not kept past it.
+- *Seller names:* single name words count only capitalised ("we will", "rich
+  soil" are not sellers Will and Rich); full names in any case.
+- *Emoji* are counted as a reader sees them (skin tones, flags and families
+  are one; ⭐ ⏰ ⬆️ count).
+- Tests: the fake OneUp in the test fixtures replaces itself per file.
+
 ## 0.26.0 (2026-10-15) — three Sold pictures; a person's yes keeps its time
 DJ, Oct 15, 2026: "Create 2 other 'Sold' templates for images to switch between
 them so they are not all identical. When a post has been reviewed and approved

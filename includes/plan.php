@@ -25,7 +25,7 @@ if (!function_exists('ias_plan_run')) {
     if (!ias_db_ready()) return ['skipped' => ['tables not ready']];
     $now = ias_now();
     $s = ias_settings();
-    $rows = ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'human', 'dropped'], 'limit' => 2000]);
+    $rows = ias_posts_query(['status' => ['planned', 'held', 'waiting', 'approved', 'pushed', 'published', 'human', 'dropped'], 'limit' => 2000, 'recent' => true]);
     $by_key = [];
     foreach ($rows as $r) $by_key[$r['slot_key']] = $r;
     $plan = ias_schedule(ias_engine_posts($rows, $now, 60 * (int) $s['lead_hours']), ias_engine_cfg($s, $now));
@@ -413,7 +413,7 @@ if (!function_exists('ias_push_run_locked')) {
     $c = ['now' => $now, 'nowsql' => $nowsql, 'until' => $until, 'floor_b' => $floor_b, 'fmt' => $fmt];
     $statuses = ['planned', 'held', 'waiting', 'approved', 'pushed', 'dropped', 'skipped', 'cancelled'];
     $posts = $only ? array_values(array_filter(array_map('ias_post_get', array_map('intval', $only)), function ($p) use ($statuses) { return $p && in_array($p['status'], $statuses, true); }))
-      : ias_posts_query(['status' => $statuses, 'limit' => 2000]); // soonest first
+      : ias_posts_query(['status' => $statuses, 'limit' => 2000, 'recent' => true]); // soonest first
     foreach ($posts as $p) {
       if (ias_push_out_of_time()) { $out['skipped'][] = 'out of time: the rest follow on the next run'; break; }
       ias_push_one($p, $mode, $c, $out);
