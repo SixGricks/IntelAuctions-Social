@@ -200,7 +200,7 @@ ob_start(); ias_calendar_render(); $html = ob_get_clean();
 t_ok(strpos($html, '$425,000') !== false && strpos($html, 'First comment') !== false, 'a post\'s view shows its text and first comment');
 $_GET = [];
 ob_start(); ias_listing_panel_render(get_post($farm)); $html = ob_get_clean();
-t_ok(strpos($html, 'Listing') !== false && strpos($html, 'Open house') !== false, 'the listing panel lists the property\'s posts');
+t_ok(strpos($html, 'Listing') !== false && strpos($html, 'Open House') !== false, 'the listing panel lists the property\'s posts');
 restore_error_handler();
 t_eq([], $errors, 'no PHP notices on the screens');
 

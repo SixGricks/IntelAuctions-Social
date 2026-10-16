@@ -31,7 +31,7 @@ if (!function_exists('ias_voice_handle_post')) {
         $lines = preg_split('/\r\n|\r|\n/', (string) wp_unslash($_POST['ias_rules'] ?? ''));
         $r = ias_voice_notes_save(array_map('sanitize_text_field', $lines), $actor);
         if ($action === 'use_suggestion') delete_option('ias_voice_suggest');
-        $flash(esc_html(count($r['rules']) . ' house rule' . (count($r['rules']) === 1 ? '' : 's') . ' saved — every new draft and chat follows ' . (count($r['rules']) === 1 ? 'it' : 'them') . '.') . $refused($r['refused']), $r['refused'] ? 'warning' : 'success');
+        $flash(esc_html(count($r['rules']) === 0 ? 'No house rules saved — drafts and chat follow the facts and the plugin\'s own rules.' : count($r['rules']) . ' house rule' . (count($r['rules']) === 1 ? '' : 's') . ' saved — every new draft and chat follows ' . (count($r['rules']) === 1 ? 'it' : 'them') . '.') . $refused($r['refused']), $r['refused'] ? 'warning' : 'success');
         break;
 
       case 'discard_suggestion':

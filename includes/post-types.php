@@ -10,26 +10,31 @@
 
 if (!defined('ABSPATH')) exit;
 
+/*
+ * One name per type everywhere a person reads it (0.27.0, from the UI review:
+ * the calendar, Settings and the Log each had their own). `short` is kept as a
+ * key because the screens read it; it now says the same as `label`.
+ */
 if (!function_exists('ias_post_types')) {
   function ias_post_types(): array {
     return (array) apply_filters('ias_post_types', [
       'roundup' => [
-        'label' => 'New This Week', 'short' => 'Roundup', 'lane' => 'A', 'guaranteed' => true, 'droppable' => false,
+        'label' => 'New This Week', 'short' => 'New This Week', 'lane' => 'A', 'guaranteed' => true, 'droppable' => false,
         'window' => 'Friday → Friday → Saturday',
         'what'   => 'Every Friday that a listing entered Recently Announced that week: one post naming every new sale, with a collage of their brochure covers.',
       ],
       'listing' => [
-        'label' => 'Listing Posted', 'short' => 'Listing', 'lane' => 'B', 'guaranteed' => true, 'droppable' => false,
+        'label' => 'Listing', 'short' => 'Listing', 'lane' => 'B', 'guaranteed' => true, 'droppable' => false,
         'window' => 'promotion day → same day → +7 days',
         'what'   => 'When a listing moves to Upcoming (and has photos): up to 10 photos, the key details, open houses, auction type, the lead and their phone.',
       ],
       'open_house' => [
-        'label' => 'Open House', 'short' => 'Open house', 'lane' => 'B', 'guaranteed' => false, 'droppable' => true,
+        'label' => 'Open House', 'short' => 'Open House', 'lane' => 'B', 'guaranteed' => false, 'droppable' => true,
         'window' => '7 days before → 5 → 3',
         'what'   => 'Each open house: the property video when there is one, otherwise 3–5 photos the listing post did not use; the time range and how long it runs.',
       ],
       'auction_week' => [
-        'label' => 'Auction Week', 'short' => 'Auction week', 'lane' => 'B', 'guaranteed' => false, 'droppable' => true,
+        'label' => 'Auction Week', 'short' => 'Auction Week', 'lane' => 'B', 'guaranteed' => false, 'droppable' => true,
         'window' => '10 days before → 7 → 3',
         'what'   => 'The sale itself: different photos, an urgency angle, the auction time and how bidding works. Same-day sales share one post.',
       ],
@@ -39,12 +44,12 @@ if (!function_exists('ias_post_types')) {
         'what'   => 'When a listing moves to Past with a sale price: the featured photo with the price over it, the name, address, date and result. Liquidations get a thank-you post with no price.',
       ],
       'manual' => [
-        'label' => 'Your post', 'short' => 'Yours', 'lane' => '', 'guaranteed' => true, 'droppable' => false,
+        'label' => 'Your post', 'short' => 'Your post', 'lane' => '', 'guaranteed' => true, 'droppable' => false,
         'window' => 'where a person puts it',
         'what'   => 'Written on the Social Calendar by a person (New post): their words, or a draft Claude wrote for them to check, on the networks they tick. Pinned where they put it; the plan counts it and works around it, and when it stands for one of a listing\'s own posts that post is turned off.',
       ],
       'human' => [
-        'label' => 'Human post', 'short' => 'Human', 'lane' => '', 'guaranteed' => true, 'droppable' => false,
+        'label' => 'Human post', 'short' => 'Human post', 'lane' => '', 'guaranteed' => true, 'droppable' => false,
         'window' => '—',
         'what'   => 'Posted by a person straight to the page or in OneUp. Never moved or dropped; the plan works around it.',
       ],
@@ -60,6 +65,14 @@ if (!function_exists('ias_post_type')) {
     $weights = (array) ias_setting('weights', []);
     $def['weight'] = isset($weights[$type]) ? (int) $weights[$type] : 0;
     return $def;
+  }
+}
+
+/** "Listing post", "Your post" — a type's name as a noun, never "Your post post". */
+if (!function_exists('ias_post_noun')) {
+  function ias_post_noun(string $type): string {
+    $short = (string) ias_post_type($type)['short'];
+    return preg_match('/\bpost$/i', $short) ? $short : $short . ' post';
   }
 }
 
@@ -198,7 +211,7 @@ if (!function_exists('ias_post_when')) {
 /** Division keys → the names the team uses. */
 if (!function_exists('ias_division_label')) {
   function ias_division_label(string $division): string {
-    $labels = ['farm_home' => 'Farm & Home', 'investment_rec' => 'Investment & Recreation', 'intel' => 'Intel general'];
+    $labels = ['farm_home' => 'Farm & Home', 'investment_rec' => 'Investment & Recreation', 'intel' => 'Intel general', 'mixed' => 'Several divisions']; // 'intel' feeds the facts fingerprint: never rename it
     return $labels[$division] ?? $division;
   }
 }

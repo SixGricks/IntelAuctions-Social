@@ -104,7 +104,7 @@ ias_settings_update(['master' => true]);
 t_eq('A person\'s own post is never rewritten — change its words, or talk it over.', ias_generate_post($mid)['error'] ?? '', 'the system never rewrites it');
 
 $view = $page(['post' => $mid]);
-t_ok(strpos($view, 'Yours post') !== false || strpos($view, 'Yours post ·') !== false || strpos($view, 'Your') !== false, 'its page opens');
+t_ok(strpos($view, 'Your post ·') !== false && strpos($view, 'Your post post') === false, 'its page opens, named once');
 t_ok(strpos($view, 'Save networks') !== false && strpos($view, 'Delete this post') !== false && strpos($view, 'Stands for the listing') !== false, '…with where it goes, what it stands for, and Delete');
 t_ok(strpos($view, '>Rewrite<') === false, '…and no Rewrite: the system never rewrites a person\'s post');
 

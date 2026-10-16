@@ -129,7 +129,7 @@ $html = $calendar();
 $pv = $preview($html, $aid);
 $p = ias_post_get($aid);
 t_ok(is_array($pv), 'each post on the calendar carries its preview');
-t_eq('Listing Posted · 12 Alpha Road', $pv['head'] ?? '', '…its type and listing');
+t_eq('Listing · 12 Alpha Road', $pv['head'] ?? '', '…its type and listing');
 t_eq(date_i18n('D M j, g:i a', strtotime((string) $p['scheduled_at'])), $pv['when'] ?? '', '…when it goes');
 t_ok(strpos((string) ($pv['note'] ?? ''), 'Pushed') === 0, '…where it stands (' . ($pv['note'] ?? '') . ')');
 t_eq(mb_substr(trim((string) $p['content']['text']), 0, 60), mb_substr((string) ($pv['text'] ?? ''), 0, 60), '…its words');

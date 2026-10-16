@@ -237,7 +237,7 @@ if (!function_exists('ias_skip_details')) {
   function ias_skip_details(array $p): string {
     if (!in_array($p['status'], ['planned', 'held', 'waiting', 'approved', 'dropped', 'failed'], true) || $p['type'] === 'human') return '';
     return '<details class="ias-skip"><summary>Turn this post off…</summary>'
-      . ias_post_action_form($p, 'skip', 'Turn it off', 'button', '<input type="text" name="ias_why" placeholder="Why? (optional)" class="regular-text" style="width:220px">') . '</details>';
+      . ias_post_action_form($p, 'skip', 'Turn it off', 'button', '<input type="text" name="ias_why" aria-label="Why turn it off (optional)" placeholder="Why? (optional)" class="regular-text" style="width:220px">') . '</details>';
   }
 }
 
@@ -301,6 +301,12 @@ add_action('ias_post_view_bar', function (array $p): void {
   } elseif ($p['lane'] === 'A' && $p['status'] === 'planned' && $text !== '' && !ias_post_needs_decision($p)) {
     $level = 'info';
     $lines = '<p><strong>Approve first.</strong> This post carries hard facts, so it waits for a yes — it is emailed for one as soon as its draft is clean, or approve it here.</p>';
+  } elseif ($p['status'] === 'held') {
+    // Held with no reason on record (the plugin never does this itself — insurance): never a bar with nothing to press.
+    $level = 'error';
+    $lines = '<p><strong>Needs a decision — this post goes nowhere until someone decides.</strong> ' . esc_html((string) $p['note'] !== '' ? (string) $p['note'] : 'No reason was recorded.') . '</p>'
+      . '<p>Check it and press <strong>Save changes</strong>' . ($p['type'] !== 'manual' ? ', press <strong>Rewrite</strong>' : '') . ' — or, if it is right as it is, <strong>Keep as written</strong>.</p>';
+    $buttons = $rewrite . ($text !== '' && !ias_has_verify($c) ? $form('release', 'Keep as written', 'button', '', 'Keep this draft exactly as it is?') : '');
   }
   // Past its time without going out: Publish now (instant.php), beside whatever else the bar says.
   $pub = function_exists('ias_publish_now_state') && $p['status'] !== 'held' ? ias_publish_now_state($p) : null;

@@ -20,6 +20,24 @@ keep approval links valid across reminders.
 - `tests/wp/08d-hardening.php` is back in the suite (its section on the
   reverted two-minute guard dropped); new `tests/wp/08h-unread-email.php`.
 
+**From the UI review (Oct 16):**
+- *One name per post type everywhere:* New This Week, Listing, Open House,
+  Auction Week, Results, Your post, Human post — the calendar, Settings, the
+  Log, the hover preview and the emails no longer say "Roundup", "Listing
+  Posted" or "Yours post" for the same thing (`ias_post_noun()`).
+- *Files are chosen, not typed:* the listing's **Brochure cover** and the
+  **Brand font** open the Media Library (`ias_media_field()`); the same id is
+  saved.
+- *Easier to read and to hit:* the calendar's grey text is WordPress's
+  description grey (`#646970`), and each post's on/off switch has a 34×26
+  target. Settings' number, time and tag boxes and the post's **Why?** box
+  carry names for screen readers.
+- *Plain words:* "Lane A" is gone from Settings; a post about several sales
+  says "Several divisions"; saving no house rules says so; a video upload's
+  hitch no longer ends in "..".
+- *A post held with no reason on record* still gets a bar with Rewrite and
+  Keep as written, never an empty one.
+
 **From the Social bug review (Oct 16):**
 - *Bidding check:* a denial counts only when it governs the words ("no onsite
   auction", "not an in-person sale"); "Don't miss this Intel Phone Bidding

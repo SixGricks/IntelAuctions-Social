@@ -1316,7 +1316,7 @@ add_action('ia_missing_video_row', function ($row) {
     $x = (array) $rec['xfer'];
     // The toolkit's "On its way" line above says where it is going; this says which file, and any hitch.
     echo '<span class="description"><strong>' . esc_html((string) ($rec['file_name'] ?? 'The video')) . '</strong> (' . esc_html(size_format((int) ($rec['file_size'] ?? 0))) . ')'
-      . (!empty($x['error']) ? ' — not on OneUp\'s storage yet: ' . esc_html((string) $x['error']) . '. Tried again within the hour.' : ' — being sent on now.') . '</span>';
+      . (!empty($x['error']) ? ' — not on OneUp\'s storage yet: ' . esc_html(rtrim((string) $x['error'], '. ')) . '. Tried again within the hour.' : ' — being sent on now.') . '</span>';
   } elseif (in_array($state, ['', 'uploading', 'ready'], true)) {
     $block = ias_youtube_upload_blockers();
     if ($block) {

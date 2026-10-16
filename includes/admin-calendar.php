@@ -326,7 +326,7 @@ if (!function_exists('ias_calendar_render_post')) {
     foreach (array_slice((array) $p['listing_ids'], 0, 3) as $lid) {
       $bits[] = '<a href="' . esc_url((string) get_edit_post_link((int) $lid, '')) . '" title="Edit the listing">' . esc_html(html_entity_decode(get_the_title((int) $lid), ENT_QUOTES, 'UTF-8')) . '</a>';
     }
-    ia_ui_header($def['short'] . ' post · ' . ias_post_subject($p), implode(' · ', $bits), $back);
+    ia_ui_header(ias_post_noun((string) $p['type']) . ' · ' . ias_post_subject($p), implode(' · ', $bits), $back);
     ias_header_end();
     echo ias_switches_strip(true);
     if (function_exists('ias_pulse_pill')) echo ias_pulse_pill(); // when OneUp was last heard from (instant.php)
