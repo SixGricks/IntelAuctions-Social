@@ -1,5 +1,18 @@
 # Intel Auctions Social changelog
 
+## 0.27.1 (2026-10-21) — YouTube uploads on OneUp's new storage
+- **Verify for YouTube failed on the live account** (Oct 21, 2026): OneUp now
+  hands out upload addresses on Cloudflare R2
+  (`<account>.us.r2.cloudflarestorage.com`), and the check that only OneUp's
+  own bucket may receive a video (0.24.1) knew only DigitalOcean Spaces and S3,
+  so it refused the address. `ias_youtube_bucket()` now reads R2 buckets
+  (`r2:<account>:<bucket>`, path-style or virtual-hosted, with or without a
+  jurisdiction) and R2 public addresses (`r2dev:pub-…`); Verify learns the
+  bucket as before, and another bucket — or the same name on another R2
+  account — is still refused.
+- The refusal now says which address it was: the upload address or the
+  file's public address.
+
 ## 0.27.0 (2026-10-16) — posts nobody has read; the audit's open items
 DJ's answers to the Oct 15 audit (Oct 16, 2026): a daily email for Lane B posts;
 keep approval links valid across reminders.

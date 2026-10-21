@@ -406,14 +406,14 @@ if (!function_exists('ias_youtube_upload_address')) {
     $path = (string) $find($r['data'], 'file_path');
     if (!preg_match('#^https://#', $up) || !preg_match('#^https://#', $path)) return ['error' => 'OneUp did not hand over an upload address (its plan may not include uploads — the Basic plan does not).'];
     // Only OneUp's own storage (0.24.1): the file, and the server's PUT and HEAD, never go to a host a tampered answer names.
-    // A storage service (DigitalOcean Spaces, S3) is anyone's, so it is OneUp's own bucket there that counts: the one Verify for
+    // A storage service (DigitalOcean Spaces, S3, Cloudflare R2) is anyone's, so it is OneUp's own bucket there that counts: the one Verify for
     // YouTube found (or, before any Verify, the first one OneUp named), kept in `ias_youtube_storage`.
     if (!get_option('ias_youtube_storage')) {
       $learn = array_values(array_unique(array_filter([ias_youtube_bucket($up), ias_youtube_bucket($path)])));
       if ($learn) update_option('ias_youtube_storage', $learn, false);
     }
-    foreach ([$up, $path] as $u) {
-      if (!ias_youtube_host_ok($u)) return ['error' => 'OneUp handed over an address outside its own storage (' . (string) parse_url($u, PHP_URL_HOST) . ') — refused. If OneUp moved its storage, run Verify for YouTube again (it learns the new bucket).'];
+    foreach (['upload address' => $up, 'file\'s public address' => $path] as $which => $u) {
+      if (!ias_youtube_host_ok($u)) return ['error' => 'OneUp handed over an ' . $which . ' outside its own storage (' . (string) parse_url($u, PHP_URL_HOST) . ') — refused. If OneUp moved its storage, run Verify for YouTube again (it learns the new bucket).'];
     }
     return ['upload_url' => $up, 'file_path' => $path];
   }
@@ -421,7 +421,9 @@ if (!function_exists('ias_youtube_upload_address')) {
 
 /**
  * The storage bucket an address is in — 'do:<region>:<bucket>' on DigitalOcean
- * Spaces, 's3:<bucket>' on S3, virtual-hosted or path-style — or '' for any
+ * Spaces, 's3:<bucket>' on S3, 'r2:<account>:<bucket>' on Cloudflare R2 (where
+ * OneUp moved its uploads, Oct 2026; 0.27.1), virtual-hosted or path-style,
+ * 'r2dev:<subdomain>' for an R2 bucket's public r2.dev address — or '' for any
  * other address. Pure.
  */
 if (!function_exists('ias_youtube_bucket')) {
@@ -436,13 +438,19 @@ if (!function_exists('ias_youtube_bucket')) {
       $bucket = ($m[1] ?? '') !== '' ? $m[1] : $first;
       return $bucket !== '' ? 's3:' . $bucket : '';
     }
+    // R2: <account>[.<jurisdiction>].r2.cloudflarestorage.com/<bucket>/… or <bucket>.<account>….
+    if (preg_match('/^(?:([a-z0-9][a-z0-9.-]*)\.)?([0-9a-f]{32})(?:\.[a-z]+)?\.r2\.cloudflarestorage\.com$/', $host, $m)) {
+      $bucket = ($m[1] ?? '') !== '' ? $m[1] : $first;
+      return $bucket !== '' ? 'r2:' . $m[2] . ':' . $bucket : '';
+    }
+    if (preg_match('/^(pub-[0-9a-f]{32})\.r2\.dev$/', $host, $m)) return 'r2dev:' . $m[1];
     return '';
   }
 }
 
 /**
  * Is this address on OneUp's storage? Its own domain, or OneUp's own bucket on
- * DigitalOcean Spaces / S3 (`ias_youtube_storage`, learned from OneUp's first
+ * DigitalOcean Spaces / S3 / Cloudflare R2 (`ias_youtube_storage`, learned from OneUp's first
  * answer and again by each Verify for YouTube; more through the
  * `ias_youtube_storage_buckets` filter) — never just any bucket there, since
  * anyone can own one. Hosts of the `ias_youtube_upload_hosts` filter are

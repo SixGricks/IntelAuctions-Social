@@ -140,7 +140,7 @@ it, and the spec stays verbatim, so they are recorded here:
   part of a single property workflow"; DJ is on Vimeo Starter, which has no
   file links, so Vimeo plays no part). `youtube.php`: the file reaches
   OneUp's storage (`uploadmedia`) by the route **Verify for YouTube** finds
-  (`ias_youtube_route`): the live account's storage, on DigitalOcean, answers
+  (`ias_youtube_route`): the live account's storage, on DigitalOcean (Cloudflare R2 from Oct 21, 2026 — `ias_youtube_bucket()` knows both), answers
   every browser 403 (no CORS rule at all — Oct 14, 2026), so the file goes
   **through the website in 8 MB pieces** (each far under Elementor Cloud's
   256 MB and Cloudflare's 100 MB request caps), and once whole the website
