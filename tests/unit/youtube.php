@@ -121,6 +121,18 @@ t_ok(ias_youtube_host_ok('https://www.oneupapp.io/files/z'), 'OneUp itself');
 t_ok(!ias_youtube_host_ok('https://attacker.sfo3.digitaloceanspaces.com/x'), 'someone else\'s bucket on the same service: refused (anyone can own one)');
 t_ok(!ias_youtube_host_ok('https://evil.s3.amazonaws.com/x'), '…on S3 too');
 t_ok(!ias_youtube_host_ok('https://attacker.example/x'), 'anywhere else: refused');
+// OneUp moved its uploads to Cloudflare R2 (Oct 21, 2026, the live account's Verify for YouTube; 0.27.1).
+$r2 = 'https://c57bd303d0fb8ca83fccdf27b67787be.us.r2.cloudflarestorage.com/oneup-media/api-uploads/v.mp4?X-Amz-Signature=1';
+t_eq('r2:c57bd303d0fb8ca83fccdf27b67787be:oneup-media', ias_youtube_bucket($r2), 'an R2 bucket, path-style with a jurisdiction');
+t_eq('r2:c57bd303d0fb8ca83fccdf27b67787be:oneup-media', ias_youtube_bucket('https://oneup-media.c57bd303d0fb8ca83fccdf27b67787be.r2.cloudflarestorage.com/api-uploads/v.mp4'), '…and virtual-hosted: the same bucket');
+t_eq('r2dev:pub-0123456789abcdef0123456789abcdef', ias_youtube_bucket('https://pub-0123456789abcdef0123456789abcdef.r2.dev/api-uploads/v.mp4'), 'an R2 public address');
+t_eq('', ias_youtube_bucket('https://c57bd303d0fb8ca83fccdf27b67787be.us.r2.cloudflarestorage.com/'), 'R2 with no bucket: none');
+t_ok(!ias_youtube_host_ok($r2), 'R2 not yet learned: refused, as before');
+update_option('ias_youtube_storage', ['r2:c57bd303d0fb8ca83fccdf27b67787be:oneup-media']);
+t_ok(ias_youtube_host_ok($r2), 'once Verify learned OneUp\'s R2 bucket: allowed');
+t_ok(!ias_youtube_host_ok('https://c57bd303d0fb8ca83fccdf27b67787be.us.r2.cloudflarestorage.com/attacker/x'), '…another bucket on the same account: refused');
+t_ok(!ias_youtube_host_ok('https://ffffffffffffffffffffffffffffffff.r2.cloudflarestorage.com/oneup-media/x'), '…the same bucket name on another account: refused');
+update_option('ias_youtube_storage', ['do:sfo3:oneupdata', 's3:oneupdata']);
 t_ok(!ias_youtube_host_ok('https://evil-oneupapp.io/x'), 'a look-alike that merely ends with the name: refused');
 t_ok(!ias_youtube_host_ok('http://oneupdata.sfo3.digitaloceanspaces.com/x'), 'not https: refused');
 t_ok(!ias_youtube_host_ok(''), 'nothing: refused');
