@@ -9,6 +9,9 @@ require_once IAS_PATH . 'includes/content.php';
 
 $tz = ia_wp_tz();
 $d = function (string $s) use ($tz) { return new DateTimeImmutable($s, $tz); };
+// The clock pinned to before these posts' days: a post is written as of its own day only while that day is ahead
+// (ias_post_written_at()), so on the real clock these checks began failing once Nov 3, 2026 had passed.
+$GLOBALS['ias_stub_filters']['ias_now'][] = function () use ($d) { return $d('2026-11-02 05:30'); };
 $farm = ['id' => 1, 'title' => '7 Mill Road', 'excerpt' => 'A 60-acre farm with a bank barn.', 'kind' => 'real_estate', 'size_raw' => '60 acres', 'acres' => 60.0,
   'division' => 'farm_home', 'date' => $d('2026-11-12 10:00'), 'price' => '', 'open_houses' => [['n' => 1, 'start' => $d('2026-11-05 13:00'), 'hours' => 2]]];
 $keys = function (array $post, array $facts) { return array_keys(ias_templates_fitting($post, $facts)); };
@@ -62,3 +65,5 @@ t_ok(in_array('list', $k, true) && in_array('w_spotlight', $k, true) && in_array
 t_ok(!in_array('w_spotlight', $keys(['type' => 'roundup', 'slot_key' => 'roundup:x'], [$farm]), true), '…a spotlight only with more than one sale');
 t_eq('Hunting ground', ias_template_label('l_hunting'), 'labels for the screens');
 t_ok(strpos(ias_prompt_rules(), '"SOLD" on a Results post') !== false, 'the voice allows "SOLD" in capitals on a Results post');
+
+unset($GLOBALS['ias_stub_filters']['ias_now']); // the next file runs on its own clock

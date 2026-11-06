@@ -267,7 +267,7 @@ if (!function_exists('ias_admin_styles')) {
       .ias-pulse.is-ok .ias-pulse-dot{background:#00a32a}.ias-pulse.is-error .ias-pulse-dot{background:#d63638}.ias-pulse.is-new .ias-pulse-dot{background:#dba617}
       .ias-pulse.is-error{color:#8a2424}.ias-pulse.is-new{color:#1d2327;font-weight:600}
       .ias-pulse [hidden]{display:none!important}
-      .ias-move{margin-top:6px}.ias-move summary{cursor:pointer;color:#2271b1}.ias-move form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+      .ias-move{margin-top:6px}.ias-move summary{cursor:pointer;color:#2271b1}.ias-move form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}.ias-move label{display:block;width:100%}.ias-move select{display:block;width:100%;max-width:100%;margin-top:2px;text-overflow:ellipsis}/* a % width: long slot names never widen the details table or a phone page */.ias-move .ias-bump{margin-top:6px;padding-top:6px;border-top:1px solid #f0f0f1}
       .ias-post [hidden],.ias-bar [hidden]{display:none!important} /* the .button display of WordPress beats the hidden attribute */
       .ias-switches-fold{margin:10px 0 16px}.ias-switches-fold summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
       .ias-switches-fold summary::-webkit-details-marker{display:none}.ias-switches-fold summary .ias-switch{font-size:13px}
