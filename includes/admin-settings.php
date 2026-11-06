@@ -47,10 +47,10 @@ if (!function_exists('ias_settings_sanitize')) {
     $networks = [];
     foreach (array_keys(ias_settings_defaults()['networks']) as $ch) {
       $networks[$ch] = ['on' => !empty($in['networks'][$ch]['on']), 'account' => isset($in['networks'][$ch]['account']) ? substr(sanitize_text_field((string) $in['networks'][$ch]['account']), 0, 200) : (string) ($old['networks'][$ch]['account'] ?? '')];
-      if ($ch === 'gbp') {
+      if ($ch === 'gbp' || $ch === 'linkedin') { // LinkedIn as Google (0.29.0): its page's name and which posts go
         $all = array_keys(ias_settings_defaults()['types']);
         $networks[$ch]['types'] = isset($in['networks'][$ch]['types']) ? array_values(array_intersect($all, array_map('strval', (array) $in['networks'][$ch]['types']))) : [];
-        // The location's name in OneUp's lists (the read-back finds its posts by it): from the directory, never typed.
+        // The location's (or page's) name in OneUp's lists (the read-back finds its posts by it): from the directory, never typed.
         $acct = function_exists('ias_oneup_directory_account') ? ias_oneup_directory_account($networks[$ch]['account']) : null;
         $networks[$ch]['name'] = $acct ? (string) $acct['name'] : ($networks[$ch]['account'] === (string) ($old['networks'][$ch]['account'] ?? '') ? (string) ($old['networks'][$ch]['name'] ?? '') : '');
       }
@@ -273,10 +273,12 @@ if (!function_exists('ias_settings_handle_post')) {
     }
     if ($changed) ias_log('settings', 0, ['changed' => $changed], ias_actor());
     if (function_exists('ias_dry_run_switched_off') && ias_dry_run_switched_off()) update_option('ias_dry_run_retired', ['off' => []] + (array) get_option('ias_dry_run_retired', []), false); // the notice has been read
+    $lp = get_option('ias_linkedin_previewed', []);
+    if (is_array($lp) && !empty($lp['was_on']) && empty($lp['seen'])) update_option('ias_linkedin_previewed', ['seen' => true] + $lp, false); // LinkedIn's notice (0.29.0) has been read
 
     $html = '<div class="notice notice-success"><p>Settings saved' . ($changed ? ' (' . esc_html(implode(', ', $changed)) . ')' : ' — nothing changed') . '.</p></div>';
     // A switch is on or off, and the change goes to OneUp now: what was switched off comes back off, what was switched on goes.
-    $switches = function (array $x) { return wp_json_encode([!empty($x['master']), !empty($x['paused']), (array) ($x['types'] ?? []), !empty($x['networks']['gbp']['on']), (array) ($x['networks']['gbp']['types'] ?? [])]); };
+    $switches = function (array $x) { return wp_json_encode([!empty($x['master']), !empty($x['paused']), (array) ($x['types'] ?? []), !empty($x['networks']['gbp']['on']), (array) ($x['networks']['gbp']['types'] ?? []), !empty($x['networks']['linkedin']['on']), (array) ($x['networks']['linkedin']['types'] ?? [])]); };
     if ($switches($old) !== $switches(ias_settings()) && function_exists('ias_push_switched')) {
       $words = ias_push_switched_words(ias_push_switched());
       if ($words !== '') $html .= '<div class="notice notice-info"><p><strong>OneUp</strong> — ' . esc_html($words) . '</p></div>';
@@ -405,14 +407,32 @@ if (!function_exists('ias_settings_render')) {
       . '<br><span class="description">' . ($known ? 'The channel\'s playlists, as Verify for YouTube last read them.' : 'Verify for YouTube reads the channel\'s playlists; choose one here afterwards.') . ' A playlist such as "Properties for auction" keeps the walkthroughs together on the channel.</span></td></tr>';
     echo '</table>';
 
-    echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram, X and LinkedIn are set up but cannot post yet — that needs a later release giving each one its own Verify. Tick <strong>Show a preview</strong> to see, on each post\'s page, the words and pictures it would get. A preview is not a switch: nothing goes to these networks. Choose each one\'s account from the OneUp category above.</p><table class="form-table" role="presentation">';
+    // LinkedIn (0.29.0): sent like Google — one switch, once its own Verify has passed, to the Intel Auctions page only.
+    $l = ias_channel_settings('linkedin');
+    $lstate = function_exists('ias_li_blockers') ? ias_li_blockers() : [];
+    $lp = get_option('ias_linkedin_previewed', []);
+    echo '<h2 id="ias-linkedin">LinkedIn</h2>';
+    if (is_array($lp) && !empty($lp['was_on']) && empty($lp['seen'])) echo '<div class="notice notice-warning inline"><p><strong>LinkedIn posts now.</strong> Its switch used to show a preview only; the update turned it off so that nothing started posting by itself. Choose the page, press <a href="#ias-verify-linkedin">Verify for LinkedIn</a>, then turn it on here. (This note goes once Settings is saved.)</p></div>';
+    echo '<p class="description" style="max-width:760px">Each post can also go to the Intel Auctions page on LinkedIn, through OneUp: the Facebook words with the listing link at the end, up to 9 pictures (or the property video), two minutes after the Facebook post. It goes to the one page chosen here — the OneUp category also holds other companies\' LinkedIn pages, and they never get anything.</p><table class="form-table" role="presentation">';
+    echo '<tr><th scope="row">LinkedIn posts</th><td>' . $check('ias[networks][linkedin][on]', $l['on'], '<strong>On</strong> — post to LinkedIn',
+      'Needs the master switch on and <a href="#ias-verify-linkedin">Verify for LinkedIn</a> to have passed for the page chosen below. ' . ($l['on'] && !$lstate ? ia_ui_badge('Posting', 'ok') : ($l['on'] ? ia_ui_badge('Not yet', 'warn') . ' ' . esc_html(ucfirst(implode('; ', $lstate))) . '.' : ''))) . '</td></tr>';
+    echo '<tr><th scope="row"><label for="ias-net-linkedin">Page</label></th><td><select id="ias-net-linkedin" name="ias[networks][linkedin][account]" class="ias-pick ias-acct-pick">' . $pick['ias-net-linkedin'] . '</select>'
+      . ($l['name'] !== '' && !ias_oneup_directory_account($l['account']) ? ' ' . ia_ui_badge($l['name'], 'ok') : '') . '<br><span class="description">The Intel Auctions LinkedIn page in the category above.</span></td></tr>';
+    echo '<tr><th scope="row">Which posts</th><td>';
+    foreach (ias_post_types() as $type => $def) {
+      if (in_array($type, ['human', 'manual'], true)) continue; // a person's post goes where they tick it
+      echo '<label style="display:inline-block;margin:0 14px 6px 0"><input type="checkbox" name="ias[networks][linkedin][types][]" value="' . esc_attr($type) . '" ' . checked(in_array($type, $l['types'], true), true, false) . '> ' . esc_html($def['short']) . '</label>';
+    }
+    echo '<br><span class="description">Each type still needs its own switch on (Safety switches, above) before it goes anywhere. A post you write on the calendar goes to LinkedIn when you tick LinkedIn on it.</span></td></tr>';
+    echo '</table>';
+
+    echo '<h2>More networks</h2><p class="description" style="max-width:760px">Instagram and X are set up but cannot post yet — that needs a later release giving each one its own Verify. Tick <strong>Show a preview</strong> to see, on each post\'s page, the words and pictures it would get. A preview is not a switch: nothing goes to these networks. Choose each one\'s account from the OneUp category above.</p><table class="form-table" role="presentation">';
     foreach (ias_channels() as $ch => $rules) {
-      if (in_array($ch, ['facebook', 'gbp'], true)) continue;
+      if (in_array($ch, ['facebook', 'gbp', 'linkedin'], true)) continue; // LinkedIn posts (its own section, above)
       $n = (array) (($s['networks'] ?? [])[$ch] ?? []);
       $what = [
         'instagram' => 'The Facebook words with “link in our bio” (Instagram captions carry no links), square pictures, up to 10.',
         'x'         => 'One short line made from the listing\'s facts, the link and up to 4 pictures, within 280 characters.',
-        'linkedin'  => 'The Facebook words with the link at the end, up to 9 pictures.',
       ][$ch] ?? '';
       echo '<tr><th scope="row">' . esc_html((string) $rules['label']) . '</th><td>'
         . $check('ias[networks][' . $ch . '][on]', !empty($n['on']), 'Show a preview for ' . esc_html((string) $rules['label']) . ' <span class="description">(not posted)</span>')

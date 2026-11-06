@@ -17,10 +17,17 @@ it, and the spec stays verbatim, so they are recorded here:
   (4.67.0). The spec's "API key stored in wp-config" is superseded.
 - **More networks are provisioned** (Oct 13, 2026: "provision for more social
   networks now. At least Instagram, X, and LinkedIn"). `includes/channels.php`
-  holds their rules and renderers; they are **previewed only** (their switch
+  holds their rules and renderers; Instagram and X are **previewed only** (their switch
   shows a preview tab, and is not a posting switch — 0.12.0). Making one live
   needs its own Verify and its own sent record
-  (`flags.oneup` is Facebook's) — never reuse Facebook's. X's words come from
+  (`flags.oneup` is Facebook's) — never reuse Facebook's. **LinkedIn went live
+  in 0.29.0** (Nov 6, 2026: the Intel Auctions page connected in OneUp, "the
+  posts are not hitting"; every post type, DJ's choice): `includes/linkedin.php`
+  mirrors `gbp.php` — its own switch, Verify (`ias_linkedin_verify`) and record
+  (`flags.li`, `li_*`), two minutes after Facebook, and **only to the page
+  chosen, by its id**: the Intel category on OneUp also holds other
+  companies' LinkedIn pages. The update turned an old preview switch off once
+  (`ias_linkedin_previewed`) — an update never starts posting. X's words come from
   the facts (`ias_x_line()`), never from Claude's prose. Facebook's renderer
   (`ias_render_facebook()`) must not change output for the others' sake: its
   hash is what was sent.

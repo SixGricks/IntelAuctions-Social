@@ -359,4 +359,32 @@ t_eq([], ias_t_oneup_calls($n), 'master switch off, with everything of ours take
 $dir = ias_oneup_directory_fetch('admin');
 t_ok(isset($dir['error']) && count(ias_t_oneup_calls($n)) === 0, '…not even Look up accounts');
 
+// ---- 17. Codex on PR #16 (the same code LinkedIn copies): Send this version instead, and a lost answer before the master switch goes off ----
+ias_settings_update(['master' => true]);
+$save(['networks' => ['gbp' => ['on' => '1', 'account' => $GBP, 'types' => ['listing', 'open_house', 'auction_week', 'results']]]]);
+$f7 = $mk('7 Foxtrot Road', '2026-11-21 10:00');
+ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();
+$fp = $lp($f7);
+$gid = (int) ($gb($fp)['id'] ?? 0);
+t_ok($gid > 0, 'a sixth listing goes to Google');
+$S['scheduled'][$gid]['content'] = 'A person rewrote this in OneUp.';
+ias_push_run();
+t_ok(($lp($f7)['flags']['gbp_locked'] ?? '') !== '', 'a person edits its Google copy in OneUp: kept as they made it');
+$act('gbp_unlock', ['ias_post' => $fp['id']]);
+$n = count($S['calls']);
+ias_push_run();
+$fp = $lp($f7);
+$dels = array_map(function ($c) { return (string) $c['params']['post_id']; }, ias_t_oneup_calls($n, 'deletescheduledpost'));
+t_ok(in_array((string) $gid, $dels, true) && (int) ($gb($fp)['id'] ?? 0) !== $gid && strpos((string) ($S['scheduled'][(int) ($gb($fp)['id'] ?? 0)]['content'] ?? 'A person rewrote'), 'A person rewrote') === false, 'Send this version to Google instead: the person\'s copy is replaced by the plugin\'s, by its id');
+$g8 = $mk('8 Golf Lane', '2026-11-20 10:00');
+ias_sync(); ias_drafts_run(30); ias_plan_run();
+$S['lose_answer'] = 2; // Facebook's and Google's answers both lost
+ias_push_run();
+t_ok(!empty($lp($g8)['flags']['gbp_sending']) && empty($lp($g8)['flags']['gbp']), 'Google\'s answer lost: only the attempt is known');
+$ong = function () use ($GNAME) { return array_keys(array_filter($GLOBALS['ias_t_oneup']['scheduled'], function ($r) use ($GNAME) { return $r['social_network_username'] === $GNAME && strpos((string) $r['content'], '8 Golf Lane') !== false; })); };
+t_eq(1, count($ong()), '…though OneUp did take it');
+ias_settings_update(['master' => false]);
+ias_push_run();
+t_eq([], $ong(), 'master switch off before the next run: the copy OneUp took is found on its list and taken back — never left to publish');
+
 ias_t_oneup_off();

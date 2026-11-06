@@ -47,7 +47,7 @@ if (!function_exists('ias_settings_defaults')) {
       'unread_hour'  => 7,
 
       // More networks (DJ, Oct 13, 2026). Google Business Profile is sent (0.9.0): `on` posts it, once
-      // Verify for Google has passed; YouTube takes the property videos (0.22.0). Instagram, X and LinkedIn
+      // Verify for Google has passed; YouTube takes the property videos (0.22.0). Instagram and X
       // are not sent yet: `on` shows a preview only.
       'networks' => [
         'gbp'       => ['on' => false, 'account' => '', 'name' => '', 'types' => ['listing', 'open_house', 'auction_week', 'results']],
@@ -55,7 +55,8 @@ if (!function_exists('ias_settings_defaults')) {
         'youtube'   => ['on' => false, 'account' => '', 'name' => '', 'playlist' => '', 'playlist_name' => ''],
         'instagram' => ['on' => false, 'account' => ''],
         'x'         => ['on' => false, 'account' => ''],
-        'linkedin'  => ['on' => false, 'account' => ''],
+        // LinkedIn (0.29.0): sent like Google, once Verify for LinkedIn has passed — every post type (DJ, Nov 6, 2026).
+        'linkedin'  => ['on' => false, 'account' => '', 'name' => '', 'types' => ['listing', 'open_house', 'auction_week', 'results', 'roundup']],
       ],
 
       // OneUp (the key: Settings → OneUp, or INTEL_ONEUP_API_KEY in wp-config, which wins).
