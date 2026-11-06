@@ -196,6 +196,23 @@ ias_t_oneup_publish((int) $li($bp)['id']);
 ias_push_run();
 t_ok(!empty($li($lp($b))['published']), 'published on LinkedIn: noted on the post');
 
+// ---- 11b. Send this version instead replaces a copy a person changed in OneUp (Codex, PR #16) ----
+$b = $mk('8 Foxtrot Road', '2026-11-21 10:00');
+ias_sync(); ias_drafts_run(30); ias_plan_run(); ias_push_run();
+$bp = $lp($b);
+$lid = (int) $li($bp)['id'];
+$S['scheduled'][$lid]['content'] = 'A person rewrote this in OneUp.';
+ias_push_run();
+$bp = $lp($b);
+t_ok(($bp['flags']['li_locked'] ?? '') !== '' && $li($bp)['id'] == $lid, 'a LinkedIn copy a person edited in OneUp is kept as they made it');
+$act('li_unlock', ['ias_post' => $bp['id']]);
+$n = count($S['calls']);
+ias_push_run();
+$bp = $lp($b);
+$dels = array_map(function ($c) { return (string) $c['params']['post_id']; }, ias_t_oneup_calls($n, 'deletescheduledpost'));
+t_ok(in_array((string) $lid, $dels, true) && (int) $li($bp)['id'] !== $lid && isset($S['scheduled'][(int) $li($bp)['id']]), 'Send this version to LinkedIn instead: the person\'s copy is replaced by the plugin\'s, by its id');
+t_ok(strpos((string) $S['scheduled'][(int) $li($bp)['id']]['content'], 'A person rewrote') === false, '…with the plugin\'s words');
+
 // ---- 12. A person's own post with LinkedIn ticked goes to LinkedIn ----
 $d = $mk('5 Delta Drive', '2026-11-25 10:00');
 ias_sync(); ias_drafts_run(30); ias_plan_run();
@@ -205,6 +222,21 @@ t_ok($mid > 0, 'a person\'s own post, Facebook and LinkedIn ticked' . (empty($r[
 ias_push_run();
 $m = ias_post_get($mid);
 t_ok(!empty($li($m)['id']) && ias_post_sent($m)['mode'] === 'live', '…goes to both');
+
+// ---- 12b. An answer lost, then the master switch off: the copy OneUp took is still taken back (Codex, PR #16) ----
+$e = $mk('9 Echo Lane', '2026-11-23 10:00');
+ias_sync(); ias_drafts_run(30); ias_plan_run();
+$S['lose_answer'] = 2; // Facebook's and LinkedIn's answers both lost
+ias_push_run();
+$ep = $lp($e);
+t_ok(!empty($ep['flags']['li_sending']) && empty($ep['flags']['li']), 'LinkedIn\'s answer lost: only the attempt is known');
+$onli = function () { return array_keys(array_filter($GLOBALS['ias_t_oneup']['scheduled'], function ($r) { return $r['social_network_username'] === 'Intel Auctions' && strpos((string) $r['content'], '9 Echo Lane') !== false; })); };
+t_ok(count($onli()) === 1, '…though OneUp did take it');
+ias_settings_update(['master' => false]);
+ias_push_run();
+t_eq([], $onli(), 'master switch off before the next run: the copy OneUp took is found on its list and taken back — never left to publish');
+ias_settings_update(['master' => true]);
+ias_push_run(); // on again: everything goes back
 
 // ---- 13. LinkedIn posts switched off: its copies come back off ----
 $n = count($S['calls']);

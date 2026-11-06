@@ -31,7 +31,16 @@ type.
   LinkedIn again** / **Send this version to LinkedIn instead**; the hourly
   run, the instant push after a change, the open calendar's minute-by-minute
   check and Publish now all include LinkedIn. Instagram and X stay previews.
-- Tests: new `tests/wp/08k-linkedin.php` (46 checks); the fake OneUp can
+- **Two fixes for LinkedIn and Google alike** (from Codex's review of the pull
+  request — LinkedIn copies Google's code, and both had them):
+  - An answer OneUp lost, then the master switch off before the next run: the
+    read-back cannot run, and the take-back skipped a post that only had the
+    attempt — so a copy OneUp did take could publish with everything off. Now
+    the attempt is looked for on OneUp's list first and, if there, taken back.
+  - **Send this version … instead** after a person changed the copy in OneUp
+    only unlocked it: the stored hash still matched, so nothing was replaced.
+    It now clears the hash, and the next push replaces the copy by its id.
+- Tests: new `tests/wp/08k-linkedin.php` (52 checks; `07c-google.php` gains the two fixes); the fake OneUp can
   list the Intel Auctions page and another company's page
   (`$S['linkedin']`); `07b-networks.php` updated for LinkedIn no longer being
   a preview.

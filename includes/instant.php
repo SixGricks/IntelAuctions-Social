@@ -577,6 +577,7 @@ add_action('ias_calendar_action', function (string $action): void {
     case 'gbp_unlock':
       if (empty($flags['gbp_locked'])) return;
       unset($flags['gbp_locked']);
+      if (!empty($flags['gbp'])) $flags['gbp']['hash'] = ''; // OneUp has a person's version, not the one hashed: the next push replaces it (Codex, PR #16)
       ias_post_update($id, ['flags' => $flags]);
       ias_post_trail($id, 'Google: the plugin\'s version goes to Google again', $actor);
       $flash('Google gets the plugin\'s version of this post again.');
@@ -585,6 +586,7 @@ add_action('ias_calendar_action', function (string $action): void {
     case 'li_unlock':
       if (empty($flags['li_locked'])) return;
       unset($flags['li_locked']);
+      if (!empty($flags['li'])) $flags['li']['hash'] = ''; // OneUp has a person's version, not the one hashed: the next push replaces it (Codex, PR #16)
       ias_post_update($id, ['flags' => $flags]);
       ias_post_trail($id, 'LinkedIn: the plugin\'s version goes to LinkedIn again', $actor);
       $flash('LinkedIn gets the plugin\'s version of this post again.');

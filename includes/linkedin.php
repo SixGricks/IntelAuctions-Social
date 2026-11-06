@@ -503,6 +503,13 @@ if (!function_exists('ias_li_one')) {
     if ($p['type'] === 'human') return;
     ['nowsql' => $nowsql, 'until' => $until, 'floor' => $floor] = $c;
     $flags = $p['flags'];
+    // An attempt whose answer was lost, while the read-back cannot run (the master switch off): look for it on
+    // OneUp's list now, so a copy OneUp did take is taken back like any other — never left to publish (Codex, PR #16).
+    if (empty($flags['li']) && !empty($flags['li_sending']) && ias_li_blockers_read() && !ias_oneup_takeback_blockers()) {
+      $try = (array) $flags['li_sending'];
+      $found = ias_li_find_scheduled((string) ($try['text'] ?? ''), (string) ($try['when'] ?? ''));
+      if ($found !== null && $found !== '') { $p = ias_li_adopt_attempt($p, $found); $flags = $p['flags']; }
+    }
     $g = (array) ($flags['li'] ?? []);
     $at = (string) ($p['scheduled_at'] ?? '');
     if ($p['status'] === 'published' || ($at !== '' && $at <= $nowsql)) return; // its time came: it stays as it went
