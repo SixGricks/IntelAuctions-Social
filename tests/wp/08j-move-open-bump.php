@@ -42,6 +42,15 @@ $act = function (string $action, int $id, array $post) {
 };
 wp_set_current_user(1);
 t_ok(count($wins) >= 3, 'three posting windows to choose from');
+$gap = 60 * (int) ias_setting('min_gap_hours', 3);
+$spaced = function (int $id) use ($gap) { // every post that day at least the gap from this one (Codex on PR #15: not only the fixed ones)
+  $p = ias_post_get($id); $at = (string) $p['scheduled_at']; $m = ias_hm_to_min(substr($at, 11, 5)); $near = [];
+  foreach (ias_posts_query(['from' => substr($at, 0, 10), 'to' => substr($at, 0, 10), 'limit' => 50]) as $o) {
+    if ((int) $o['id'] === $id || empty($o['scheduled_at']) || !in_array($o['status'], array_merge(ias_live_statuses(), ['published', 'human']), true)) continue;
+    if (abs(ias_hm_to_min(substr((string) $o['scheduled_at'], 11, 5)) - $m) < $gap) $near[] = (int) $o['id'];
+  }
+  return $near;
+};
 
 // ---- The slots Move offers ----
 $a = ias_post_get($ids[0]);
@@ -53,6 +62,13 @@ $sunday = array_filter($slots, function ($s) { return date('N', strtotime($s['da
 t_eq([], array_values($sunday), 'never a Sunday');
 $hard = ias_post_hard_end($a);
 t_ok($hard !== null && max(array_column($slots, 'day')) <= $hard, 'never past its own event (a Listing post: the day before its sale)');
+// Never a day whose windows ias_move_problem() would refuse: the horizon's own day is past now + 30 days by then (Codex on PR #15).
+$free = ias_move_slots(['id' => 0, 'type' => 'manual', 'slot_key' => 'manual:x', 'flags' => []]);
+$lastday = max(array_column($free, 'day'));
+t_ok($lastday < ias_now()->modify('+' . max(30, (int) ias_setting('plan_days', 30)) . ' days')->format('Y-m-d'), 'the last day offered is before the horizon\'s day (' . $lastday . ')');
+$bad = 0;
+foreach ($free as $s) if ($s['open'] && ias_move_problem($s['day'] . ' ' . ias_min_to_hm($wins[$s['si']]['b'])) !== '' && $s['day'] !== ias_now()->format('Y-m-d')) $bad++;
+t_eq(0, $bad, '…and every open slot offered is a time a move accepts');
 $clash = 0;
 foreach ($open as $s) foreach (ias_posts_query(['from' => $s['day'], 'to' => $s['day'], 'limit' => 50]) as $o) {
   if ((int) $o['id'] !== $ids[0] && in_array($o['status'], ias_live_statuses(), true) && ias_slot_index($wins, ias_hm_to_min(substr((string) $o['scheduled_at'], 11, 5))) === $s['si']) $clash++;
@@ -73,6 +89,7 @@ $fl = $act('move_open', $ids[0], ['ias_open' => $o['day'] . '|' . $o['si']]);
 t_eq([$o['day'], $o['si']], $where($ids[0]), 'moved into the open slot it was given');
 t_eq($o['day'] . ' ' . substr((string) ias_post_get($ids[0])['scheduled_at'], 11, 5), (string) ias_post_get($ids[0])['flags']['pinned'], '…pinned there');
 t_eq($before, $times([$ids[0]]), '…and nothing else moved');
+t_eq([], $spaced($ids[0]), '…at least the gap from every post that day, planned ones too (they do not move out of its way)');
 t_ok(strpos($fl, 'Moved to') !== false, '…and the page says so');
 
 // A slot a post has is not open: refused, nothing changes.
@@ -95,6 +112,7 @@ t_eq([$pick['day'], $pick['si']], $where($ids[0]), 'this post took the bumped po
 t_eq($mine, $where($bid), '…and the bumped post went where it was told (here, a swap)');
 t_ok(!empty(ias_post_get($bid)['flags']['pinned']) && !empty(ias_post_get($ids[0])['flags']['pinned']), '…both pinned there');
 t_eq($before, $times([$ids[0], $bid]), '…nothing else moved');
+t_eq([[], []], [$spaced($ids[0]), $spaced($bid)], '…and both keep the gap from every post on their days');
 t_ok(strpos($fl, 'Bumped <strong>') !== false, 'the page names the bumped post');
 $trail = implode(' ', array_column((array) (ias_post_get($bid)['flags']['trail'] ?? []), 'what'));
 t_ok(strpos($trail, 'Bumped by') !== false || strpos(wp_json_encode(ias_post_get($bid)['flags']), 'Bumped by') !== false, '…and the bumped post\'s history says who bumped it');
@@ -123,3 +141,19 @@ if ($other) {
 // Without choosing where it goes: refused.
 $fl = $act('move_bump', $ids[1], ['ias_bump' => $pick['day'] . '|' . $pick['si'] . '|' . $bid]);
 t_ok(strpos($fl, 'choose where the bumped post goes') !== false, 'a bump needs a place for the bumped post');
+
+// ---- Codex's case on PR #15: a planned neighbour just past the window still keeps its 3 hours ----
+ias_settings_update(['slots' => [['08:00', '10:30'], ['11:00', '13:00'], ['19:00', '21:00']]]);
+$day = date('Y-m-d', strtotime('2026-11-02 +10 days'));
+while (date('N', strtotime($day)) === '7' || ias_posts_query(['from' => $day, 'to' => $day, 'limit' => 5])) $day = date('Y-m-d', strtotime($day . ' +1 day'));
+$y = ias_post_get($ids[5]);
+$yf = (array) $y['flags']; unset($yf['pinned'], $yf['pinned_by'], $yf['edited_by'], $yf['released_by'], $yf['oneup']);
+ias_post_update($ids[5], ['status' => 'planned', 'scheduled_at' => $day . ' 11:05:00', 'flags' => $yf]); // planned, not held in place
+$x = ias_post_get($ids[6]);
+$offer = null;
+foreach (ias_move_slots($x) as $s) if ($s['day'] === $day && $s['si'] === 0) $offer = $s;
+t_ok($offer && $offer['open'], 'the morning before a planned 11:05 post is offered: there is room up to 8:05');
+$fl = $act('move_open', $ids[6], ['ias_open' => $day . '|0']);
+$m = ias_hm_to_min(substr((string) ias_post_get($ids[6])['scheduled_at'], 11, 5));
+t_ok(substr((string) ias_post_get($ids[6])['scheduled_at'], 0, 10) === $day && $m <= 665 - $gap, 'moved there at ' . ias_min_to_hm($m) . ', three hours clear of the planned 11:05 post');
+t_eq($day . ' 11:05:00', (string) ias_post_get($ids[5])['scheduled_at'], '…which stays where it was');

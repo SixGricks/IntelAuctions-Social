@@ -101,6 +101,20 @@ if (!function_exists('ias_move_fixed')) {
   }
 }
 
+/** The minutes of every post on $day (planned or out) but those in $except. */
+if (!function_exists('ias_move_day_minutes')) {
+  function ias_move_day_minutes(string $day, array $except): array {
+    $except = array_map('intval', $except);
+    $out = [];
+    foreach (ias_posts_query(['from' => $day, 'to' => $day, 'limit' => 50]) as $o) {
+      $at = (string) ($o['scheduled_at'] ?? '');
+      if ($at === '' || substr($at, 0, 10) !== $day || in_array((int) $o['id'], $except, true)) continue;
+      if (in_array($o['status'], array_merge(ias_live_statuses(), ['published', 'human']), true)) $out[] = ias_hm_to_min(substr($at, 11, 5));
+    }
+    return $out;
+  }
+}
+
 /**
  * Move a post into a posting window on a day (DJ, Oct 14, 2026: "drag posts
  * around on the calendar and choose the morning, afternoon, or evening time
@@ -110,7 +124,7 @@ if (!function_exists('ias_move_fixed')) {
  * Returns ['ok' => bool, 'message' => html, 'when' => 'Y-m-d H:i', 'level'].
  */
 if (!function_exists('ias_move_to_window')) {
-  function ias_move_to_window(array $p, string $day, int $si, string $actor, array $also_except = []): array {
+  function ias_move_to_window(array $p, string $day, int $si, string $actor, array $also_except = [], bool $clear_of_all = false): array {
     $no = function (string $why) { return ['ok' => false, 'message' => 'Not moved: ' . esc_html($why), 'when' => '', 'level' => 'error']; };
     if (!ias_movable($p)) return $no('this post cannot be moved now.');
     $w = ias_windows()[$si] ?? null;
@@ -122,7 +136,10 @@ if (!function_exists('ias_move_to_window')) {
     $soon = $now->modify('+15 minutes');
     $not_before = $day === $soon->format('Y-m-d') ? ias_hm_to_min($soon->format('H:i')) : ($day < $soon->format('Y-m-d') ? 24 * 60 : 0);
     $fixed = ias_move_fixed($day, array_merge([(int) $p['id']], $also_except));
-    $m = ias_slot_minute($w['a'], $w['b'], (string) $p['slot_key'], (int) ias_setting('jitter_minutes', 25), array_column($fixed, 0), 60 * (int) ias_setting('min_gap_hours', 3), $not_before);
+    // An open-slot move or a bump promises nothing else moves (0.28.0), so its minute keeps clear of every post that
+    // day, as ias_move_slots() checked; a drag keeps clear of the fixed ones and the plan moves the rest out of its way.
+    $taken = $clear_of_all ? ias_move_day_minutes($day, array_merge([(int) $p['id']], $also_except)) : array_column($fixed, 0);
+    $m = ias_slot_minute($w['a'], $w['b'], (string) $p['slot_key'], (int) ias_setting('jitter_minutes', 25), $taken, 60 * (int) ias_setting('min_gap_hours', 3), $not_before);
     $label = strtolower($w['name']);
     if ($m === null) {
       if ($not_before > $w['b']) return $no('the ' . $label . ' has passed ' . ($day === $now->format('Y-m-d') ? 'for today' : 'that day') . ' — choose a later time.');
@@ -244,7 +261,8 @@ if (!function_exists('ias_move_slots')) {
     $now = ias_now();
     $soon = $now->modify('+15 minutes');
     $today = $now->format('Y-m-d');
-    $last = $now->modify('+' . max(30, (int) ias_setting('plan_days', 30)) . ' days')->format('Y-m-d');
+    // The day before the horizon: ias_move_problem() takes nothing past now + N days, so that day's windows would only fail.
+    $last = $now->modify('+' . (max(30, (int) ias_setting('plan_days', 30)) - 1) . ' days')->format('Y-m-d');
     $hard = ias_post_hard_end($p);
     if ($hard !== null && $hard < $last) $last = $hard;
     if ($last < $today) return [];
@@ -375,9 +393,9 @@ if (!function_exists('ias_move_bump')) {
     foreach (ias_move_slots($b, [(int) $p['id']]) as $s) if ($s['day'] === $to_day && $s['si'] === $to_si) $free = $s['open'];
     if (!$free) return $no('that slot is no longer open for the bumped post — open Move again.');
     $before = ['scheduled_at' => $bat, 'flags' => (array) $b['flags'], 'status' => (string) $b['status'], 'note' => (string) $b['note']];
-    $r1 = ias_move_to_window($b, $to_day, $to_si, $actor, [(int) $p['id']]);
+    $r1 = ias_move_to_window($b, $to_day, $to_si, $actor, [(int) $p['id']], true);
     if (!$r1['ok']) return $r1;
-    $r2 = ias_move_to_window(ias_post_get((int) $p['id']) ?: $p, $day, $si, $actor);
+    $r2 = ias_move_to_window(ias_post_get((int) $p['id']) ?: $p, $day, $si, $actor, [], true);
     if (!$r2['ok']) { // put the bumped post back where it was
       ias_post_update((int) $b['id'], $before);
       ias_post_trail((int) $b['id'], 'Put back: the post that bumped it could not take its place', $actor);
@@ -434,7 +452,7 @@ add_action('ias_calendar_action', function (string $action): void {
       $still = false;
       foreach (ias_move_slots($p) as $s) if ($s['day'] === $v[0] && $s['si'] === (int) $v[1]) $still = $s['open'];
       if (!$still) { $flash('Not moved: that slot is no longer open — open Move again, or bump the post that took it.', 'error'); return; }
-      $r = ias_move_to_window($p, $v[0], (int) $v[1], $actor);
+      $r = ias_move_to_window($p, $v[0], (int) $v[1], $actor, [], true);
     } else {
       $v = $pick('ias_bump', 3);
       $to = $pick('ias_bump_to', 2);

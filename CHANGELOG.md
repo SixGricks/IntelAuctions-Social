@@ -16,6 +16,11 @@ be moved it."
   nothing else moves, and the bumped post is put back if the second move
   cannot be made. A slot that filled meanwhile, or a place past the bumped
   post's event, is refused.
+- An open-slot move and a bump place each post at least the gap from **every**
+  post that day (`ias_move_day_minutes()`), as the list checked — not only from
+  the posts the plan cannot move, since nothing else moves out of the way; and
+  the list ends the day before the horizon, so it never offers a time
+  `ias_move_problem()` refuses (both from Codex's review of the pull request).
 - Tests: new `tests/wp/08j-move-open-bump.php`; `tests/unit/templates.php`
   pins its clock (its Nov 3–4 checks failed on the real clock once those days
   passed).
