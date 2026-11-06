@@ -1,5 +1,41 @@
 # Intel Auctions Social changelog
 
+## 0.29.0 (2026-11-06) — LinkedIn posts, not just a preview
+DJ, Nov 6, 2026: the Intel Auctions LinkedIn page is connected in OneUp
+(`urn:li:organization:144101021`, in the Intel category) "but the posts are
+not hitting" — LinkedIn was a preview only. His choices: build it, every post
+type.
+- **LinkedIn is sent** (`includes/linkedin.php`), built the way Google is: its
+  own switch (`networks.linkedin.on`, off at install), its own **Verify for
+  LinkedIn** (`ias_linkedin_verify`), its own record (`flags.li`,
+  `li_sending`, `li_fails`, `li_error`, `li_locked`, `li_off`, `li_was`,
+  `li_missing`) — never Facebook's or Google's — and every Facebook rule on
+  those books: one push run at a time, never twice, replaced and taken back
+  only by id, a person's move, edit or delete in OneUp kept, off means off.
+- **Only the Intel Auctions page**: the Intel category on OneUp also holds
+  three other companies' LinkedIn pages; a post goes to the one page chosen,
+  by its id.
+- **The words** are the Facebook words with the listing link at the end
+  (`ias_channel_text()`), up to 9 landscape pictures or the video, **two
+  minutes after the Facebook post** (`ias_render_linkedin()`; Google takes
+  one), so no two networks' copies are one row on OneUp's list.
+- **Every post type** at install (`networks.linkedin.types`); a person's own
+  post goes when LinkedIn is ticked on it (and ticking it again turns
+  `li_off` back off).
+- **The update turns an old preview switch off** (`ias_linkedin_previewed`):
+  where LinkedIn's switch was on it only previewed; it now posts, and an
+  update never starts posting. Settings says so until it is next saved.
+- Settings: a **LinkedIn** section (switch, page from the list, which posts);
+  **Verify for LinkedIn** under OneUp connection; the post page's LinkedIn tab
+  says where it stands, with **Keep this one off LinkedIn** / **Send it to
+  LinkedIn again** / **Send this version to LinkedIn instead**; the hourly
+  run, the instant push after a change, the open calendar's minute-by-minute
+  check and Publish now all include LinkedIn. Instagram and X stay previews.
+- Tests: new `tests/wp/08k-linkedin.php` (46 checks); the fake OneUp can
+  list the Intel Auctions page and another company's page
+  (`$S['linkedin']`); `07b-networks.php` updated for LinkedIn no longer being
+  a preview.
+
 ## 0.28.0 (2026-11-06) — Move shows open slots, or bumps a post
 DJ, Nov 6, 2026: "When i go in to move a post, I only want to see open slots,
 or an option to 'bump a post' and then it asks where the 'bumped Post' should

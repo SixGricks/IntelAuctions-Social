@@ -198,7 +198,7 @@ if (!function_exists('ias_oneup_no_route')) {
 if (!function_exists('ias_oneup_verify_leftovers')) {
   function ias_oneup_verify_leftovers(): array {
     $ids = array_map('strval', (array) get_option('ias_oneup_verify_leftovers', []));
-    foreach (['ias_oneup_verify', 'ias_gbp_verify', 'ias_youtube_verify'] as $opt) {
+    foreach (['ias_oneup_verify', 'ias_gbp_verify', 'ias_youtube_verify', 'ias_linkedin_verify'] as $opt) {
       $v = get_option($opt, []);
       if (!is_array($v) || empty($v['steps'])) continue;
       $failed = false; $id = '';
@@ -712,6 +712,8 @@ if (!function_exists('ias_readback_note')) {
  * written to OneUp for real until it has passed for the page set now.
  * $ch 'gbp' runs the same round trip for the Google location (Verify for
  * Google, recorded in `ias_gbp_verify`) — Google's own, never Facebook's — and
+ * $ch 'linkedin' for the LinkedIn page (Verify for LinkedIn, `ias_linkedin_verify`,
+ * 0.29.0) — LinkedIn's own, a text draft for that one page — and
  * $ch 'youtube' for the YouTube channel (Verify for YouTube, `ias_youtube_verify`,
  * 0.22.0): its draft is a video post with a title and no file, and it also sends
  * a 42-byte test file to the upload address OneUp hands over
@@ -731,10 +733,11 @@ if (!function_exists('ias_oneup_verify')) {
     $step = function (string $label, ?bool $ok, string $detail) use (&$steps) { $steps[] = ['label' => $label, 'ok' => $ok, 'detail' => $detail]; return $ok; };
     $gbp = $ch === 'gbp';
     $yt = $ch === 'youtube';
+    $li = $ch === 'linkedin';
     $cat = (string) ias_setting('oneup_category_id', '');
-    $acct = $gbp ? ias_channel_settings('gbp')['account'] : ($yt ? ias_youtube_settings()['account'] : (string) ias_setting('oneup_account_id', ''));
+    $acct = $gbp || $li ? ias_channel_settings($ch)['account'] : ($yt ? ias_youtube_settings()['account'] : (string) ias_setting('oneup_account_id', ''));
     $tz_offset = null;
-    $block = $gbp ? ias_gbp_blockers_read() : ($yt ? ias_youtube_blockers_read() : ias_oneup_blockers(false));
+    $block = $gbp ? ias_gbp_blockers_read() : ($yt ? ias_youtube_blockers_read() : ($li ? ias_li_blockers_read() : ias_oneup_blockers(false)));
     if ($block) {
       $step('Ready to call OneUp', false, 'Not yet: ' . implode('; ', $block) . '. (The master switch must be on. Nothing posts while the post types are off.)');
       return ias_oneup_verify_save($steps, $by, null, $ch);
@@ -749,13 +752,13 @@ if (!function_exists('ias_oneup_verify')) {
         if ((string) $aid === $acct) { $name = $aname; $type = (string) ($row['social_network_type'] ?? $row['type'] ?? ''); }
       }
     }
-    $right = $gbp || $yt ? ias_oneup_type_is($ch, $type) : strcasecmp($type, 'facebook') === 0;
-    if (!$step($gbp ? 'The Google Business Profile location' : ($yt ? 'The YouTube channel' : 'The Facebook page'), $name !== '' && $right,
+    $right = $gbp || $yt || $li ? ias_oneup_type_is($ch, $type) : strcasecmp($type, 'facebook') === 0;
+    if (!$step($gbp ? 'The Google Business Profile location' : ($yt ? 'The YouTube channel' : ($li ? 'The LinkedIn page' : 'The Facebook page')), $name !== '' && $right,
       is_wp_error($accts) ? 'OneUp did not list the category\'s accounts: ' . $accts->get_error_message()
-      : ($name === '' ? 'Account ' . $acct . ' is not in category ' . $cat . '.' : $name . ' (' . ($type !== '' ? $type : 'type not given') . ')' . ($right ? '' : ($gbp ? ' — that is not a Google Business Profile.' : ($yt ? ' — that is not a YouTube channel.' : ' — that is not a Facebook page.')))))) {
+      : ($name === '' ? 'Account ' . $acct . ' is not in category ' . $cat . '.' : $name . ' (' . ($type !== '' ? $type : 'type not given') . ')' . ($right ? '' : ($gbp ? ' — that is not a Google Business Profile.' : ($yt ? ' — that is not a YouTube channel.' : ($li ? ' — that is not a LinkedIn page.' : ' — that is not a Facebook page.'))))))) {
       return ias_oneup_verify_save($steps, $by, null, $ch);
     }
-    if ($gbp || $yt) {
+    if ($gbp || $yt || $li) {
       $nets = (array) ias_setting('networks', []);
       $nets[$ch]['name'] = $name;
       ias_settings_update(['networks' => $nets]);
@@ -881,10 +884,11 @@ if (!function_exists('ias_oneup_verify_save')) {
     $ok = (bool) $steps && !in_array(false, array_column($steps, 'ok'), true) && !in_array(null, array_column($steps, 'ok'), true) && $tz_offset === 0;
     $gbp = $ch === 'gbp';
     $yt = $ch === 'youtube';
+    $li = $ch === 'linkedin';
     $result = ['at' => ias_now_sql(), 'by' => $by, 'ok' => $ok, 'steps' => $steps, 'tz_offset' => $tz_offset,
-      'category' => (string) ias_setting('oneup_category_id', ''), 'account' => $gbp ? ias_channel_settings('gbp')['account'] : ($yt ? ias_youtube_settings()['account'] : (string) ias_setting('oneup_account_id', '')), 'key' => ias_oneup_key_print()];
-    update_option($gbp ? 'ias_gbp_verify' : ($yt ? 'ias_youtube_verify' : 'ias_oneup_verify'), $result, false);
-    ias_log('readback', 0, ['summary' => ($gbp ? 'Verify for Google: ' : ($yt ? 'Verify for YouTube: ' : 'Verify OneUp: ')) . ($ok ? 'every step passed' : 'a step failed — see Settings')], $by);
+      'category' => (string) ias_setting('oneup_category_id', ''), 'account' => $gbp || $li ? ias_channel_settings($ch)['account'] : ($yt ? ias_youtube_settings()['account'] : (string) ias_setting('oneup_account_id', '')), 'key' => ias_oneup_key_print()];
+    update_option($gbp ? 'ias_gbp_verify' : ($yt ? 'ias_youtube_verify' : ($li ? 'ias_linkedin_verify' : 'ias_oneup_verify')), $result, false);
+    ias_log('readback', 0, ['summary' => ($gbp ? 'Verify for Google: ' : ($yt ? 'Verify for YouTube: ' : ($li ? 'Verify for LinkedIn: ' : 'Verify OneUp: '))) . ($ok ? 'every step passed' : 'a step failed — see Settings')], $by);
     return $result;
   }
 }

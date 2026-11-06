@@ -26,7 +26,7 @@ function ias_t_reset(): void {
     wp_delete_post((int) $id, true);
   }
   unset($GLOBALS['ias_youtube_index']); // every file runs in one process: nothing read before this reset may carry over
-  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_youtube_verify', 'ias_youtube_playlists', 'ias_youtube_route'] as $o) delete_option($o);
+  foreach (['ias_installed_at', 'ias_live_since', 'ias_last_plan', 'ias_last_plan_summary', 'ias_last_review', 'ias_last_reminders', 'ias_push_mode', 'ias_readback_last', 'ias_oneup_verify', 'ias_gbp_verify', 'ias_gbp_mode', 'ias_linkedin_verify', 'ias_linkedin_previewed', 'ias_oneup_directory', 'ias_pulse', 'ias_oneup_id_form', 'ias_oneup_verify_leftovers', 'ias_push_lock', 'ias_oneup_api_key', 'ias_voice_notes', 'ias_voice_suggest', 'ias_voice_learned', 'ias_voice_pruned', 'ias_youtube_verify', 'ias_youtube_playlists', 'ias_youtube_route'] as $o) delete_option($o);
   if (function_exists('ias_youtube_tmp_dir') && ($tmpdir = ias_youtube_tmp_dir()) !== '') foreach ((array) glob($tmpdir . '/*.part') as $f) @unlink((string) $f);
   delete_transient('ias_youtube_tmp_sweep');
   $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ias\\_yt\\_xfer\\_%'");
@@ -360,7 +360,10 @@ function ias_t_oneup(): void {
         return $json(200, ['accounts' => array_merge([
           ['category_id' => 42, 'social_network_name' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )', 'social_network_id' => 'accounts/1/locations/2', 'social_network_type' => 'GBP'],
           ['category_id' => 42, 'social_network_name' => $fb, 'social_network_id' => 'fb_123', 'social_network_type' => 'Facebook'],
-        ], $S['youtube'] ? [['category_id' => 42, 'social_network_name' => (string) $S['yt'], 'social_network_id' => 'UC2tfTuFO9diTgaaeozmDLKg', 'social_network_type' => 'YouTube']] : [])]);
+        ], !empty($S['linkedin']) ? [ // LinkedIn (0.29.0): the Intel Auctions page — and another company's page in the same category, as on the live account
+          ['category_id' => 42, 'social_network_name' => 'Intel Auctions', 'social_network_id' => 'urn:li:organization:144101021', 'social_network_type' => 'LinkedIn'],
+          ['category_id' => 42, 'social_network_name' => 'George E. Ley Co.', 'social_network_id' => 'urn:li:organization:15962879', 'social_network_type' => 'LinkedIn'],
+        ] : [], $S['youtube'] ? [['category_id' => 42, 'social_network_name' => (string) $S['yt'], 'social_network_id' => 'UC2tfTuFO9diTgaaeozmDLKg', 'social_network_type' => 'YouTube']] : [])]);
       case 'uploadmedia': // a presigned address for the file, and where it will be (OneUp's docs)
         if ((int) $S['upload_code'] === 403) return $json(403, ['error' => true, 'message' => 'Media upload is not available on the Basic plan.']);
         $u = 'u' . (count($S['uploads']) + 1);
@@ -386,7 +389,7 @@ function ias_t_oneup(): void {
         $row = ['post_id' => $id, 'content' => (string) ($params['content'] ?? ''), 'source_url' => 'NA',
           'date_time' => date('Y-m-d H:i:s', strtotime((string) $params['scheduled_date_time']) + 3600 * (int) $S['tz_shift']),
           'category_name' => 'Intel', 'video_url' => (string) ($params['video_url'] ?? 'NA'), 'content_image' => (string) ($params['image_url'] ?? 'NA'),
-          'social_network_username' => ['fb_123' => $fb, 'accounts/1/locations/2' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )', 'UC2tfTuFO9diTgaaeozmDLKg' => (string) $S['yt']][(string) ($params['social_network_id'] ?? '')] ?? 'someone else', 'first_comment' => (string) ($params['first_comment'] ?? ''),
+          'social_network_username' => ['fb_123' => $fb, 'accounts/1/locations/2' => 'Intel Auctions (5940 Plank Road  Narvon  PA  US )', 'UC2tfTuFO9diTgaaeozmDLKg' => (string) $S['yt'], 'urn:li:organization:144101021' => 'Intel Auctions', 'urn:li:organization:15962879' => 'George E. Ley Co.'][(string) ($params['social_network_id'] ?? '')] ?? 'someone else', 'first_comment' => (string) ($params['first_comment'] ?? ''),
           'google_post_type' => (string) ($params['google_post_type'] ?? ''), 'cta_button_url' => (string) ($params['cta_button_url'] ?? ''),
           'title' => (string) ($params['title'] ?? ''), '_sn' => (string) ($params['social_network_id'] ?? '')];
         if ($path === 'schedulevideopost' && ($params['isDraftPost'] ?? '') !== 'true' && (strpos((string) ($params['video_url'] ?? ''), 'amazonaws.com/oneupdata/') !== false || strpos((string) ($params['video_url'] ?? ''), 'digitaloceanspaces.com/') !== false) && empty($S['files'][(string) $params['video_url']])) {
