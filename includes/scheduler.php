@@ -341,6 +341,23 @@ if (!function_exists('ias_schedule')) {
   }
 }
 
+/**
+ * The last day a post may go out, even late (0.27.0, the bug review's SB-6):
+ * a Listing post by the day before its sale, an Auction Week post by its sale
+ * day, an Open House post by its open house; null = no such limit. Pure.
+ */
+if (!function_exists('ias_post_hard_end')) {
+  function ias_post_hard_end(array $r): ?string {
+    $meta = (array) ($r['flags']['meta'] ?? []);
+    $sale = (string) ($meta['sale_day'] ?? '');
+    $type = (string) ($r['type'] ?? '');
+    if ($type === 'listing' && $sale !== '') return ias_day_add($sale, -1);
+    if ($type === 'auction_week' && $sale !== '') return $sale;
+    if ($type === 'open_house' && (string) ($meta['oh_day'] ?? '') !== '') return (string) $meta['oh_day'];
+    return null;
+  }
+}
+
 /** "06:15" → 375. */
 if (!function_exists('ias_hm_to_min')) {
   function ias_hm_to_min(string $hm): int {
@@ -479,9 +496,7 @@ if (!function_exists('ias_engine_posts')) {
       $sale = (string) ($meta['sale_day'] ?? '');
       // Never after the event, even late (0.27.0, the bug review's SB-6): a Listing post by the day before its sale,
       // an Auction Week post by its sale day, an Open House post by its open house.
-      $hard = ($r['type'] === 'listing' && $sale !== '') ? ias_day_add($sale, -1)
-        : (($r['type'] === 'auction_week' && $sale !== '') ? $sale
-        : (($r['type'] === 'open_house' && (string) ($meta['oh_day'] ?? '') !== '') ? (string) $meta['oh_day'] : null));
+      $hard = ias_post_hard_end($r);
       $fixed = '';
       $pin = (string) ($r['flags']['pinned'] ?? ''); // a person moved it there (Move on its page): it stays, while that time is ahead
       if ($r['type'] === 'manual') { // a person's own post (0.25.0): it stays where they put it, and counts — when it is on the page at all

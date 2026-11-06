@@ -103,8 +103,13 @@ it, and the spec stays verbatim, so they are recorded here:
   evening time slot"). A drop, and the post's Move, choose a posting window
   (`ias_windows()`), never a free-typed minute by default: the post takes its
   own shifted minute there (`ias_slot_minute()`), pinned like a Move, clear of
-  the posts that stay put (`ias_move_fixed()`). The exact time stays on the
-  post's Move for a person who wants it. Phones use the post's Move (no drag).
+  the posts that stay put (`ias_move_fixed()`). Phones use the post's Move (no drag).
+  **The post's Move shows only open slots, or Bump a post** (Nov 6, 2026: "I
+  only want to see open slots, or an option to 'bump a post' and then it asks
+  where the 'bumped Post' should be moved"): `ias_move_slots()` lists the open
+  windows (no post, under the daily number, room, never Sunday or past the
+  post's event); a bump asks where the bumped post goes, moves it first, then
+  this one into its place (`ias_move_bump()`). No free-typed time on Move.
   **A move moves only that post** (Oct 14, 2026: "just move them and wait to
   run the agent until later … a bunch of changes without AI changing things
   at the same time"): no plan run — `ias_plan_hold()` makes the plan wait

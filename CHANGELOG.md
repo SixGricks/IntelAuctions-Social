@@ -1,5 +1,30 @@
 # Intel Auctions Social changelog
 
+## 0.28.0 (2026-11-06) — Move shows open slots, or bumps a post
+DJ, Nov 6, 2026: "When i go in to move a post, I only want to see open slots,
+or an option to 'bump a post' and then it asks where the 'bumped Post' should
+be moved it."
+- **Move…** on a post's page lists only the **open slots** (`ias_move_slots()`):
+  each day and posting window from now to the plan's horizon with no post in
+  it, the day under its daily number and room for the post clear of the
+  others — never Sunday, never a window gone, never after the post's own event
+  (`ias_post_hard_end()`, now shared with the scheduler). The free-typed time
+  is gone from Move (it stays only where no posting windows are set).
+- **Bump a post**: choose a slot one movable post has, then where that post
+  goes (an open slot, or where this post is now — a swap). The bumped post
+  moves first, this one takes its place (`ias_move_bump()`); both pinned,
+  nothing else moves, and the bumped post is put back if the second move
+  cannot be made. A slot that filled meanwhile, or a place past the bumped
+  post's event, is refused.
+- An open-slot move and a bump place each post at least the gap from **every**
+  post that day (`ias_move_day_minutes()`), as the list checked — not only from
+  the posts the plan cannot move, since nothing else moves out of the way; and
+  the list ends the day before the horizon, so it never offers a time
+  `ias_move_problem()` refuses (both from Codex's review of the pull request).
+- Tests: new `tests/wp/08j-move-open-bump.php`; `tests/unit/templates.php`
+  pins its clock (its Nov 3–4 checks failed on the real clock once those days
+  passed).
+
 ## 0.27.1 (2026-10-21) — YouTube uploads on OneUp's new storage
 - **Verify for YouTube failed on the live account** (Oct 21, 2026): OneUp now
   hands out upload addresses on Cloudflare R2

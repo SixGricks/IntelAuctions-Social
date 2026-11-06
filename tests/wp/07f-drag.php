@@ -9,8 +9,8 @@
  * Move, clear of the posts that stay where they are; the plan then makes
  * room at once, and OneUp follows for the post and for the ones moved out of
  * its way. Never on a Sunday, never a window already passed, never on top of
- * a post that stays. The post's own Move offers the same three choices (and
- * an exact time), for a phone.
+ * a post that stays. The post's own Move offers the open slots by day and
+ * time of day, or Bump a post (0.28.0), for a phone.
  */
 require_once dirname(__DIR__) . '/fixtures/wp-fixtures.php';
 global $wpdb;
@@ -142,9 +142,9 @@ $csent = ias_post_sent($cp);
 t_eq(substr((string) $cp['scheduled_at'], 0, 16), substr((string) ($S['scheduled'][(int) $csent['id']]['date_time'] ?? ''), 0, 16), '…and its copy on OneUp followed');
 t_ok(strpos($calendar(), 'The plan is waiting while you work') === false && !ias_plan_hold_get(), '…and the plan is no longer waiting');
 
-// ---- 7. The post's own Move: the same three choices, or an exact time ----
+// ---- 7. The post's own Move: open slots by day and time of day, or bump a post (0.28.0, DJ, Nov 6) ----
 $h = $view($cid);
-t_ok(substr_count($h, 'name="ias_slot"') === 4 && strpos($h, '<strong>Morning</strong>') !== false && strpos($h, '<strong>Evening</strong>') !== false && strpos($h, 'name="ias_time"') !== false, 'a post\'s Move offers the morning, afternoon and evening, or an exact time');
+t_ok(strpos($h, 'name="ias_open"') !== false && strpos($h, ' · Morning (') !== false && strpos($h, ' · Evening (') !== false && strpos($h, 'name="ias_time"') === false, 'a post\'s Move offers open slots — a day and its morning, afternoon or evening — and no free-typed time');
 $act('move', ['ias_post' => $cid, 'ias_day' => '2026-11-17', 'ias_slot' => '1']);
 $t = (string) ias_post_get($cid)['scheduled_at'];
 t_ok(substr($t, 0, 10) === '2026-11-17' && ias_slot_index($W, $min($t)) === 1, 'Move with the afternoon: an afternoon time that day (' . substr($t, 11, 5) . ')');

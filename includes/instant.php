@@ -80,12 +80,13 @@ if (!function_exists('ias_windows')) {
  * into a window keeps clear of these; the plan moves the rest out of its way.
  */
 if (!function_exists('ias_move_fixed')) {
-  function ias_move_fixed(string $day, int $except): array {
+  function ias_move_fixed(string $day, $except): array {
+    $except = array_map('intval', (array) $except); // one post, or several (a bump moves two: 0.28.0)
     $floor = ias_now()->modify('+' . (int) ias_setting('lead_hours', 48) . ' hours')->format('Y-m-d H:i:s');
     $out = [];
     foreach (ias_posts_query(['from' => $day, 'to' => $day, 'limit' => 50]) as $o) {
       $at = (string) ($o['scheduled_at'] ?? '');
-      if ((int) $o['id'] === $except || $at === '' || substr($at, 0, 10) !== $day) continue;
+      if (in_array((int) $o['id'], $except, true) || $at === '' || substr($at, 0, 10) !== $day) continue;
       if (!in_array($o['status'], array_merge(ias_live_statuses(), ['published', 'human']), true)) continue;
       $pin = (string) ($o['flags']['pinned'] ?? '');
       $fixed = in_array($o['status'], ['published', 'human'], true) || !empty($o['locked']) || ($pin !== '' && substr($pin, 0, 10) === $day)
@@ -100,6 +101,20 @@ if (!function_exists('ias_move_fixed')) {
   }
 }
 
+/** The minutes of every post on $day (planned or out) but those in $except. */
+if (!function_exists('ias_move_day_minutes')) {
+  function ias_move_day_minutes(string $day, array $except): array {
+    $except = array_map('intval', $except);
+    $out = [];
+    foreach (ias_posts_query(['from' => $day, 'to' => $day, 'limit' => 50]) as $o) {
+      $at = (string) ($o['scheduled_at'] ?? '');
+      if ($at === '' || substr($at, 0, 10) !== $day || in_array((int) $o['id'], $except, true)) continue;
+      if (in_array($o['status'], array_merge(ias_live_statuses(), ['published', 'human']), true)) $out[] = ias_hm_to_min(substr($at, 11, 5));
+    }
+    return $out;
+  }
+}
+
 /**
  * Move a post into a posting window on a day (DJ, Oct 14, 2026: "drag posts
  * around on the calendar and choose the morning, afternoon, or evening time
@@ -109,7 +124,7 @@ if (!function_exists('ias_move_fixed')) {
  * Returns ['ok' => bool, 'message' => html, 'when' => 'Y-m-d H:i', 'level'].
  */
 if (!function_exists('ias_move_to_window')) {
-  function ias_move_to_window(array $p, string $day, int $si, string $actor): array {
+  function ias_move_to_window(array $p, string $day, int $si, string $actor, array $also_except = [], bool $clear_of_all = false): array {
     $no = function (string $why) { return ['ok' => false, 'message' => 'Not moved: ' . esc_html($why), 'when' => '', 'level' => 'error']; };
     if (!ias_movable($p)) return $no('this post cannot be moved now.');
     $w = ias_windows()[$si] ?? null;
@@ -120,8 +135,11 @@ if (!function_exists('ias_move_to_window')) {
     $now = ias_now();
     $soon = $now->modify('+15 minutes');
     $not_before = $day === $soon->format('Y-m-d') ? ias_hm_to_min($soon->format('H:i')) : ($day < $soon->format('Y-m-d') ? 24 * 60 : 0);
-    $fixed = ias_move_fixed($day, (int) $p['id']);
-    $m = ias_slot_minute($w['a'], $w['b'], (string) $p['slot_key'], (int) ias_setting('jitter_minutes', 25), array_column($fixed, 0), 60 * (int) ias_setting('min_gap_hours', 3), $not_before);
+    $fixed = ias_move_fixed($day, array_merge([(int) $p['id']], $also_except));
+    // An open-slot move or a bump promises nothing else moves (0.28.0), so its minute keeps clear of every post that
+    // day, as ias_move_slots() checked; a drag keeps clear of the fixed ones and the plan moves the rest out of its way.
+    $taken = $clear_of_all ? ias_move_day_minutes($day, array_merge([(int) $p['id']], $also_except)) : array_column($fixed, 0);
+    $m = ias_slot_minute($w['a'], $w['b'], (string) $p['slot_key'], (int) ias_setting('jitter_minutes', 25), $taken, 60 * (int) ias_setting('min_gap_hours', 3), $not_before);
     $label = strtolower($w['name']);
     if ($m === null) {
       if ($not_before > $w['b']) return $no('the ' . $label . ' has passed ' . ($day === $now->format('Y-m-d') ? 'for today' : 'that day') . ' — choose a later time.');
@@ -225,30 +243,197 @@ if (!function_exists('ias_plan_run_follow')) {
   }
 }
 
-/** Move… on a post's page: a day and a time, and back to the plan's choice. */
+/**
+ * Every posting window from now to the plan's horizon, as Move offers them
+ * (DJ, Nov 6, 2026: "When i go in to move a post, I only want to see open
+ * slots, or an option to 'bump a post' and then it asks where the bumped Post
+ * should be moved"). Never a Sunday, never past $p's own event
+ * (ias_post_hard_end()). Each slot is ['day', 'si', 'name', 'span', 'open'
+ * (no post in it, the day under its daily number, and room for $p clear of
+ * the day's posts), 'post' (the one post in it a person may bump, else null),
+ * 'here' (where $p is now)]. The posts in $except count as gone — a bump's
+ * second question leaves out the post being bumped and the one moving.
+ */
+if (!function_exists('ias_move_slots')) {
+  function ias_move_slots(array $p, array $except = []): array {
+    $wins = ias_windows();
+    if (!$wins) return [];
+    $now = ias_now();
+    $soon = $now->modify('+15 minutes');
+    $today = $now->format('Y-m-d');
+    // The day before the horizon: ias_move_problem() takes nothing past now + N days, so that day's windows would only fail.
+    $last = $now->modify('+' . (max(30, (int) ias_setting('plan_days', 30)) - 1) . ' days')->format('Y-m-d');
+    $hard = ias_post_hard_end($p);
+    if ($hard !== null && $hard < $last) $last = $hard;
+    if ($last < $today) return [];
+    $except = array_map('intval', array_merge([(int) $p['id']], $except));
+    $at = !empty($p['scheduled_at']) ? (string) $p['scheduled_at'] : '';
+    $here = $at !== '' ? [substr($at, 0, 10), ias_slot_index($wins, ias_hm_to_min(substr($at, 11, 5)))] : ['', -1];
+    $on = array_merge(ias_live_statuses(), ['published', 'human']);
+    $days = []; // day => ['min' => [minutes of every other post], 'n' => count, 'in' => [si => [rows]]]
+    foreach (ias_posts_query(['from' => $today, 'to' => $last, 'limit' => 500]) as $o) {
+      $oat = (string) ($o['scheduled_at'] ?? '');
+      if ($oat === '' || in_array((int) $o['id'], $except, true) || !in_array($o['status'], $on, true)) continue;
+      $d = substr($oat, 0, 10);
+      $m = ias_hm_to_min(substr($oat, 11, 5));
+      $days[$d]['min'][] = $m;
+      $days[$d]['n'] = ($days[$d]['n'] ?? 0) + 1;
+      $si = ias_slot_index($wins, $m);
+      if ($si >= 0) $days[$d]['in'][$si][] = $o;
+    }
+    $cap = max(1, (int) ias_setting('daily_cap', 3));
+    $gap = 60 * (int) ias_setting('min_gap_hours', 3);
+    $jitter = (int) ias_setting('jitter_minutes', 25);
+    $out = [];
+    for ($d = $today; $d <= $last; $d = ias_day_add($d, 1)) {
+      if ((new DateTimeImmutable($d, ia_wp_tz()))->format('N') === '7') continue; // never on Sunday
+      $not_before = $d === $soon->format('Y-m-d') ? ias_hm_to_min($soon->format('H:i')) : ($d < $soon->format('Y-m-d') ? 24 * 60 : 0);
+      foreach ($wins as $si => $w) {
+        if ($not_before > $w['b']) continue; // already gone
+        $in = (array) ($days[$d]['in'][$si] ?? []);
+        $slot = ['day' => $d, 'si' => (int) $si, 'name' => (string) $w['name'], 'span' => $w['from'] . '–' . $w['to'], 'open' => false, 'post' => null, 'here' => $here === [$d, (int) $si]];
+        if (!$in) {
+          $slot['open'] = ($days[$d]['n'] ?? 0) < $cap
+            && ias_slot_minute($w['a'], $w['b'], (string) ($p['slot_key'] ?? ''), $jitter, (array) ($days[$d]['min'] ?? []), $gap, $not_before) !== null;
+        } elseif (count($in) === 1 && ias_movable($in[0])) { // one post a person may move: it can be bumped
+          $slot['post'] = $in[0];
+        }
+        $out[] = $slot;
+      }
+    }
+    return $out;
+  }
+}
+
+/** "Tue Nov 10 · Morning (8:00 am–11:00 am)" — one slot, as Move lists it. */
+if (!function_exists('ias_move_slot_label')) {
+  function ias_move_slot_label(array $slot): string {
+    return date_i18n('D M j', strtotime($slot['day'])) . ' · ' . $slot['name'] . ' (' . $slot['span'] . ')';
+  }
+}
+
+/**
+ * Move… on a post's page (0.28.0, DJ's Nov 6 request): only the open slots,
+ * or **Bump a post** — choose a slot one post already has, then where that
+ * post goes. Both put each post in its window on its own minute, pinned
+ * (ias_move_to_window()). With no posting windows set, a day and a time.
+ */
 if (!function_exists('ias_move_form')) {
   function ias_move_form(array $p): string {
     if (!ias_movable($p)) return '';
-    $at = !empty($p['scheduled_at']) ? strtotime((string) $p['scheduled_at']) : 0;
     $pinned = (string) ($p['flags']['pinned'] ?? '');
-    $now_si = $at ? ias_slot_index(ias_windows(), ias_hm_to_min(date('H:i', $at))) : -1;
-    $radios = '';
-    foreach (ias_windows() as $i => $w) {
-      $radios .= '<label class="ias-move-slot"><input type="radio" name="ias_slot" value="' . (int) $i . '"' . checked($i === $now_si || ($now_si < 0 && $i === 0), true, false) . '> <strong>' . esc_html($w['name']) . '</strong> <span class="description">' . esc_html($w['from'] . '–' . $w['to']) . '</span></label>';
+    $gbp = function_exists('ias_gbp_live') && ias_channel_settings('gbp')['on'] ? ' (and on Google a minute later)' : '';
+    if (!ias_windows()) { // no windows in Settings: a day and an exact time, as before
+      $at = !empty($p['scheduled_at']) ? strtotime((string) $p['scheduled_at']) : 0;
+      $html = '<details class="ias-move"><summary>Move…</summary>'
+        . ias_post_action_form($p, 'move', 'Move it', 'button',
+          '<label>Day <input type="date" name="ias_day" value="' . esc_attr($at ? date('Y-m-d', $at) : '') . '" min="' . esc_attr(ias_now()->format('Y-m-d')) . '" required></label> '
+          . '<label>Time <input type="time" name="ias_time" value="' . esc_attr($at ? date('H:i', $at) : '') . '" step="60" required></label> ')
+        . '<p class="description">It goes out then — on Facebook' . $gbp . ' — and stays there. Not on a Sunday.</p></details>';
+    } else {
+      $slots = ias_move_slots($p);
+      $open = array_values(array_filter($slots, function ($s) { return $s['open'] && !$s['here']; }));
+      $taken = array_values(array_filter($slots, function ($s) { return $s['post'] !== null; }));
+      $opt = function (array $s, string $value, string $extra = '') { return '<option value="' . esc_attr($value) . '"' . $extra . '>' . esc_html(ias_move_slot_label($s)) . '</option>'; };
+      $html = '<details class="ias-move"><summary>Move…</summary>';
+      // 1. An open slot.
+      if ($open) {
+        $list = '';
+        foreach ($open as $s) $list .= $opt($s, $s['day'] . '|' . $s['si']);
+        $html .= ias_post_action_form($p, 'move_open', 'Move it', 'button',
+          '<label>Open slot <select name="ias_open" required><option value="">Choose…</option>' . $list . '</select></label> ');
+      } else {
+        $html .= '<p class="description">No open slot before ' . ($slots ? 'its last day' : 'the plan\'s horizon') . ' — bump a post instead.</p>';
+      }
+      // 2. Bump a post: which one, then where it goes (the open slots, and where this post is now).
+      if ($taken) {
+        $whose = '';
+        foreach ($taken as $s) {
+          $b = $s['post'];
+          $until = ias_post_hard_end($b);
+          $whose .= '<option value="' . esc_attr($s['day'] . '|' . $s['si'] . '|' . (int) $b['id']) . '" data-until="' . esc_attr((string) $until) . '">'
+            . esc_html(ias_move_slot_label($s) . ' — ' . ias_post_type((string) $b['type'])['short'] . ' · ' . ias_post_subject($b)) . '</option>';
+        }
+        $dest = '';
+        foreach (ias_move_slots(['id' => 0, 'type' => 'manual', 'slot_key' => (string) ($p['slot_key'] ?? ''), 'flags' => []], [(int) $p['id']]) as $s) {
+          if (!$s['open']) continue;
+          $mine = !empty($p['scheduled_at']) && $s['day'] === substr((string) $p['scheduled_at'], 0, 10)
+            && $s['si'] === ias_slot_index(ias_windows(), ias_hm_to_min(substr((string) $p['scheduled_at'], 11, 5)));
+          $dest .= '<option value="' . esc_attr($s['day'] . '|' . $s['si']) . '" data-day="' . esc_attr($s['day']) . '">' . esc_html(ias_move_slot_label($s) . ($mine ? ' — where this post is now' : '')) . '</option>';
+        }
+        $html .= '<div class="ias-bump">' . ias_post_action_form($p, 'move_bump', 'Bump it and move', 'button',
+          '<label>Bump a post <select name="ias_bump" class="ias-bump-which" required><option value="">Choose…</option>' . $whose . '</select></label> '
+          . '<label class="ias-bump-to">Move the bumped post to <select name="ias_bump_to" required><option value="">Choose…</option>' . $dest . '</select></label> ') . '</div>';
+      }
+      $html .= '<p class="description">Each post takes its own minute in the window it goes to and stays there' . ($gbp !== '' ? ' — on Facebook' . $gbp : '') . '. Bumping moves the other post where you say first, then this one into its place. Not on a Sunday, and never after a post\'s own event. On the calendar you can also drag a post to another day.</p></details>';
     }
-    $radios .= '<label class="ias-move-slot"><input type="radio" name="ias_slot" value="exact"' . checked($now_si < 0 && !ias_windows(), true, false) . '> At <input type="time" name="ias_time" value="' . esc_attr($at ? date('H:i', $at) : '') . '" step="60" onfocus="var r=this.form.querySelector(\'input[name=ias_slot][value=exact]\');if(r)r.checked=true"></label>';
-    $html = '<details class="ias-move"><summary>Move…</summary>'
-      . ias_post_action_form($p, 'move', 'Move it', 'button',
-        '<label>Day <input type="date" name="ias_day" value="' . esc_attr($at ? date('Y-m-d', $at) : '') . '" min="' . esc_attr(ias_now()->format('Y-m-d')) . '" required></label> '
-        . '<fieldset class="ias-move-slots"><legend class="screen-reader-text">Time of day</legend>' . $radios . '</fieldset> ')
-      . '<p class="description">It goes out then — on Facebook' . (function_exists('ias_gbp_live') && ias_channel_settings('gbp')['on'] ? ' (and on Google a minute later)' : '') . ' — and stays there: the plan works around it, moving what was in the way. A time of day picks the post\'s own minute in that window. Not on a Sunday. On the calendar you can also drag it to another day.</p></details>';
     if ($pinned !== '') $html .= ias_post_action_form($p, 'unpin', 'Let the plan choose the time', 'button-link', '', 'Let the morning plan choose this post\'s time again? It is re-planned now.');
     return $html;
   }
 }
 
+/**
+ * Bump: $b leaves its window for [$to_day, $to_si], then $p takes the window
+ * $b left. If $p cannot go there after all, $b is put back as it was. Returns
+ * ias_move_to_window()'s answer for the pair.
+ */
+if (!function_exists('ias_move_bump')) {
+  function ias_move_bump(array $p, array $b, string $day, int $si, string $to_day, int $to_si, string $actor): array {
+    $no = function (string $why) { return ['ok' => false, 'message' => 'Not moved: ' . esc_html($why), 'when' => '', 'level' => 'error']; };
+    if ((int) $b['id'] === (int) $p['id']) return $no('choose another post to bump.');
+    if (!ias_movable($p) || !ias_movable($b)) return $no('one of the two posts cannot be moved now.');
+    $bat = (string) ($b['scheduled_at'] ?? '');
+    if ($bat === '' || substr($bat, 0, 10) !== $day || ias_slot_index(ias_windows(), ias_hm_to_min(substr($bat, 11, 5))) !== $si) return $no('that post is no longer in that slot — open Move again.');
+    if ([$to_day, $to_si] === [$day, $si]) return $no('the bumped post needs somewhere else to go.');
+    $hard = ias_post_hard_end($b);
+    if ($hard !== null && $to_day > $hard) return $no(ias_post_type((string) $b['type'])['short'] . ' · ' . ias_post_subject($b) . ' cannot go after ' . date_i18n('D M j', strtotime($hard)) . ' — choose an earlier slot for it.');
+    $mine = ias_post_hard_end($p);
+    if ($mine !== null && $day > $mine) return $no('this post cannot go after ' . date_i18n('D M j', strtotime($mine)) . '.');
+    $free = false; // the bumped post's new slot must be open, counting this post as gone (its own slot is fair game: a swap)
+    foreach (ias_move_slots($b, [(int) $p['id']]) as $s) if ($s['day'] === $to_day && $s['si'] === $to_si) $free = $s['open'];
+    if (!$free) return $no('that slot is no longer open for the bumped post — open Move again.');
+    $before = ['scheduled_at' => $bat, 'flags' => (array) $b['flags'], 'status' => (string) $b['status'], 'note' => (string) $b['note']];
+    $r1 = ias_move_to_window($b, $to_day, $to_si, $actor, [(int) $p['id']], true);
+    if (!$r1['ok']) return $r1;
+    $r2 = ias_move_to_window(ias_post_get((int) $p['id']) ?: $p, $day, $si, $actor, [], true);
+    if (!$r2['ok']) { // put the bumped post back where it was
+      ias_post_update((int) $b['id'], $before);
+      ias_post_trail((int) $b['id'], 'Put back: the post that bumped it could not take its place', $actor);
+      if (function_exists('ias_push_later')) ias_push_later((int) $b['id']);
+      return $r2;
+    }
+    $bn = ias_post_type((string) $b['type'])['short'] . ' · ' . ias_post_subject($b);
+    ias_post_trail((int) $b['id'], 'Bumped by ' . ias_post_type((string) $p['type'])['short'] . ' · ' . ias_post_subject($p), $actor);
+    $r2['message'] = 'Bumped <strong>' . esc_html($bn) . '</strong> to ' . esc_html(date_i18n('D M j', strtotime($to_day)) . ', ' . strtolower((string) (ias_windows()[$to_si]['name'] ?? ''))) . ' (' . esc_html(date_i18n('g:i a', strtotime($r1['when']))) . '). ' . $r2['message'];
+    return $r2;
+  }
+}
+
+/* Bump a post: where the bumped post may go shows once one is chosen, and never past its own event. */
+add_action('admin_footer', function (): void {
+  if (!defined('IAS_PAGE_CALENDAR') || ($_GET['page'] ?? '') !== IAS_PAGE_CALENDAR || !current_user_can('manage_options')) return;
+  ?><script>
+(function () {
+  function sync(which) {
+    var form = which.form, to = form.querySelector('select[name=ias_bump_to]'), wrap = form.querySelector('.ias-bump-to');
+    if (!to) return;
+    var opt = which.options[which.selectedIndex], until = opt ? opt.getAttribute('data-until') : '';
+    if (wrap) wrap.style.display = which.value ? '' : 'none';
+    for (var i = 0; i < to.options.length; i++) {
+      var d = to.options[i].getAttribute('data-day');
+      to.options[i].hidden = to.options[i].disabled = !!(d && until && d > until);
+    }
+    if (to.selectedOptions && to.selectedOptions[0] && to.selectedOptions[0].disabled) to.value = '';
+  }
+  document.addEventListener('change', function (e) { if (e.target && e.target.classList && e.target.classList.contains('ias-bump-which')) sync(e.target); });
+  var all = document.querySelectorAll('.ias-bump-which');
+  for (var i = 0; i < all.length; i++) sync(all[i]);
+})();
+</script><?php
+});
+
 add_action('ias_calendar_action', function (string $action): void {
-  if (!in_array($action, ['move', 'move_slot', 'unpin', 'retry', 'unlock', 'gbp_unlock'], true)) return;
+  if (!in_array($action, ['move', 'move_slot', 'move_open', 'move_bump', 'unpin', 'retry', 'unlock', 'gbp_unlock'], true)) return;
   $id = isset($_POST['ias_post']) ? (int) $_POST['ias_post'] : 0;
   $p = $id > 0 ? ias_post_get($id) : null;
   if (!$p || $p['type'] === 'human') return;
@@ -258,7 +443,29 @@ add_action('ias_calendar_action', function (string $action): void {
   $flash = function (string $html, string $level = 'success') { ia_flash_set('<div class="notice notice-' . $level . '"><p>' . $html . '</p></div>'); };
   $fmt = function (string $at) { return date_i18n('D M j, g:i a', strtotime($at)); };
 
-  // A time of day (the Move form's windows, or a drop on the calendar): its own minute in that window.
+  // An open slot, or a bump (0.28.0): "day|window" and "day|window|post".
+  if ($action === 'move_open' || $action === 'move_bump') {
+    $pick = function (string $key, int $parts) { $v = explode('|', sanitize_text_field((string) wp_unslash($_POST[$key] ?? ''))); return count($v) === $parts && preg_match('/^\d{4}-\d\d-\d\d$/', $v[0]) && ctype_digit($v[1]) ? $v : null; };
+    if ($action === 'move_open') {
+      $v = $pick('ias_open', 2);
+      if (!$v) { $flash('Not moved: choose an open slot.', 'error'); return; }
+      $still = false;
+      foreach (ias_move_slots($p) as $s) if ($s['day'] === $v[0] && $s['si'] === (int) $v[1]) $still = $s['open'];
+      if (!$still) { $flash('Not moved: that slot is no longer open — open Move again, or bump the post that took it.', 'error'); return; }
+      $r = ias_move_to_window($p, $v[0], (int) $v[1], $actor, [], true);
+    } else {
+      $v = $pick('ias_bump', 3);
+      $to = $pick('ias_bump_to', 2);
+      $b = $v && ctype_digit($v[2]) ? ias_post_get((int) $v[2]) : null;
+      if (!$v || !$b) { $flash('Not moved: choose the post to bump.', 'error'); return; }
+      if (!$to) { $flash('Not moved: choose where the bumped post goes.', 'error'); return; }
+      $r = ias_move_bump($p, $b, $v[0], (int) $v[1], $to[0], (int) $to[1], $actor);
+    }
+    $flash($r['message'], $r['level']);
+    return;
+  }
+
+  // A time of day (a drop on the calendar): its own minute in that window.
   $slot = isset($_POST['ias_slot']) ? sanitize_key(wp_unslash((string) $_POST['ias_slot'])) : '';
   if ($action === 'move_slot' || ($action === 'move' && $slot !== '' && $slot !== 'exact')) {
     if (!ctype_digit($slot)) { $flash('Not moved: choose the morning, afternoon or evening.', 'error'); return; }
