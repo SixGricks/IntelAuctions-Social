@@ -261,7 +261,7 @@ if (!function_exists('ias_admin_styles')) {
       .ias-suggest{border-color:#72aee6;background:#f0f6fc}
       .ias-filters{line-height:2}
       .ias-gbp-cta{padding:8px 12px 12px}.ias-gbp-cta a{display:inline-block;border:1px solid #1a73e8;color:#1a73e8;border-radius:18px;padding:5px 16px;font-weight:600;text-decoration:none;font-size:13px}
-      .ias-gbp-line .ias-act{display:inline-block;margin:4px 6px 0 0}
+      .ias-gbp-line .ias-act,.ias-li-line .ias-act{display:inline-block;margin:4px 6px 0 0}
       .ias-pulse{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:-6px 0 12px;font-size:13px;color:#50575e}
       .ias-pulse-dot{width:9px;height:9px;border-radius:50%;background:#c3c4c7;flex:none}
       .ias-pulse.is-ok .ias-pulse-dot{background:#00a32a}.ias-pulse.is-error .ias-pulse-dot{background:#d63638}.ias-pulse.is-new .ias-pulse-dot{background:#dba617}
@@ -309,7 +309,7 @@ if (!function_exists('ias_switches_strip')) {
     if (function_exists('ias_channels_extra_on')) {
       foreach (ias_channels_extra_on() as $ch) {
         $state = (array) apply_filters('ias_channel_state', [], $ch);
-        if (!$state) continue; // a preview (Instagram, X, LinkedIn) is not a switch
+        if (!$state) continue; // a preview (Instagram, X) is not a switch
         $out .= $chip((string) ias_channel($ch)['label'], (string) preg_replace('/^[^:]+:\s*/', '', (string) $state[1]), (string) $state[0]);
       }
     }

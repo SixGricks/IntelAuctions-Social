@@ -439,7 +439,7 @@ add_action('ias_post_view_preview', function (array $p): void {
     $urls = !empty($req['params']['image_url']) ? explode('~~', (string) $req['params']['image_url']) : [];
     $alts = (array) ($req['alt'] ?? []);
     echo '<div class="ias-net-panel" data-net="' . esc_attr($ch) . '"' . ($i === 0 ? '' : ' hidden') . '>';
-    $at = $ch === 'gbp' && !empty($req['params']['scheduled_date_time']) ? date_i18n('D M j, g:i a', strtotime((string) $req['params']['scheduled_date_time'])) : $when; // Google: a minute after Facebook
+    $at = in_array($ch, ['gbp', 'linkedin'], true) && !empty($req['params']['scheduled_date_time']) ? date_i18n('D M j, g:i a', strtotime((string) $req['params']['scheduled_date_time'])) : $when; // Google a minute after Facebook, LinkedIn two
     echo '<div class="ias-fb ias-fb-' . esc_attr($ch) . '"><div class="ias-fb-head">' . $avatar() . '<div><div class="ias-fb-name">' . esc_html($ch === 'instagram' ? 'intelauctions' : 'Intel Auctions') . '</div><div class="ias-fb-time">' . esc_html($at) . ($ch === 'facebook' ? ' · Public' : '') . '</div></div></div>';
     $photos = '';
     if ($urls) {
@@ -468,6 +468,8 @@ add_action('ias_post_view_preview', function (array $p): void {
     }
     if ($ch === 'gbp') {
       echo ias_gbp_post_line($p, $req);
+    } elseif ($ch === 'linkedin' && function_exists('ias_li_post_line')) {
+      echo ias_li_post_line($p, $req);
     } elseif ($ch !== 'facebook') {
       $problems = ias_channel_problems($req, $ch);
       echo '<p class="description">Made from the Facebook words' . ($ch === 'x' ? ' and the listing\'s facts' : '') . '. A preview only — ' . esc_html((string) ias_channel($ch)['label']) . ' cannot be posted to yet.' . ($problems ? ' <strong>' . esc_html(ucfirst(implode('; ', $problems))) . '.</strong>' : '') . '</p>';

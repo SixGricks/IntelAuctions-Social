@@ -30,6 +30,7 @@ foreach ([
   'ias_readback_last', 'ias_stats_last', 'ias_comments_no_plan', 'ias_plan_hold', 'ias_push_queue', 'ias_oneup_verify', 'ias_push_lock', 'ias_oneup_api_key',
   'ias_oneup_directory', // Look up accounts: OneUp's categories and accounts (ids and names, never the key)
   'ias_gbp_verify', 'ias_gbp_mode', // Google Business Profile: its Verify (and, before 0.12.0, whether it was last sent for real)
+  'ias_linkedin_verify', 'ias_linkedin_previewed', // LinkedIn (0.29.0): its Verify, and the update that switched its old preview switch off
   'ias_youtube_verify', 'ias_youtube_playlists', 'ias_youtube_storage', // YouTube (0.22.0): its Verify, and the channel's playlists as Verify read them (each listing's video record is the _ias_youtube meta below; the ias_youtube_page_check transient goes with the others)
   'ias_pulse', // the last time an open calendar asked OneUp what changed, and what it found
   'ias_oneup_id_form', // how OneUp took the account as a list: a JSON list or social_network_id[0]

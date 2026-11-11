@@ -296,7 +296,7 @@ if (!function_exists('ias_push_queue_run')) {
 if (!function_exists('ias_push_now_actions')) {
   function ias_push_now_actions(): array {
     // Move and a drag are not here: they go to OneUp after the page has answered (ias_push_later(), 0.20.0).
-    return (array) apply_filters('ias_push_now_actions', ['edit', 'media', 'media_reset', 'regenerate', 'skip', 'restore', 'release', 'unpin', 'retry', 'unlock', 'gbp_off', 'gbp_on', 'gbp_unlock', 'publish_now']);
+    return (array) apply_filters('ias_push_now_actions', ['edit', 'media', 'media_reset', 'regenerate', 'skip', 'restore', 'release', 'unpin', 'retry', 'unlock', 'gbp_off', 'gbp_on', 'gbp_unlock', 'li_off', 'li_on', 'li_unlock', 'publish_now']);
   }
 }
 
@@ -312,7 +312,8 @@ if (!function_exists('ias_push_now_flash')) {
     if (!$before || $before['type'] === 'human') return;
     $live = ias_push_mode() === 'live' || ias_post_sent($before)['mode'] === 'live';
     $glive = function_exists('ias_gbp_live') && (ias_gbp_live() || !empty($before['flags']['gbp']));
-    if (!$live && !$glive) return;
+    $llive = function_exists('ias_li_live') && (ias_li_live() || !empty($before['flags']['li']));
+    if (!$live && !$glive && !$llive) return;
     $r = ias_push_now([$id]);
     $after = ias_post_get($id) ?: $before;
     $bits = [];
@@ -333,6 +334,11 @@ if (!function_exists('ias_push_now_flash')) {
         $was = (string) (($before['flags']['gbp']['hash'] ?? '') . ($before['flags']['gbp']['id'] ?? ''));
         $is = (string) (($after['flags']['gbp']['hash'] ?? '') . ($after['flags']['gbp']['id'] ?? ''));
         $bits[] = $say('Google', $was, $is, (string) ($after['flags']['gbp']['when'] ?? ''));
+      }
+      if ($llive) {
+        $was = (string) (($before['flags']['li']['hash'] ?? '') . ($before['flags']['li']['id'] ?? ''));
+        $is = (string) (($after['flags']['li']['hash'] ?? '') . ($after['flags']['li']['id'] ?? ''));
+        $bits[] = $say('LinkedIn', $was, $is, (string) ($after['flags']['li']['when'] ?? ''));
       }
       if (!empty($r['failed'])) {
         $last = array_values(array_filter(ias_log_recent('push_failed', 20), function ($e) use ($id) { return (int) ($e['meta']['post'] ?? 0) === $id; }));
@@ -397,8 +403,9 @@ if (!function_exists('ias_push_run_locked')) {
     unset($GLOBALS['ias_readback_lists']); // this run's lists only
     if (function_exists('ias_readback_run') && !ias_oneup_blockers(false)) $out['readback'] = ias_readback_run($full);
     // Google's own read-back, on the same lists (gbp.php): its posts a person changed in OneUp first, too.
-    if (function_exists('ias_gbp_readback')) {
-      $g = ias_gbp_readback($full);
+    foreach (['ias_gbp_readback', 'ias_li_readback'] as $rb) { // Google's (gbp.php) and LinkedIn's (linkedin.php, 0.29.0)
+      if (!function_exists($rb)) continue;
+      $g = $rb($full);
       if ($g) {
         if (is_array($out['readback']) && $out['readback']['ok']) { $out['readback']['changes'] = array_merge($out['readback']['changes'], $g); ias_readback_note($out['readback']); }
         else $out['readback'] = ['ok' => true, 'error' => '', 'changes' => $g];
@@ -418,8 +425,9 @@ if (!function_exists('ias_push_run_locked')) {
       if (ias_push_out_of_time()) { $out['skipped'][] = 'out of time: the rest follow on the next run'; break; }
       ias_push_one($p, $mode, $c, $out);
     }
-    if (function_exists('ias_gbp_run')) { // Google, by its own switch (gbp.php)
-      $g = ias_gbp_run($only);
+    foreach (['ias_gbp_run', 'ias_li_run'] as $run) { // Google (gbp.php) and LinkedIn (linkedin.php), each by its own switch
+      if (!function_exists($run)) continue;
+      $g = $run($only);
       foreach (['pushed', 'deleted', 'failed'] as $k) $out[$k] += $g[$k];
       $out['skipped'] = array_merge($out['skipped'], $g['skipped']);
     }
@@ -442,11 +450,11 @@ if (!function_exists('ias_push_one')) {
     // A person's own post not for Facebook (0.25.0): nothing of it is Facebook's — only its time coming is noted here.
     if ($p['type'] === 'manual' && $sent['mode'] !== 'live' && !in_array('facebook', ias_post_networks($p), true)) {
       if ($at !== '' && $at <= $nowsql && in_array($p['status'], ['planned', 'approved'], true)) {
-        if (!empty($flags['gbp']['id'])) {
+        if (!empty($flags['gbp']['id']) || !empty($flags['li']['id'])) {
           ias_post_update((int) $p['id'], ['status' => 'published', 'published_at' => $at, 'note' => '']);
-          ias_post_trail((int) $p['id'], 'Its time came on OneUp (Google)');
+          ias_post_trail((int) $p['id'], 'Its time came on OneUp (' . implode(' and ', array_keys(array_filter(['Google' => !empty($flags['gbp']['id']), 'LinkedIn' => !empty($flags['li']['id'])]))) . ')');
           $out['published']++;
-        } elseif (!in_array('gbp', ias_post_networks($p), true)) {
+        } elseif (!array_intersect(['gbp', 'linkedin'], ias_post_networks($p))) {
           $flags['cancelled_by'] = 'system';
           $why = 'Its time passed — none of the networks ticked for it posts yet, so nothing went out.';
           ias_post_update((int) $p['id'], ['status' => 'cancelled', 'flags' => $flags, 'note' => $why]);

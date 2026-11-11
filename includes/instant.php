@@ -433,7 +433,7 @@ add_action('admin_footer', function (): void {
 });
 
 add_action('ias_calendar_action', function (string $action): void {
-  if (!in_array($action, ['move', 'move_slot', 'move_open', 'move_bump', 'unpin', 'retry', 'unlock', 'gbp_unlock'], true)) return;
+  if (!in_array($action, ['move', 'move_slot', 'move_open', 'move_bump', 'unpin', 'retry', 'unlock', 'gbp_unlock', 'li_unlock'], true)) return;
   $id = isset($_POST['ias_post']) ? (int) $_POST['ias_post'] : 0;
   $p = $id > 0 ? ias_post_get($id) : null;
   if (!$p || $p['type'] === 'human') return;
@@ -577,9 +577,19 @@ add_action('ias_calendar_action', function (string $action): void {
     case 'gbp_unlock':
       if (empty($flags['gbp_locked'])) return;
       unset($flags['gbp_locked']);
+      if (!empty($flags['gbp'])) $flags['gbp']['hash'] = ''; // OneUp has a person's version, not the one hashed: the next push replaces it (Codex, PR #16)
       ias_post_update($id, ['flags' => $flags]);
       ias_post_trail($id, 'Google: the plugin\'s version goes to Google again', $actor);
       $flash('Google gets the plugin\'s version of this post again.');
+      return;
+
+    case 'li_unlock':
+      if (empty($flags['li_locked'])) return;
+      unset($flags['li_locked']);
+      if (!empty($flags['li'])) $flags['li']['hash'] = ''; // OneUp has a person's version, not the one hashed: the next push replaces it (Codex, PR #16)
+      ias_post_update($id, ['flags' => $flags]);
+      ias_post_trail($id, 'LinkedIn: the plugin\'s version goes to LinkedIn again', $actor);
+      $flash('LinkedIn gets the plugin\'s version of this post again.');
       return;
   }
 });
@@ -621,7 +631,9 @@ if (!function_exists('ias_publish_now_button')) {
   function ias_publish_now_button(array $p, array $state): string {
     if ($state['why_not'] !== '') return '<span class="description ias-pub-why">Publish now: not while ' . esc_html($state['why_not']) . '.</span>';
     $google = function_exists('ias_gbp_live') && ias_gbp_live() && ias_gbp_ready($p) === '';
-    $confirm = 'Publish this post now? It goes to Facebook' . ($google ? ' (and Google a minute later)' : '') . ' in about ' . IAS_PUBLISH_NOW_MINUTES . ' minutes.' . ($p['lane'] === 'A' && $p['status'] !== 'approved' ? ' Publishing it is your approval.' : '');
+    $linkedin = function_exists('ias_li_live') && ias_li_live() && ias_li_ready($p) === '';
+    $also = array_keys(array_filter(['Google' => $google, 'LinkedIn' => $linkedin]));
+    $confirm = 'Publish this post now? It goes to Facebook' . ($also ? ' (and ' . implode(' and ', $also) . ' a minute or two later)' : '') . ' in about ' . IAS_PUBLISH_NOW_MINUTES . ' minutes.' . ($p['lane'] === 'A' && $p['status'] !== 'approved' ? ' Publishing it is your approval.' : '');
     return ias_post_action_form($p, 'publish_now', 'Publish now', 'button button-primary', '', $confirm);
   }
 }
@@ -827,12 +839,13 @@ if (!function_exists('ias_oneup_pulse')) {
     $last = is_array($last) ? $last + ['at' => '', 'ts' => 0, 'state' => '', 'changes' => [], 'seq' => 0, 'error' => ''] : ['at' => '', 'ts' => 0, 'state' => '', 'changes' => [], 'seq' => 0, 'error' => ''];
     $fb = ias_oneup_blockers(false);
     $g = function_exists('ias_gbp_blockers_read') ? ias_gbp_blockers_read() : ['off'];
+    $l = function_exists('ias_li_blockers_read') ? ias_li_blockers_read() : ['off'];
     $y = function_exists('ias_youtube_blockers_read') && ias_youtube_all() ? ias_youtube_blockers_read() : ['off'];
-    if ($fb && $g && $y) return ['state' => 'off', 'why' => $fb[0]] + $last;
+    if ($fb && $g && $l && $y) return ['state' => 'off', 'why' => $fb[0]] + $last;
     $wait = $force ? 10 : 55;
     if (time() - (int) $last['ts'] < $wait) return $last + ['cached' => true];
     if (function_exists('ias_push_queue_run')) ias_push_queue_run(0); // a move that has not reached OneUp yet goes first
-    $out = ias_oneup_pulse_read($fb, $g, $last);
+    $out = ias_oneup_pulse_read($fb, $g, $last, $l);
     if (!$y && ($out['state'] ?? '') !== 'busy') { // the property videos, after the posts (it takes the lock itself)
       $yc = ias_youtube_check(true);
       if ($yc) {
@@ -847,7 +860,7 @@ if (!function_exists('ias_oneup_pulse')) {
 
 /** The pulse's read of Facebook's and Google's posts, inside the push lock. */
 if (!function_exists('ias_oneup_pulse_read')) {
-  function ias_oneup_pulse_read(array $fb, array $g, array $last): array {
+  function ias_oneup_pulse_read(array $fb, array $g, array $last, array $l = ['off']): array {
     if (!ias_push_lock()) return ['state' => 'busy'] + $last;
     try {
       unset($GLOBALS['ias_readback_lists']);
@@ -860,6 +873,7 @@ if (!function_exists('ias_oneup_pulse_read')) {
         $changes = (array) $rb['changes'];
       }
       if (function_exists('ias_gbp_readback') && !$g && $state === 'ok') $changes = array_merge($changes, ias_gbp_readback(true));
+      if (function_exists('ias_li_readback') && !$l && $state === 'ok') $changes = array_merge($changes, ias_li_readback(true));
       $now = ias_now_sql();
       $out = ['at' => $state === 'ok' ? $now : (string) $last['at'], 'ts' => time(), 'state' => $state, 'error' => $error,
         'changes' => $changes ?: (array) ($state === 'ok' ? [] : $last['changes']), 'seq' => (int) $last['seq'] + ($changes ? 1 : 0)];
@@ -889,8 +903,9 @@ if (!function_exists('ias_pulse_pill')) {
   function ias_pulse_pill(): string {
     $fb = ias_oneup_blockers(false);
     $g = function_exists('ias_gbp_blockers_read') ? ias_gbp_blockers_read() : ['off'];
+    $l = function_exists('ias_li_blockers_read') ? ias_li_blockers_read() : ['off'];
     $y = function_exists('ias_youtube_blockers_read') && ias_youtube_all() ? ias_youtube_blockers_read() : ['off']; // YouTube alone keeps the check going too (0.22.1)
-    if ($fb && $g && $y) return '';
+    if ($fb && $g && $l && $y) return '';
     $last = get_option('ias_pulse', []);
     $seq = is_array($last) ? (int) ($last['seq'] ?? 0) : 0;
     return '<div class="ias-pulse" id="ias-pulse" data-seq="' . $seq . '" data-nonce="' . esc_attr(wp_create_nonce('ias_pulse')) . '" aria-live="polite">'

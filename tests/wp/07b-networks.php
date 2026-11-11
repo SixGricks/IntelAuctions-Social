@@ -35,7 +35,7 @@ t_eq($fb_hash, md5((string) wp_json_encode(ias_render_facebook($p))), 'Facebook\
 t_eq(0, count(ias_log_recent('dryrun', 500)), 'nothing is logged as if it were sent: there is no dry run');
 t_ok(empty($p['flags']['dry_ch']), '…and nothing is recorded as sent to them');
 $html = $view((int) $p['id']);
-t_ok(substr_count($html, 'A preview only') === 3, 'the post shows a preview for each, saying it cannot be posted to yet');
+t_ok(substr_count($html, 'A preview only') === 2 && strpos($html, 'data-net="linkedin"') !== false, 'the post shows a preview for each; Instagram and X say they cannot be posted to yet (LinkedIn posts from 0.29.0)');
 foreach (['instagram' => 'ig_1', 'x' => 'x_1', 'linkedin' => 'li_1'] as $ch => $acct) {
   t_eq($acct, (string) (ias_render_channel($p, $ch)['params']['social_network_id'] ?? ''), ias_channel($ch)['label'] . ': its request names its own OneUp account');
 }
@@ -60,7 +60,7 @@ t_ok(ias_x_length(ias_channel_text($long, 'x')) <= 280, 'a long link still fits:
 
 // ---- A preview switched off: its tab goes ----
 ias_settings_update(['networks' => ['instagram' => ['on' => true, 'account' => 'ig_1'], 'x' => ['on' => false, 'account' => 'x_1'], 'linkedin' => ['on' => true, 'account' => 'li_1']]]);
-t_eq(2, substr_count($view((int) $p['id']), 'A preview only'), 'X switched off: its preview goes, the others stay');
+t_eq(1, substr_count($view((int) $p['id']), 'A preview only'), 'X switched off: its preview goes, Instagram\'s stays');
 
 // ---- Facebook on: still nothing to the others ----
 ias_t_oneup();
@@ -81,7 +81,8 @@ ob_start(); ias_settings_render(); $html = ob_get_clean();
 t_ok(strpos($html, 'More networks') !== false && strpos($html, 'name="ias[networks][instagram][account]"') !== false && strpos($html, 'Show a preview for Instagram') !== false, 'Settings has the networks, with their OneUp account ids and a preview switch');
 t_ok(stripos($html, 'dry run') === false, '…and never speaks of a dry run');
 $strip = ias_switches_strip(true);
-t_ok(strpos($strip, 'Instagram') === false && strpos($strip, 'LinkedIn') === false, 'a preview is not a switch: the switches strip does not list them');
+t_ok(strpos($strip, 'Instagram') === false, 'a preview is not a switch: the switches strip does not list Instagram');
+t_ok(strpos($strip, 'LinkedIn: on, not sending yet') !== false, '…while LinkedIn, which posts from 0.29.0, says it is on but not sending until Verify for LinkedIn has passed');
 $_GET = [];
 restore_error_handler();
 t_eq([], $errors, 'no PHP notices');

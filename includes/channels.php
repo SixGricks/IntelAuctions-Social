@@ -2,13 +2,13 @@
 /**
  * Intel Auctions Social — the networks a post can go to.
  *
- * Facebook and Google Business Profile (gbp.php) are sent. Instagram, X and
- * LinkedIn are provisioned (DJ, Oct 13, 2026: "provision for more social
- * networks now"): each has its rules here, an account id and a preview switch
- * in Settings, a renderer that turns the same post into that network's
- * request, and a preview on the post view. None of them is sent yet — that
- * needs its own Verify and its own record of what was sent, the way Facebook
- * and Google have. Their switch shows a preview only; it is not a posting
+ * Facebook, Google Business Profile (gbp.php) and, from 0.29.0, LinkedIn
+ * (linkedin.php) are sent. Instagram and X are provisioned (DJ, Oct 13, 2026:
+ * "provision for more social networks now"): each has its rules here, an
+ * account id and a preview switch in Settings, a renderer that turns the same
+ * post into that network's request, and a preview on the post view. Neither is
+ * sent yet — that needs its own Verify and its own record of what was sent,
+ * the way Facebook, Google and LinkedIn have. Their switch shows a preview only; it is not a posting
  * switch, so it never appears among the switches (there is no dry run, DJ,
  * Oct 14, 2026).
  *
@@ -35,7 +35,7 @@ if (!function_exists('ias_channels')) {
       'gbp'       => ['label' => 'Google Business Profile', 'short' => 'Google', 'oneup_type' => 'GBP', 'text_max' => 1500, 'images_max' => 1, 'link' => 'button', 'hashtags' => 0, 'crop' => '', 'needs_media' => false, 'live' => true],
       'instagram' => ['label' => 'Instagram', 'oneup_type' => 'Instagram', 'text_max' => 2200,  'images_max' => 10, 'link' => 'bio',     'hashtags' => 10, 'crop' => 'square',    'needs_media' => true,  'live' => false],
       'x'         => ['label' => 'X',         'oneup_type' => 'X',         'text_max' => 280,   'images_max' => 4,  'link' => 'text',    'hashtags' => 2,  'crop' => 'landscape', 'needs_media' => false, 'live' => false],
-      'linkedin'  => ['label' => 'LinkedIn',  'oneup_type' => 'LinkedIn',  'text_max' => 3000,  'images_max' => 9,  'link' => 'text',    'hashtags' => 3,  'crop' => 'landscape', 'needs_media' => false, 'live' => false],
+      'linkedin'  => ['label' => 'LinkedIn',  'oneup_type' => 'LinkedIn',  'text_max' => 3000,  'images_max' => 9,  'link' => 'text',    'hashtags' => 3,  'crop' => 'landscape', 'needs_media' => false, 'live' => true], // sent from 0.29.0 (linkedin.php)
     ]);
   }
 }
@@ -48,9 +48,9 @@ if (!function_exists('ias_channel')) {
 
 /**
  * A network's settings: ['on' => bool, 'account' => OneUp account id].
- * Facebook's are the page id above. Google's also carry 'name' (the
- * location's name in OneUp's lists) and 'types'; its 'on' posts it. For
- * Instagram, X and LinkedIn 'on' shows their preview only.
+ * Facebook's are the page id above. Google's and LinkedIn's also carry 'name'
+ * (the location's or page's name in OneUp's lists) and 'types'; their 'on'
+ * posts. For Instagram and X 'on' shows their preview only.
  */
 if (!function_exists('ias_channel_settings')) {
   function ias_channel_settings(string $ch): array {
@@ -58,7 +58,7 @@ if (!function_exists('ias_channel_settings')) {
     $all = (array) ias_setting('networks', []);
     $one = (array) ($all[$ch] ?? []);
     $out = ['on' => !empty($one['on']), 'account' => trim((string) ($one['account'] ?? ''))];
-    if ($ch === 'gbp') $out += ['name' => trim((string) ($one['name'] ?? '')), 'types' => array_values(array_map('strval', (array) ($one['types'] ?? [])))];
+    if ($ch === 'gbp' || $ch === 'linkedin') $out += ['name' => trim((string) ($one['name'] ?? '')), 'types' => array_values(array_map('strval', (array) ($one['types'] ?? [])))];
     return $out;
   }
 }
@@ -224,6 +224,14 @@ if (!function_exists('ias_render_channel')) {
   function ias_render_channel(array $post, string $ch, ?array $facts_list = null): array {
     if ($ch === 'facebook') return ias_render_facebook($post);
     if ($ch === 'gbp') return ias_render_gbp($post, $facts_list);
+    if ($ch === 'linkedin') return ias_render_linkedin($post, $facts_list);
+    return ias_render_channel_plain($post, $ch, $facts_list);
+  }
+}
+
+/** A network's request in the plain shape (Instagram, X, and LinkedIn under its own time): see ias_render_channel(). */
+if (!function_exists('ias_render_channel_plain')) {
+  function ias_render_channel_plain(array $post, string $ch, ?array $facts_list = null): array {
     $rules = ias_channel($ch);
     $c = (array) $post['content'];
     $media = (array) ($c['media'] ?? []);
@@ -248,6 +256,22 @@ if (!function_exists('ias_render_channel')) {
     }
     $ep = ias_oneup_endpoints()[$endpoint];
     return ['action' => 'create', 'channel' => $ch, 'endpoint' => $endpoint, 'method' => $ep[0], 'url' => IAS_ONEUP_BASE . $ep[1], 'params' => $params, 'alt' => $alt];
+  }
+}
+
+/**
+ * The LinkedIn request (0.29.0): the plain shape — the Intel Auctions page by
+ * its id, the Facebook words with the link at the end, up to 9 pictures in the
+ * landscape crop, or the video — two minutes after the Facebook post (Google
+ * takes one), so no two networks' copies are one row on OneUp's list.
+ */
+if (!function_exists('ias_render_linkedin')) {
+  function ias_render_linkedin(array $post, ?array $facts_list = null): array {
+    $req = ias_render_channel_plain($post, 'linkedin', $facts_list);
+    if (!empty($post['scheduled_at'])) {
+      try { $req['params']['scheduled_date_time'] = (new DateTimeImmutable((string) $post['scheduled_at'], ia_wp_tz()))->modify('+2 minutes')->format('Y-m-d H:i'); } catch (\Exception $e) { $req['params']['scheduled_date_time'] = ''; }
+    }
+    return $req;
   }
 }
 

@@ -506,6 +506,13 @@ if (!function_exists('ias_gbp_one')) {
     if ($p['type'] === 'human') return;
     ['nowsql' => $nowsql, 'until' => $until, 'floor' => $floor] = $c;
     $flags = $p['flags'];
+    // An attempt whose answer was lost, while the read-back cannot run (the master switch off): look for it on
+    // OneUp's list now, so a copy OneUp did take is taken back like any other — never left to publish (Codex, PR #16).
+    if (empty($flags['gbp']) && !empty($flags['gbp_sending']) && ias_gbp_blockers_read() && !ias_oneup_takeback_blockers()) {
+      $try = (array) $flags['gbp_sending'];
+      $found = ias_gbp_find_scheduled((string) ($try['text'] ?? ''), (string) ($try['when'] ?? ''));
+      if ($found !== null && $found !== '') { $p = ias_gbp_adopt_attempt($p, $found); $flags = $p['flags']; }
+    }
     $g = (array) ($flags['gbp'] ?? []);
     $at = (string) ($p['scheduled_at'] ?? '');
     if ($p['status'] === 'published' || ($at !== '' && $at <= $nowsql)) return; // its time came: it stays as it went
